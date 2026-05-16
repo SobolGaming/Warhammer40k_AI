@@ -37,6 +37,9 @@ and non-additive dice mechanics (e.g., 3D6 drop lowest).
     including declared/reachable/chosen target ids plus end-state legality flags.
   - Charge movement requests use the post-roll bound target ids so later legality checks can
     vary by rules bundle without rewriting charge declaration flow.
+  - Solver-generated charge moves may expand `target_unit_ids` with additional legal enemy
+    units that the final endpoint also engages. This keeps declared-target history intact while
+    preventing valid endpoint geometry from being rejected as accidental non-target engagement.
 
 ## Charge Dice Spec (Non-Additive)
 Charge rolls read the following optional per-unit keys from `unit.special_rules`:

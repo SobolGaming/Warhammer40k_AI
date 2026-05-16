@@ -609,6 +609,11 @@ class DeterministicEventLog:
             max_distance_value = float(max_distance) if max_distance not in (None, "") else None
         except (TypeError, ValueError):
             max_distance_value = None
+        charge_roll = kwargs.get("charge_roll")
+        try:
+            charge_roll_value = float(charge_roll) if charge_roll not in (None, "") else None
+        except (TypeError, ValueError):
+            charge_roll_value = None
         payload = {
             "unit_id": maybe_entity_id(kwargs.get("unit")),
             "target_unit_ids": self._event_id_list(kwargs.get("target_unit_ids")),
@@ -617,6 +622,33 @@ class DeterministicEventLog:
         }
         if max_distance_value is not None:
             payload["max_distance"] = max_distance_value
+        if charge_roll_value is not None:
+            payload["charge_roll"] = charge_roll_value
+        for key in (
+            "declaration_range_limit",
+            "minimum_target_distance",
+            "maximum_target_distance",
+            "required_charge_distance_estimate",
+        ):
+            value = kwargs.get(key)
+            if value in (None, ""):
+                continue
+            try:
+                payload[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+        if "within_declaration_range" in kwargs:
+            payload["within_declaration_range"] = bool(kwargs.get("within_declaration_range"))
+        for key in ("failure_stage", "solver_failure_reason"):
+            value = str(kwargs.get(key) or "").strip()
+            if value:
+                payload[key] = value
+        target_distances = self._diagnostic_rows(kwargs.get("target_distances"))
+        if target_distances:
+            payload["target_distances"] = target_distances
+        declaration_target_distances = self._diagnostic_rows(kwargs.get("declaration_target_distances"))
+        if declaration_target_distances:
+            payload["declaration_target_distances"] = declaration_target_distances
         self.record("charge_move_failed", actor_id=payload.get("unit_id"), payload=payload, validate_payload=True)
 
     def _on_unit_shooting_resolved(self, **kwargs: Any) -> None:

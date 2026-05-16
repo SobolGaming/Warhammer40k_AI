@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Iterable, Sequence
 
 from ..decision_dispatcher import register_decision_handler
+from ..charge_diagnostics import charge_failure_diagnostics
 from ..decision_kinds import (
     DECISION_DISEMBARK,
     DECISION_EMBARK,
@@ -1540,6 +1541,30 @@ def _resolve_charge_targets(game: object, ctx: dict | None) -> list[object]:
     return resolved
 
 
+def _charge_target_ids_for_move(ctx: dict | None, result_payload: dict | None = None) -> list[str]:
+    payload = dict(result_payload or {})
+    context = dict(ctx or {})
+    target_ids = [
+        str(value or "").strip()
+        for value in list(payload.get("target_unit_ids", []) or [])
+        if str(value or "").strip()
+    ]
+    if not target_ids:
+        target_ids = [
+            str(value or "").strip()
+            for value in list(context.get("target_unit_ids", []) or [])
+            if str(value or "").strip()
+        ]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for target_id in target_ids:
+        if target_id in seen:
+            continue
+        seen.add(target_id)
+        ordered.append(target_id)
+    return ordered
+
+
 @profiled_section("movement.payload_validation")
 def validate_move_unit_payload(
     game: object,
@@ -1852,7 +1877,9 @@ def validate_move_unit_payload(
     if surge_move_errors:
         return surge_move_errors
     if movement_type == "charge":
-        target_units = _resolve_charge_targets(game, ctx)
+        charge_ctx = dict(ctx)
+        charge_ctx["target_unit_ids"] = _charge_target_ids_for_move(ctx, resolved_payload)
+        target_units = _resolve_charge_targets(game, charge_ctx)
         if not target_units:
             return ("Move unit: charge movement requires declared target_unit_ids.",)
         game_map = getattr(game, "map", None)
@@ -2981,15 +3008,43 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 or result_payload.get("reason", "")
                 or "charge_move_skipped"
             )
+            target_units = [
+                target
+                for target in (get_unit(game, target_unit_id) for target_unit_id in target_unit_ids)
+                if target is not None
+            ]
+            failure_diagnostics = charge_failure_diagnostics(
+                getattr(game, "map", None),
+                unit,
+                target_units,
+                max_distance=ctx.get("max_distance"),
+                solver_failure_reason=reason,
+            )
+            declaration_target_distances = list(ctx.get("charge_declaration_target_distances", []) or [])
+            if declaration_target_distances:
+                failure_diagnostics["declaration_target_distances"] = declaration_target_distances
+            declaration_range_limit = failure_diagnostics.get(
+                "declaration_range_limit",
+                ctx.get("charge_declaration_range_limit"),
+            )
+            if declaration_range_limit is not None:
+                failure_diagnostics["declaration_range_limit"] = declaration_range_limit
+            diagnostic_reason = str(failure_diagnostics.pop("diagnostic_reason", "") or "")
+            if reason != "no_legal_charge_move":
+                failure_diagnostics.pop("failure_stage", None)
+            event_reason = diagnostic_reason if reason == "no_legal_charge_move" and diagnostic_reason else reason
+            if event_reason != reason:
+                failure_diagnostics["solver_failure_reason"] = reason
             event_system = getattr(game, "event_system", None)
             if event_system is not None:
                 event_system.publish(
                     "charge_move_failed",
                     unit=unit,
                     target_unit_ids=target_unit_ids,
-                    reason=reason,
+                    reason=event_reason,
                     max_distance=ctx.get("max_distance"),
                     movement_type="charge",
+                    **failure_diagnostics,
                 )
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
@@ -3282,9 +3337,22 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         finalize_charge = getattr(game, "_finalize_successful_charge_move", None)
         if not callable(finalize_charge):
             raise RuntimeError("Move unit: game missing _finalize_successful_charge_move().")
-        target_units = _resolve_charge_targets(game, ctx)
+        charge_target_ids = _charge_target_ids_for_move(ctx, result_payload)
+        charge_ctx = dict(ctx)
+        charge_ctx["target_unit_ids"] = charge_target_ids
+        target_units = _resolve_charge_targets(game, charge_ctx)
         if not target_units:
             raise RuntimeError("Move unit: charge movement requires declared targets.")
+        round_state = getattr(unit, "round_state", None)
+        if round_state is not None:
+            round_state.charge_move_target_ids = set(charge_target_ids)
+        phase_charge_targets = getattr(game, "phase_charge_targets", None)
+        charger_id = str(get_entity_id(unit) or "")
+        if isinstance(phase_charge_targets, dict) and charger_id:
+            for target_id in list(charge_target_ids or []):
+                chargers = phase_charge_targets.get(target_id, set()) or set()
+                chargers.add(charger_id)
+                phase_charge_targets[target_id] = chargers
         finalize_charge(
             unit,
             target_units,

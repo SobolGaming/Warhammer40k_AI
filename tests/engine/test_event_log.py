@@ -241,8 +241,30 @@ def test_charge_move_failed_event_logged():
         "charge_move_failed",
         unit=unit,
         target_unit_ids=["target-a", "target-b"],
-        reason="no_legal_charge_move",
+        reason="charge_roll_insufficient_by_distance",
         max_distance=7,
+        charge_roll=7,
+        declaration_range_limit=12,
+        minimum_target_distance=9.2,
+        maximum_target_distance=10.5,
+        required_charge_distance_estimate=9.5,
+        within_declaration_range=True,
+        failure_stage="charge_roll_distance",
+        solver_failure_reason="no_legal_charge_move",
+        target_distances=[
+            {
+                "target_unit_id": "target-a",
+                "distance": 9.2,
+                "within_declaration_range": True,
+                "required_charge_distance_estimate": 8.2,
+            },
+            {
+                "target_unit_id": "target-b",
+                "distance": 10.5,
+                "within_declaration_range": True,
+                "required_charge_distance_estimate": 9.5,
+            },
+        ],
         movement_type="charge",
     )
 
@@ -251,8 +273,17 @@ def test_charge_move_failed_event_logged():
     payload = events[-1].payload
     assert payload["unit_id"] == "charger"
     assert payload["target_unit_ids"] == ["target-a", "target-b"]
-    assert payload["reason"] == "no_legal_charge_move"
+    assert payload["reason"] == "charge_roll_insufficient_by_distance"
     assert payload["max_distance"] == 7.0
+    assert payload["charge_roll"] == 7.0
+    assert payload["declaration_range_limit"] == 12.0
+    assert payload["minimum_target_distance"] == 9.2
+    assert payload["maximum_target_distance"] == 10.5
+    assert payload["required_charge_distance_estimate"] == 9.5
+    assert payload["within_declaration_range"] is True
+    assert payload["failure_stage"] == "charge_roll_distance"
+    assert payload["solver_failure_reason"] == "no_legal_charge_move"
+    assert payload["target_distances"][0]["target_unit_id"] == "target-a"
     assert payload["movement_type"] == "charge"
 
 
@@ -306,7 +337,10 @@ def test_skipped_charge_move_application_logs_failed_charge_move():
     game = Game(Battlefield(width=60, height=44), players=[])
     game.turn = 1
     unit = SimpleNamespace(id="charger", models=[])
+    target = SimpleNamespace(id="target", models=[])
     game.entity_registry.register(unit, kind="unit")
+    game.entity_registry.register(target, kind="unit")
+    game.map.get_distance_between_units = lambda _unit, _target: 9.5
     skip_option = DecisionOption.create(
         "Skip",
         payload={"unit_id": "charger", "movement_type": "charge", "action": "skip"},
@@ -327,7 +361,7 @@ def test_skipped_charge_move_application_logs_failed_charge_move():
         decision_id=request.decision_id,
         player_id=None,
         option_id=skip_option.option_id,
-        payload={},
+        payload={"failure_reason": "no_legal_charge_move"},
     )
 
     _apply_move_unit(game, request, result)
@@ -337,8 +371,22 @@ def test_skipped_charge_move_application_logs_failed_charge_move():
     payload = events[-1].payload
     assert payload["unit_id"] == "charger"
     assert payload["target_unit_ids"] == ["target"]
-    assert payload["reason"] == "charge_move_skipped"
+    assert payload["reason"] == "charge_roll_insufficient_by_distance"
+    assert payload["solver_failure_reason"] == "no_legal_charge_move"
     assert payload["max_distance"] == 7.0
+    assert payload["charge_roll"] == 7.0
+    assert payload["within_declaration_range"] is True
+    assert payload["failure_stage"] == "charge_roll_distance"
+    assert payload["minimum_target_distance"] == 9.5
+    assert payload["required_charge_distance_estimate"] == 8.5
+    assert payload["target_distances"] == [
+        {
+            "distance": 9.5,
+            "required_charge_distance_estimate": 8.5,
+            "target_unit_id": "target",
+            "within_declaration_range": True,
+        }
+    ]
 
 
 def test_resolve_coherency_application_stamps_removal_context():

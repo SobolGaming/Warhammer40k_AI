@@ -135,27 +135,46 @@ class _UnitStub:
     def is_in_reserves(self) -> bool:
         return False
 
+    def _charge_distance_to(self, target, game) -> float | None:
+        distance_between_units = getattr(getattr(game, "map", None), "get_distance_between_units", None)
+        if not callable(distance_between_units):
+            return None
+        try:
+            return float(distance_between_units(self, target))
+        except (AttributeError, TypeError, ValueError):
+            return None
+
     def can_declare_charge(self, _game, *, out_of_turn: bool = False) -> bool:
         del out_of_turn
-        return bool(self._charge_targets)
+        for target in list(self._charge_targets or []):
+            distance = self._charge_distance_to(target, _game)
+            if distance is not None and distance <= 12.0 + 1e-6:
+                return True
+        return False
 
     def can_declare_charge_against(self, target, _game, *, out_of_turn: bool = False) -> bool:
         del out_of_turn
-        return target in self._charge_targets
+        if target not in self._charge_targets:
+            return False
+        distance = self._charge_distance_to(target, _game)
+        return bool(distance is not None and distance <= 12.0 + 1e-6)
 
     def validate_charge_end_state(self, targets, _game_map):
         return (bool(targets), "")
 
 
 class _MapStub:
-    def __init__(self, enemy_units) -> None:
+    def __init__(self, enemy_units, *, distances=None) -> None:
         self._enemy_units = list(enemy_units or [])
+        self._distances = dict(distances or {})
 
     def get_enemy_units(self, _unit):
         return list(self._enemy_units)
 
-    def get_distance_between_units(self, _lhs, _rhs):
-        return 1.0
+    def get_distance_between_units(self, lhs, rhs):
+        lhs_id = str(getattr(lhs, "id", "") or "")
+        rhs_id = str(getattr(rhs, "id", "") or "")
+        return float(self._distances.get((lhs_id, rhs_id), self._distances.get((rhs_id, lhs_id), 1.0)))
 
 
 class _RegistryStub:
@@ -168,13 +187,13 @@ class _RegistryStub:
 
 
 class _FlowGame(GamePhaseHandlersMixin):
-    def __init__(self, *, phase_name: str, unit: _UnitStub, enemy_units=None) -> None:
+    def __init__(self, *, phase_name: str, unit: _UnitStub, enemy_units=None, distances=None) -> None:
         self.phase = SimpleNamespace(name=phase_name)
         self.turn = 2
         self.is_authoritative = True
         self.decision_queue = _DecisionQueueStub()
         self.queued_requests: list[DecisionRequest] = []
-        self.map = _MapStub(enemy_units or [])
+        self.map = _MapStub(enemy_units or [], distances=distances)
         registry_items = list(getattr(unit.parent_army, "units", []) or [unit])
         registry_items.extend(list(enemy_units or []))
         self.entity_registry = _RegistryStub(registry_items)
@@ -377,6 +396,26 @@ def test_charge_select_unit_resolution_queues_declare_charge_request() -> None:
     assert queued.context["unit_id"] == unit.id
 
 
+def test_charge_declaration_request_excludes_targets_beyond_twelve_inches() -> None:
+    _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
+    game = _FlowGame(
+        phase_name="CHARGE_PHASE",
+        unit=unit,
+        enemy_units=[enemy],
+        distances={(unit.id, enemy.id): 12.001},
+    )
+
+    request = build_declare_charge_request(
+        game,
+        unit,
+        player_id="player-1",
+        out_of_turn=False,
+        context={"phase_name": "CHARGE_PHASE", "phase_step": "DECLARE_CHARGES"},
+    )
+
+    assert request is None
+
+
 def test_charge_select_unit_resolution_queues_charge_move_when_roll_already_resolved() -> None:
     _player, _army, unit, enemy = _build_players_with_unit(charge_targets=True)
     unit.round_state.charge_roll = 8
@@ -405,6 +444,15 @@ def test_charge_select_unit_resolution_queues_charge_move_when_roll_already_reso
     assert queued.decision_type == DECISION_MOVE_UNIT
     assert queued.context["movement_type"] == "charge"
     assert queued.context["target_unit_ids"] == [enemy.id]
+    assert queued.context["charge_declaration_range_limit"] == 12.0
+    assert queued.context["charge_declaration_target_distances"] == [
+        {
+            "target_unit_id": enemy.id,
+            "distance": 1.0,
+            "within_declaration_range": True,
+            "required_charge_distance_estimate": 0.0,
+        }
+    ]
 
 
 def test_charge_move_target_resolution_falls_back_to_player_armies() -> None:
@@ -437,6 +485,7 @@ def test_charge_move_target_resolution_falls_back_to_player_armies() -> None:
     assert queued.decision_type == DECISION_MOVE_UNIT
     assert queued.context["movement_type"] == "charge"
     assert queued.context["target_unit_ids"] == [enemy.id]
+    assert queued.context["charge_declaration_target_distances"][0]["within_declaration_range"] is True
 
 
 def test_charge_followup_queues_charge_move_request_after_declaration() -> None:

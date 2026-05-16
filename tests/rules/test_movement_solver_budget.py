@@ -75,10 +75,21 @@ class _UnitStub:
     def get_parent_army(self):
         return self.parent_army
 
+    def can_declare_charge_against(self, target, game, *, out_of_turn: bool = False) -> bool:
+        del out_of_turn
+        return float(game.map.get_distance_between_units(self, target)) <= 12.0 + 1e-6
+
     def validate_charge_end_state(self, target_units, game_map) -> tuple[bool, str]:
+        target_ids = {str(getattr(target_unit, "id", "") or "") for target_unit in list(target_units or [])}
         for target_unit in list(target_units or []):
             if not game_map.is_within_engagement_range(self, target_unit):
                 return False, "not in engagement range"
+        for enemy in list(game_map.get_enemy_units(self) or []):
+            enemy_id = str(getattr(enemy, "id", "") or "")
+            if enemy_id in target_ids:
+                continue
+            if game_map.is_within_engagement_range(self, enemy):
+                return False, "in engagement range of non-target"
         return True, ""
 
 
@@ -91,12 +102,28 @@ class _PlayerStub:
 
 
 class _MapStub:
-    @staticmethod
-    def get_height_at_point(_x: float, _y: float) -> float:
+    def __init__(self) -> None:
+        self.units = []
+
+    def get_height_at_point(self, _x: float, _y: float) -> float:
         return 0.0
 
-    @staticmethod
-    def is_within_engagement_range(lhs, rhs) -> bool:
+    def get_enemy_units(self, unit) -> list[object]:
+        own_army = getattr(unit, "parent_army", None)
+        return [
+            candidate
+            for candidate in list(self.units or [])
+            if candidate is not unit and getattr(candidate, "parent_army", None) is not own_army
+        ]
+
+    def get_distance_between_units(self, lhs, rhs) -> float:
+        lhs_pos = lhs.models[0].get_location()
+        rhs_pos = rhs.models[0].get_location()
+        dx = float(lhs_pos[0]) - float(rhs_pos[0])
+        dy = float(lhs_pos[1]) - float(rhs_pos[1])
+        return float((dx * dx + dy * dy) ** 0.5)
+
+    def is_within_engagement_range(self, lhs, rhs) -> bool:
         for lhs_model in list(getattr(lhs, "models", []) or []):
             lhs_pos = lhs_model.get_location()
             for rhs_model in list(getattr(rhs, "models", []) or []):
@@ -356,7 +383,10 @@ def test_move_solver_generates_targeted_charge_candidate_reaching_engagement_ran
     assert len(model_positions) == 1
     position = list(model_positions[0].get("position", []) or [])
     assert len(position) >= 2
-    assert abs(float(position[0]) - 10.0) <= 1e-6
+    assert game.map.is_within_engagement_range(
+        _UnitStub("unit:moved", [_ModelStub("model:moved", x=float(position[0]), y=float(position[1]), melee=True, ranged=False)]),
+        enemy_unit,
+    )
     assert float(metadata.get("distance_to_enemy_delta", 0.0) or 0.0) > 0.0
 
 
@@ -414,6 +444,124 @@ def test_move_solver_charge_prefers_heuristic_endpoint_before_routed_search() ->
     confirm_candidate = next(candidate for candidate in candidates if dict(candidate.params or {}).get("action") == "confirm")
     metadata = dict(confirm_candidate.metadata or {})
     assert metadata.get("candidate_kind") == "charge"
+    assert metadata.get("candidate_source") == "heuristic_endpoint"
+
+
+def test_move_solver_charge_expands_targets_for_legal_engaged_non_target() -> None:
+    mover_model = _ModelStub("model:mover", x=0.0, y=0.0, melee=True, ranged=False)
+    enemy_model = _ModelStub("model:enemy", x=10.0, y=0.0, melee=False, ranged=True)
+    nearby_model = _ModelStub("model:nearby", x=10.0, y=0.0, melee=False, ranged=True)
+    mover_army = _ArmyStub([])
+    enemy_army = _ArmyStub([])
+    mover_unit = _UnitStub("unit:mover", [mover_model], army=mover_army)
+    enemy_unit = _UnitStub("unit:enemy", [enemy_model], army=enemy_army)
+    nearby_unit = _UnitStub("unit:nearby", [nearby_model], army=enemy_army)
+    mover_army.units = [mover_unit]
+    enemy_army.units = [enemy_unit, nearby_unit]
+    game_map = _MapStub()
+    game_map.units = [mover_unit, enemy_unit, nearby_unit]
+    game = _LiveGameStub(
+        time_manager=TimeManager(),
+        path_witness_store=PathWitnessStore(),
+        players=[_PlayerStub(mover_army), _PlayerStub(enemy_army)],
+        map=game_map,
+        objectives=[],
+    )
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge unit",
+        player_id="player-1",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": "unit:mover",
+            "movement_type": "charge",
+            "max_distance": 12.0,
+            "target_unit_ids": ["unit:enemy"],
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    candidates, mask, _wall_clock_ms, fallback_mode = generate_move_unit_candidates(game, request, intent)
+
+    assert fallback_mode is False
+    assert mask == [True]
+    assert len(candidates) == 1
+    params = dict(candidates[0].params or {})
+    assert params.get("target_unit_ids") == ["unit:enemy", "unit:nearby"]
+    assert dict(candidates[0].metadata or {}).get("candidate_source") in {"heuristic_endpoint", "routed_destination"}
+
+
+def test_move_solver_time_budgeted_charge_checks_later_heuristic_endpoint() -> None:
+    mover_model = _ModelStub("model:mover", x=0.0, y=0.0, melee=True, ranged=False)
+    enemy_model = _ModelStub("model:enemy", x=11.0, y=0.0, melee=False, ranged=True)
+    mover_army = _ArmyStub([])
+    enemy_army = _ArmyStub([])
+    mover_unit = _UnitStub("unit:mover", [mover_model], army=mover_army)
+    enemy_unit = _UnitStub("unit:enemy", [enemy_model], army=enemy_army)
+    mover_army.units = [mover_unit]
+    enemy_army.units = [enemy_unit]
+    game = _LiveGameStub(
+        time_manager=TimeManager(),
+        path_witness_store=PathWitnessStore(),
+        players=[_PlayerStub(mover_army), _PlayerStub(enemy_army)],
+        map=_MapStub(),
+        objectives=[],
+    )
+
+    def _should_not_be_called(*_args, **_kwargs):
+        raise AssertionError("Budgeted charge should find the bounded heuristic endpoint.")
+
+    game._find_charge_destination = _should_not_be_called
+    game._iter_charge_destination_candidates = lambda *_args, **_kwargs: [
+        (0.0, 5.0, 0.0),
+        (1.0, 5.0, 0.0),
+        (2.0, 5.0, 0.0),
+        (3.0, 5.0, 0.0),
+        (4.0, 5.0, 0.0),
+        (5.0, 5.0, 0.0),
+        (6.0, 5.0, 0.0),
+        (10.0, 0.0, 0.0),
+    ]
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Charge unit",
+        player_id="player-1",
+        options=[
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": "unit:mover", "movement_type": "charge", "action": "skip"},
+            ),
+        ],
+        context={
+            "unit_id": "unit:mover",
+            "movement_type": "charge",
+            "max_distance": 12.0,
+            "target_unit_ids": ["unit:enemy"],
+            "time_budget_ms": 25,
+        },
+    )
+    intent = MovementIntent.from_context(request.context)
+
+    candidates, mask, wall_clock_ms, fallback_mode = generate_move_unit_candidates(game, request, intent)
+
+    assert fallback_mode is False
+    assert wall_clock_ms >= 0
+    assert mask == [True]
+    assert [dict(candidate.params or {}).get("action") for candidate in candidates] == ["confirm"]
+    metadata = dict(candidates[0].metadata or {})
     assert metadata.get("candidate_source") == "heuristic_endpoint"
 
 

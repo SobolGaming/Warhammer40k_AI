@@ -228,6 +228,66 @@ def _resolve_target_units(game: object, target_unit_ids: list[str]) -> list[obje
     return units
 
 
+def _attached_root(unit: object) -> object:
+    getter = getattr(unit, "get_attached_unit_root", None)
+    if callable(getter):
+        root = getter()
+        if root is not None:
+            return root
+    return unit
+
+
+def _charge_legal_enemy_roots(game: object | None, unit: object, game_map: object) -> dict[str, object]:
+    enemy_units = getattr(game_map, "get_enemy_units", None)
+    can_target = getattr(unit, "can_declare_charge_against", None)
+    if not callable(enemy_units) or not callable(can_target):
+        return {}
+
+    legal: dict[str, object] = {}
+    for enemy in list(enemy_units(unit) or []):
+        if enemy is None:
+            continue
+        root = _attached_root(enemy)
+        root_id = _entity_text_id(root)
+        if not root_id or root_id in legal or not _is_alive(root):
+            continue
+        try:
+            is_legal = bool(can_target(root, game, out_of_turn=True))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            is_legal = False
+        if is_legal:
+            legal[root_id] = root
+    return legal
+
+
+def _charge_targets_engaged_at_endpoint(
+    unit: object,
+    *,
+    target_units: list[object],
+    legal_enemy_roots: dict[str, object],
+    game_map: object,
+) -> list[object]:
+    targets_by_id: dict[str, object] = {}
+    for target in list(target_units or []):
+        if target is None:
+            continue
+        root = _attached_root(target)
+        root_id = _entity_text_id(root)
+        if root_id and root_id not in targets_by_id:
+            targets_by_id[root_id] = root
+
+    is_engaged = getattr(game_map, "is_within_engagement_range", None)
+    if not callable(is_engaged):
+        return list(targets_by_id.values())
+
+    for enemy_id, enemy in sorted(legal_enemy_roots.items(), key=lambda item: item[0]):
+        if enemy_id in targets_by_id:
+            continue
+        if bool(is_engaged(unit, enemy)):
+            targets_by_id[enemy_id] = enemy
+    return list(targets_by_id.values())
+
+
 def _apply_positions_to_unit(unit: object, model_positions: list[dict[str, Any]]) -> None:
     models_by_id = {
         str(getattr(model, "id", "") or getattr(model, "_id", "") or ""): model
@@ -251,17 +311,51 @@ def _charge_end_state_valid(
     model_positions: list[dict[str, Any]],
     target_units: list[object],
     game_map: object,
+    game: object | None = None,
 ) -> bool:
+    valid, _effective_targets = _charge_end_state_with_effective_targets(
+        unit,
+        model_positions=model_positions,
+        target_units=target_units,
+        game_map=game_map,
+        game=game,
+    )
+    return bool(valid)
+
+
+def _charge_end_state_with_effective_targets(
+    unit: object,
+    *,
+    model_positions: list[dict[str, Any]],
+    target_units: list[object],
+    game_map: object,
+    game: object | None = None,
+) -> tuple[bool, list[object]]:
+    original_targets = [_attached_root(target) for target in list(target_units or []) if target is not None]
     validate_charge_end_state = getattr(unit, "validate_charge_end_state", None)
     if not callable(validate_charge_end_state):
-        return False
+        return False, original_targets
+    legal_enemy_roots = _charge_legal_enemy_roots(game, unit, game_map) if game is not None else {}
     snapshot = current_model_positions(unit)
     _apply_positions_to_unit(unit, model_positions)
     try:
-        ok, _reason = validate_charge_end_state(target_units, game_map)
+        ok, _reason = validate_charge_end_state(original_targets, game_map)
+        if bool(ok):
+            return True, original_targets
+        if legal_enemy_roots:
+            expanded_targets = _charge_targets_engaged_at_endpoint(
+                unit,
+                target_units=original_targets,
+                legal_enemy_roots=legal_enemy_roots,
+                game_map=game_map,
+            )
+            if len(expanded_targets) > len(original_targets):
+                expanded_ok, _expanded_reason = validate_charge_end_state(expanded_targets, game_map)
+                if bool(expanded_ok):
+                    return True, expanded_targets
     finally:
         _apply_positions_to_unit(unit, snapshot)
-    return bool(ok)
+    return False, original_targets
 
 
 def _charge_pair_sort_key(item: tuple[float, object, object, object]) -> tuple[float, str, str, str]:
@@ -344,7 +438,7 @@ def _iter_charge_destination_candidates(
     fallback_z = float(target_pos[2])
     for gap in (1.0, 0.5, 0.1):
         center_distance = float(charging_radius + target_radius + gap)
-        for angle_offset in (0, 30, -30, 60, -60, 90, -90, 180):
+        for angle_offset in (0, 15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180):
             radians = primary_angle + math.radians(float(angle_offset))
             x = float(target_pos[0]) + math.cos(radians) * center_distance
             y = float(target_pos[1]) + math.sin(radians) * center_distance
@@ -361,6 +455,7 @@ def _build_charge_candidate_action(
     start_positions: list[dict[str, Any]],
     model_positions: list[dict[str, Any]],
     target_unit: object,
+    target_units: list[object],
     rules_bundle_id: str,
     intent: MovementIntent,
     candidate_source: str,
@@ -369,6 +464,13 @@ def _build_charge_candidate_action(
     confirm_payload = dict(getattr(confirm_option, "payload", {}) or {})
     confirm_payload.pop("action_id", None)
     confirm_payload["model_positions"] = model_positions
+    effective_target_ids = [
+        _entity_text_id(target)
+        for target in list(target_units or [])
+        if target is not None and _entity_text_id(target)
+    ]
+    if effective_target_ids:
+        confirm_payload["target_unit_ids"] = effective_target_ids
     witness = build_model_path_witness_for_unit(
         unit=unit,
         model_positions=model_positions,
@@ -431,8 +533,8 @@ def _heuristic_charge_candidate(
     intent: MovementIntent,
     budget: WorkBudget | None,
 ) -> CandidateAction | None:
-    max_pairs = 1 if budget is not None else 2
-    max_candidates_per_pair = 6 if budget is not None else 12
+    max_pairs = 4 if budget is not None else 4
+    max_candidates_per_pair = 48 if budget is not None else 48
     pairs = _charge_closest_pairs(unit, target_units, limit=max_pairs)
     if not pairs:
         return None
@@ -480,11 +582,12 @@ def _heuristic_charge_candidate(
             if not model_positions:
                 continue
             with profile_section("movement.charge_validate"):
-                charge_end_valid = _charge_end_state_valid(
+                charge_end_valid, effective_target_units = _charge_end_state_with_effective_targets(
                     unit,
                     model_positions=model_positions,
                     target_units=target_units,
                     game_map=getattr(game, "map", None),
+                    game=game,
                 )
             if not charge_end_valid:
                 continue
@@ -496,6 +599,7 @@ def _heuristic_charge_candidate(
                 start_positions=start_positions,
                 model_positions=model_positions,
                 target_unit=target_unit,
+                target_units=effective_target_units,
                 rules_bundle_id=rules_bundle_id,
                 intent=intent,
                 candidate_source="heuristic_endpoint",
@@ -684,12 +788,14 @@ def _charge_candidate(
         )
         if not model_positions:
             continue
-        if not _charge_end_state_valid(
+        charge_end_valid, effective_target_units = _charge_end_state_with_effective_targets(
             unit,
             model_positions=model_positions,
             target_units=target_units,
             game_map=game_map,
-        ):
+            game=game,
+        )
+        if not charge_end_valid:
             continue
         return _build_charge_candidate_action(
             game=game,
@@ -699,6 +805,7 @@ def _charge_candidate(
             start_positions=start_positions,
             model_positions=model_positions,
             target_unit=target_unit,
+            target_units=effective_target_units,
             rules_bundle_id=rules_bundle_id,
             intent=intent,
             candidate_source="routed_destination",

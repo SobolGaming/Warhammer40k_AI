@@ -109,6 +109,7 @@ Events include:
 - deterministic payload (IDs + parameters)
 - optional derived text for UI display (not used for state)
 - `command_rejected` payloads include validator `errors`; rejected `RESOLVE_DECISION` events also include compact decision diagnostics (`decision_id`, `option_id`, `decision_type`, optional candidate probe ids/kinds, `payload_keys`, and counts/checksums for large arrays such as `model_positions` or `declarations`).
+- `charge_move_failed` payloads include the declared target IDs, charge roll/max distance, current and declaration-time target distances when available, a `within_declaration_range` boolean for the 12" declaration gate, and a `failure_stage` classifier (`declaration_range`, `charge_roll_distance`, `endpoint_geometry`, or `target_distance_unknown`).
 
 Note: The deterministic event log is separate from the UI EventSystem; UI-only signals
 are not persisted or replayed.

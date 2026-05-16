@@ -177,7 +177,7 @@ class ChargeService:
 
         charging_radius = self._charge_model_base_radius(charging_model)
         target_radius = self._charge_model_base_radius(target_model)
-        angle_offsets = (0, 30, -30, 60, -60, 90, -90, 180)
+        angle_offsets = (0, 15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180)
         engagement_gaps = (1.0, 0.5, 0.1)
         seen: set[tuple[float, float, float]] = set()
         height_at = getattr(game_map, "get_height_at_point", None)

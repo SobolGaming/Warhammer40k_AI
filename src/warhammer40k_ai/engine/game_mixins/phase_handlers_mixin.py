@@ -960,6 +960,19 @@ class GamePhaseHandlersMixin:
         if max_distance <= 0.0:
             return None
         from ..decision_requests import queue_move_unit_request
+        from ..charge_diagnostics import CHARGE_DECLARATION_RANGE_INCHES, charge_target_distance_rows
+
+        target_distance_rows = charge_target_distance_rows(getattr(self, "map", None), unit, targets)
+        context = {
+            "phase_name": "CHARGE_PHASE",
+            "phase_step": "DECLARE_CHARGES",
+            "selection_purpose": "ACTIVATE_CHARGING_UNIT",
+            "target_unit_ids": [str(get_entity_id(target) or "") for target in list(targets or []) if get_entity_id(target)],
+            "count_as_charged": bool(count_as_charged),
+            "charge_declaration_range_limit": CHARGE_DECLARATION_RANGE_INCHES,
+        }
+        if target_distance_rows:
+            context["charge_declaration_target_distances"] = target_distance_rows
 
         return queue_move_unit_request(
             self,
@@ -968,13 +981,7 @@ class GamePhaseHandlersMixin:
             player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
             max_distance=max_distance,
             allow_skip=True,
-            context={
-                "phase_name": "CHARGE_PHASE",
-                "phase_step": "DECLARE_CHARGES",
-                "selection_purpose": "ACTIVATE_CHARGING_UNIT",
-                "target_unit_ids": [str(get_entity_id(target) or "") for target in list(targets or []) if get_entity_id(target)],
-                "count_as_charged": bool(count_as_charged),
-            },
+            context=context,
         )
 
     def _resume_pending_fight_unit_selection(self, *, unit_id: str) -> None:
