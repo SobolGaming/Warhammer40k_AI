@@ -2,6 +2,11 @@ import pytest
 from typing import List
 
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory
+from warhammer40k_ai.battlefield.terrain_visibility import (
+    TerrainVisibilityRecord,
+    VisibilityFrameContext,
+    get_visibility_frame_context,
+)
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.utility.model_base import Base, BaseType
@@ -30,12 +35,21 @@ class MockDatasheet:
         self.loadout = "This model is equipped with: nothing"
 
 
-def create_unit(name: str, x: float, y: float, z: float = 0.0, faction: str = "A", base: Base = None) -> Unit:
-    ds = MockDatasheet(name)
+def create_unit(
+    name: str,
+    x: float,
+    y: float,
+    z: float = 0.0,
+    faction: str = "A",
+    base: Base = None,
+    model_count: int = 1,
+) -> Unit:
+    ds = MockDatasheet(name, model_count=model_count)
     unit = Unit(ds)
     if base is not None:
         unit.models[0].model_base = base
-    unit.models[0].set_location(x, y, z, 0.0)
+    for index, model in enumerate(unit.models):
+        model.set_location(x + index * 1.5, y, z, 0.0)
     unit.deployed = True
     unit.faction = faction
     return unit
@@ -69,15 +83,19 @@ class TestLineOfSight:
         attach_to_armies(self.map, [shooter], [target])
 
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
-        first_cache_size = len(getattr(self.map, "_shooting_los_cache", {}))
+        context = get_visibility_frame_context(self.map)
+        first_cache_size = len(context.los_cache)
         assert first_cache_size == 1
 
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
-        assert len(getattr(self.map, "_shooting_los_cache", {})) == first_cache_size
+        assert get_visibility_frame_context(self.map) is context
+        assert len(context.los_cache) == first_cache_size
 
         target.models[0].set_location(21.0, 10.0, 0.0, 0.0)
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
-        assert len(getattr(self.map, "_shooting_los_cache", {})) == first_cache_size + 1
+        moved_context = get_visibility_frame_context(self.map)
+        assert moved_context is not context
+        assert len(moved_context.los_cache) == 1
 
     def test_enemy_model_blocks_los(self):
         shooter = create_unit("Shooter", 10.0, 10.0)
@@ -238,3 +256,78 @@ class TestLineOfSight:
 
         shooter.models[0].set_location(20.0, 12.0, 0.0, 0.0)
         assert not shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+
+    def test_unit_los_stops_after_first_visible_target_model(self, monkeypatch):
+        shooter = create_unit("Shooter", 10.0, 10.0)
+        target = create_unit("Target", 20.0, 10.0, faction="B", model_count=2)
+        target.models[0].set_location(20.0, 10.0, 0.0, 0.0)
+        target.models[1].set_location(35.0, 10.0, 0.0, 0.0)
+        attach_to_armies(self.map, [shooter], [target])
+
+        seen_target_ids = []
+        original = VisibilityFrameContext.can_model_see_model
+
+        def counting_can_model_see_model(self, shooter_model, target_model, **kwargs):
+            seen_target_ids.append(target_model.id)
+            return original(self, shooter_model, target_model, **kwargs)
+
+        monkeypatch.setattr(VisibilityFrameContext, "can_model_see_model", counting_can_model_see_model)
+
+        assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+        assert seen_target_ids == [target.models[0].id]
+
+    def test_segment_blocking_stops_after_first_confirmed_blocker(self, monkeypatch):
+        class BlockingFootprint:
+            bounds = (0.0, 0.0, 10.0, 10.0)
+
+            def intersects(self, _line):
+                return True
+
+        class UnexpectedFootprint:
+            bounds = (0.0, 0.0, 10.0, 10.0)
+
+            def intersects(self, _line):
+                raise AssertionError("segment blocker search should stop after the first blocker")
+
+        context = get_visibility_frame_context(self.map)
+        context.terrain_records = (
+            TerrainVisibilityRecord(
+                stable_id="first",
+                terrain=object(),
+                footprint=BlockingFootprint(),
+                bounds=(0.0, 0.0, 10.0, 10.0),
+                z_bounds=(0.0, 10.0),
+                is_ruins=True,
+                has_walls=True,
+            ),
+            TerrainVisibilityRecord(
+                stable_id="second",
+                terrain=object(),
+                footprint=UnexpectedFootprint(),
+                bounds=(0.0, 0.0, 10.0, 10.0),
+                z_bounds=(0.0, 10.0),
+                is_ruins=True,
+                has_walls=True,
+            ),
+        )
+        def fake_line_candidates(self, _tree, records, _line2d, _p0, _p1):
+            return list(records) if records is self.terrain_records else []
+
+        monkeypatch.setattr(VisibilityFrameContext, "_line_candidates", fake_line_candidates)
+
+        blocked, blocker_id = context.segment_is_blocked(
+            (0.0, 5.0, 1.0),
+            (10.0, 5.0, 1.0),
+            shooter_unit_id="shooter",
+            target_unit_ids=("target",),
+            enemy_unit_ids=("target",),
+            shooter_is_aircraft=False,
+            target_is_aircraft=False,
+            shooter_is_towering=False,
+            shooter_ruins_states=(("first", False, False), ("second", False, False)),
+            target_ruins_states=(("first", False), ("second", False)),
+            ruleset_signature=(False, "", ()),
+        )
+
+        assert blocked is True
+        assert blocker_id == "first"

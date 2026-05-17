@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
 from warhammer40k_ai.engine.game_mixins.reactive_decisions_mixin import GameReactiveDecisionsMixin
 from warhammer40k_ai.engine.game_mixins.missions_scoring_actions_mixin import (
@@ -12,6 +12,7 @@ from warhammer40k_ai.engine.game_mixins.setup_deployment_reserves_mixin import (
 from warhammer40k_ai.engine.game_mixins.shooting_fight_handlers_mixin import (
     GameShootingFightHandlersMixin,
 )
+from warhammer40k_ai.roster.player import Player, PlayerControl
 
 
 EXPECTED_PUBLIC_GAME_CALLABLES = {
@@ -209,6 +210,16 @@ def test_game_facade_is_service_backed() -> None:
     assert callable(getattr(Game, "_ensure_phase_handlers_service", None))
     assert callable(getattr(Game, "_ensure_reactive_rules_service", None))
     assert callable(getattr(Game, "_ensure_shooting_service", None))
+
+
+def test_get_current_player_is_direct_hot_path() -> None:
+    p1 = Player("Player 1", PlayerControl.LOCAL)
+    p2 = Player("Player 2", PlayerControl.LOCAL)
+    game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
+
+    assert "get_current_player" in Game.__dict__
+    assert game.get_current_player.__func__ is Game.__dict__["get_current_player"]
+    assert game.get_current_player() is p1
 
 
 def test_game_facade_line_count_budget() -> None:

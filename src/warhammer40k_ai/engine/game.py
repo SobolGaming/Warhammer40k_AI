@@ -233,6 +233,10 @@ class Game(metaclass=GameFacadeMeta):
     def set_map(self, game_map: Map) -> None:
         self.map = game_map
 
+    def get_current_player(self) -> Player:
+        """Get the current player without reflective service dispatch."""
+        return self.players[self.current_player_index]
+
     def install_decision_providers(self, **providers) -> None:
         self.decision_port.install(providers)
 
@@ -968,4 +972,3 @@ class Game(metaclass=GameFacadeMeta):
     ###########################################################################
     ### Reserves System
     ###########################################################################
-

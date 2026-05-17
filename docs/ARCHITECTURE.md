@@ -118,7 +118,7 @@ Current headless flow:
 - Headless deployment reuses generated placement payloads during validation so candidate generation does not run the same formation search twice for one anchor.
 - Policy orchestration is available through `AIPolicyOrchestrator`: it maps each emitted `DecisionRequest` to a policy-bundle component such as `movement_ranker`, `shooting_ranker`, `fight_ranker`, or `dice_policy`. Optional Tier-1/Tier-2 context can enrich rankers, but the orchestrator only orders already-legal candidates and hands them back to the existing command-resolution path.
 - Detailed headless decision ordering and movement activation audit flow are documented in `docs/AI_POLICY_ORCHESTRATION.md`.
-- Line-of-sight visibility contexts and legacy shooting-mixin LOS checks are cached by model positions, unit visibility flags, blocker positions, hidden/preview state, and terrain signatures. These caches are diagnostic/performance-only and do not change DecisionRecord or replay semantics.
+- Line-of-sight checks share `VisibilityFrameContext`, which caches indexed terrain/model blocker state by terrain, model, and visibility-modifier revisions, then reuses per-model-pair blocker candidate lists across staged LOS rays. The shooting mixin delegates to that service instead of owning a separate LOS implementation, so cache behavior is diagnostic/performance-only and does not change DecisionRecord or replay semantics.
 - Fight-phase pile-in and consolidate now continue through the same authoritative `MOVE_UNIT` pipeline as other movement decisions, with shared planning/validation instead of legacy UI-only movement hooks.
 
 ### 4) Remote + non-headless (server authoritative, UI clients)

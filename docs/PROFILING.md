@@ -69,6 +69,7 @@ Initial section timers cover:
 - `movement.final_pose_validation`
 - `movement.transit_validation`
 - `movement.swept_interactions`
+- `los.frame_context_build`
 - `los.visibility_context`
 - `los.segment_blocked_by_terrain`
 
@@ -76,10 +77,16 @@ When reading deployment/LoS profile output, note that headless deployment valida
 candidate's generated model-position payload across fast deployment validation and Decision API
 validation. Headless deployment also avoids terrain surface-height and strategic-facing calculation
 during search; detailed payload refinement is retained for small units where floor selection can
-change legality. Both terrain-service and legacy shooting-mixin LoS checks are cached for repeated
-checks of the same model pair at the same positions and terrain/blocker state. Section timer call
-counts should therefore be interpreted as cache miss/work counts rather than every high-level
-shooting or deployment policy probe.
+change legality. Shooting and map-facing LoS now share `VisibilityFrameContext`, which caches
+model-to-unit results and reuses per-model-pair STRtree candidate lists across all staged rays at
+the same terrain/model/modifier revision. Per-segment cache support is optional and disabled by
+default because the profiled self-play workload produced near-zero segment-cache reuse.
+
+Visibility value metrics include `los.pair_strtree_candidates`, `los.segment_tests`,
+`los.exact_predicate_calls`, `los.visible_stage.*`, `los.first_blocker_exits`,
+`los.frame_context_cache_hit/miss`, and LOS/optional-segment-cache hit/miss counters. High-frequency
+LOS counters are batched per model-pair before being published to the profiling collector, so their
+`total` column is the authoritative count.
 
 ## Cache Invalidation
 

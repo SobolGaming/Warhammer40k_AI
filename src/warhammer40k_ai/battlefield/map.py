@@ -104,6 +104,9 @@ class Map:
         self.preview_visibility_semantics_enabled = False
         self.preview_visibility_ruleset = ""
         self.state_generation = 0
+        self.terrain_visibility_revision = 0
+        self.model_blocker_revision = 0
+        self.visibility_modifier_revision = 0
         self.objectives = []
         self.deployment_zones = {}
         self.units = []
@@ -111,9 +114,22 @@ class Map:
 
     def bump_state_generation(self, reason: str = "") -> int:
         self.state_generation = int(getattr(self, "state_generation", 0) or 0) + 1
+        reason_key = str(reason or "").strip().lower()
+        if any(token in reason_key for token in ("terrain", "objective")):
+            self.terrain_visibility_revision = int(getattr(self, "terrain_visibility_revision", 0) or 0) + 1
+        if any(token in reason_key for token in ("model", "unit", "wound", "destroyed", "placed", "moved", "deployment")):
+            self.model_blocker_revision = int(getattr(self, "model_blocker_revision", 0) or 0) + 1
+        if any(token in reason_key for token in ("visibility", "detection", "hidden", "preview")):
+            self.visibility_modifier_revision = int(getattr(self, "visibility_modifier_revision", 0) or 0) + 1
         visibility_cache = getattr(self, "_visibility_context_cache", None)
         if hasattr(visibility_cache, "clear"):
             visibility_cache.clear()
+        visibility_frame_cache = getattr(self, "_visibility_frame_context_cache", None)
+        if hasattr(visibility_frame_cache, "clear"):
+            visibility_frame_cache.clear()
+        shooting_los_cache = getattr(self, "_shooting_los_cache", None)
+        if hasattr(shooting_los_cache, "clear"):
+            shooting_los_cache.clear()
         clear_enemy_model_cache(self)
         return int(self.state_generation)
 

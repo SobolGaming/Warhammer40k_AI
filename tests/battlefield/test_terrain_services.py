@@ -181,13 +181,13 @@ def test_visibility_context_reuses_cached_model_pair_geometry(monkeypatch) -> No
     )
     game_map.add_terrain_feature(blocking_feature)
     call_count = {"segments": 0}
-    original = terrain_visibility.segment_blocked_by_terrain_feature
+    original = terrain_visibility.VisibilityFrameContext.segment_is_blocked
 
-    def _counted_segment(*args, **kwargs):
+    def _counted_segment(self, *args, **kwargs):
         call_count["segments"] += 1
-        return original(*args, **kwargs)
+        return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(terrain_visibility, "segment_blocked_by_terrain_feature", _counted_segment)
+    monkeypatch.setattr(terrain_visibility.VisibilityFrameContext, "segment_is_blocked", _counted_segment)
 
     first = game_map.get_visibility_context_for_models(attacker, target_unit.models[0])
     first_call_count = int(call_count["segments"])

@@ -81,7 +81,21 @@ Key rules applied:
   These affect wall blocking and vertical movement costs.
 
 ## Line of sight
-`Map.can_model_see_model` now delegates to `src/warhammer40k_ai/battlefield/terrain_visibility.py`, which keeps the stable map-facing API while moving the sampled LOS logic into a dedicated service.
+`Map.can_model_see_model` and shooting target validation now delegate to
+`src/warhammer40k_ai/battlefield/terrain_visibility.py`, which keeps the stable map-facing
+API while moving sampled LOS logic into a dedicated service.
+
+`VisibilityFrameContext` is the authoritative runtime visibility context. It builds indexed
+terrain, wall, opening, and model-blocker records once per terrain/model/modifier revision. For
+each shooter-model/target-model pair it queries STRtree indexes once using the pair bounds, sorts
+the resulting blocker lists deterministically, and reuses those candidate lists across all staged
+rays. LOS checks try high-probability staged rays first and stop as soon as one legal clear line is
+found; segment blocking stops as soon as the first blocker is confirmed. Per-segment caching remains
+available behind `game_map.enable_visibility_segment_cache`, but it is disabled by default because
+high-level model/unit caches and pair candidate reuse are more effective in self-play profiles.
+
+Map-facing model-to-model visibility preserves the existing terrain/hidden/obscuring semantics for
+ability code. Shooting unit LOS opts into enemy-model blocker checks through the same frame context.
 
 Current ruins-aware LOS behavior remains:
 - The footprint blocks outside-to-outside visibility regardless of openings or height
