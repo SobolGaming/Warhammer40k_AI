@@ -1,0 +1,110 @@
+Leagues of Votann
+Strike Force (2000 points)
+Hearthband
+CHARACTERS
+Arkanyst Evaluator (65 points)
+- 1x Close combat weapon
+1x Transmatter inverter
+Berehk Stornbrow (95 points)
+- 1x Kromlok's Revenge
+1x Warforge Gauntlets
+Buri Aegnirssen (95 points)
+- 1x Autoch-pattern bolt pistol
+1x Bane
+Kahl (65 points)
+- Warlord
+- 1x Autoch-pattern combi-bolter
+1x Mass gauntlet
+1x Teleport Crest
+BATTLELINE
+Hearthkyn Warriors (100 points)
+- 1x Theyn
+- 1x Autoch-pattern bolt pistol
+1x Autoch-pattern bolter
+1x Close combat weapon
+1x Theyn's melee weapon
+1x Weavefield crest
+- 9x Hearthkyn Warrior
+- 9x Autoch-pattern bolt pistol
+5x Autoch-pattern bolter
+9x Close combat weapon
+1x HYLas auto rifle
+1x HYLas rotary cannon
+2x Plasma knife
+DEDICATED TRANSPORTS
+Kapricus Carrier (75 points)
+- 1x Armoured hull
+1x Magna-coil autocannon
+1x Smoke Launcher
+1x Twin magna-coil autocannon
+Sagitaur (90 points)
+- 1x Armoured wheels
+1x MATR autocannon
+1x Twin bolt cannon
+OTHER DATASHEETS
+Brokhyr Thunderkyn (80 points)
+- 3x Brokhyr Thunderkyn
+- 3x Close combat weapon
+3x Graviton blast cannon
+Brokhyr Thunderkyn (80 points)
+- 3x Brokhyr Thunderkyn
+- 3x Close combat weapon
+3x Graviton blast cannon
+Cthonian Beserks (100 points)
+- 5x Cthonian Beserk
+- 5x Concussion maul
+1x Mole grenade launcher
+Cthonian Beserks (100 points)
+- 5x Cthonian Beserk
+- 5x Concussion maul
+1x Mole grenade launcher
+Einhyr Hearthguard (270 points)
+- 1x Hesyr
+- 1x EtaCarn plasma gun
+1x Exoarmour grenade launcher
+1x Graviton hammer
+1x Teleport Crest
+- 9x Einhyr Hearthguard
+- 9x Concussion gauntlet
+9x EtaCarn plasma gun
+9x Exoarmour grenade launcher
+Einhyr Hearthguard (135 points)
+- 1x Hesyr
+- 1x EtaCarn plasma gun
+1x Exoarmour grenade launcher
+1x Graviton hammer
+1x Teleport Crest
+- 4x Einhyr Hearthguard
+- 4x Concussion gauntlet
+4x EtaCarn plasma gun
+4x Exoarmour grenade launcher
+Hekaton Land Fortress (240 points)
+- 1x Armoured wheels
+1x Heavy magna-rail cannon
+1x MATR autocannon
+1x Panspectral Scanner
+2x Twin bolt cannon
+Hekaton Land Fortress (240 points)
+- 1x Armoured wheels
+1x Heavy magna-rail cannon
+1x MATR autocannon
+1x Panspectral Scanner
+2x Twin bolt cannon
+Hernkyn Pioneers (80 points)
+- 3x Hernkyn Pioneer
+- 3x Bolt revolver
+3x Bolt shotgun
+1x HYLas rotary cannon
+3x Magna-coil autocannon
+1x Panspectral Scanner
+3x Plasma knife
+1x Rollbar Searchlight
+Hernkyn Yaegirs (90 points)
+- 1x Yaegir Theyn
+- 1x Bolt shotgun
+1x Close combat weapon
+- 9x Hernkyn Yaegir
+- 1x APM launcher
+7x Bolt shotgun
+9x Close combat weapon
+1x Magna-coil rifle

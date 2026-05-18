@@ -17,24 +17,33 @@ from .army import Army, _assert_supported_faction, get_faction_id_from_name
 from .army_build import ArmyBlueprint, DetachmentSelection, EnhancementAssignment, RosterEntry, ValidatedMuster
 from .army_runtime import apply_validated_muster_to_army
 from .unit_materialization import add_materialized_unit_to_army
+from ..utility.text_normalization import canonical_rules_key
 
 logger = logging.getLogger(__name__)
 
 _SECTION_HEADERS = {
+    "ALLIED UNITS",
+    "ALLIES",
+    "BATTLELINE / INFANTRY",
     "CHARACTER",
     "CHARACTERS",
     "BATTLELINE",
     "DEDICATED TRANSPORTS",
+    "ENHANCEMENT",
+    "ENHANCEMENTS",
+    "FORTIFICATION",
+    "FORTIFICATIONS",
     "OTHER DATASHEETS",
+    "VEHICLES / OTHER UNITS",
 }
 _BULLET_PREFIXES = ("\u2022", "\u25e6", "-", "*")
 
 
 def _find_points_limit(raw_lines: list[str], *, file_path: str) -> int:
     for line in raw_lines:
-        match = re.search(r"\(([\d,]+)\s*points?\)", line, flags=re.IGNORECASE)
+        match = re.search(r"\(([\d,.]+)\s*points?\)", line, flags=re.IGNORECASE)
         if match:
-            return int(match.group(1).replace(",", ""))
+            return int(match.group(1).replace(",", "").replace(".", ""))
     raise ValueError(f"Could not find points limit in army list header: {file_path!r}")
 
 
@@ -87,6 +96,10 @@ def _pact_ally_datasheet_metadata(
     return {}
 
 
+_IMPERIUM_AGENT_PARENT_FACTION_IDS = {"AC", "ADM", "AM", "AS", "GK", "QI", "SM"}
+_GENERIC_DAEMON_PACT_PARENT_FACTION_IDS = {"CSM", "QT"}
+
+
 def _resolve_pact_ally_datasheet(
     waha_helper: WahaHelper,
     unit_name: str,
@@ -95,6 +108,19 @@ def _resolve_pact_ally_datasheet(
     detachment_type: str,
 ) -> tuple[object | None, dict[str, str]]:
     if str(faction_id or "").strip().upper() not in {"WE", "EC"}:
+        primary = str(faction_id or "").strip().upper()
+        if primary in _GENERIC_DAEMON_PACT_PARENT_FACTION_IDS:
+            datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name, faction_id="CD")
+            if datasheet is not None and _datasheet_has_keyword(datasheet, "LEGIONES DAEMONICA"):
+                return (datasheet, {})
+        if primary in _IMPERIUM_AGENT_PARENT_FACTION_IDS:
+            agents_faction_id = get_faction_id_from_name("Imperial Agents") or "AoI"
+            datasheet = waha_helper.get_full_datasheet_info_by_name(
+                unit_name,
+                faction_id=agents_faction_id,
+            )
+            if datasheet is not None and _datasheet_has_keyword(datasheet, "AGENTS OF THE IMPERIUM"):
+                return (datasheet, {})
         return (None, {})
     datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name, faction_id="CD")
     metadata = _pact_ally_datasheet_metadata(
@@ -128,9 +154,58 @@ def _is_app_export(raw_lines: list[str]) -> bool:
 
 def _first_section_index(stripped_lines: list[str]) -> int:
     for index, line in enumerate(stripped_lines):
-        if (line or "").strip().upper() in _SECTION_HEADERS:
+        if _is_section_header(line):
             return index
     return 0
+
+
+def _is_section_header(line: object) -> bool:
+    text = str(line or "").strip()
+    upper = text.upper()
+    if upper in _SECTION_HEADERS:
+        return True
+    if "(" in text or "[" in text or ":" in text:
+        return False
+    if "/" not in text:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z ]+(?:\s*/\s*[A-Za-z ]+)+", text))
+
+
+def _first_points_line_index(lines: list[str]) -> int | None:
+    for index, line in enumerate(list(lines or [])):
+        if re.search(r"\(([\d,]+)\s*points?\)", str(line or ""), flags=re.IGNORECASE):
+            return index
+    return None
+
+
+def _plain_header_faction_and_detachment(stripped_lines: list[str], *, section_index: int) -> tuple[str, str]:
+    header_lines = [
+        str(line or "").strip()
+        for line in list(stripped_lines[: max(0, int(section_index))] or [])
+        if str(line or "").strip()
+    ]
+    if not header_lines:
+        raise ValueError("Army list header is missing faction info.")
+    points_index = _first_points_line_index(header_lines)
+    if points_index is None:
+        faction_header = header_lines[0]
+        faction_keyword = (
+            re.split(r"\s*[-\u2013]\s*", faction_header) or [faction_header]
+        )[-1].strip() or faction_header
+        detachment_type = header_lines[2] if len(header_lines) > 2 else "Unknown Detachment"
+        return faction_keyword, detachment_type
+
+    if points_index == 0 and len(header_lines) > 2:
+        return header_lines[1], header_lines[2]
+
+    if points_index + 1 < len(header_lines):
+        detachment_type = header_lines[points_index + 1]
+        faction_keyword = header_lines[points_index - 1] if points_index >= 1 else header_lines[0]
+        return faction_keyword, detachment_type
+
+    detachment_type = header_lines[points_index - 1] if points_index >= 1 else "Unknown Detachment"
+    faction_keyword = header_lines[points_index - 2] if points_index >= 2 else header_lines[0]
+    return faction_keyword, detachment_type
 
 
 def _is_bullet_line(text: str) -> bool:
@@ -142,6 +217,163 @@ def _strip_bullet(text: str) -> str:
         if text.startswith(prefix):
             return text[len(prefix):].strip()
     return text
+
+
+def _looks_like_unit_detail_continuation(line: object) -> bool:
+    text = str(line or "").strip()
+    if not text:
+        return False
+    lower = text.lower()
+    if lower == "warlord" or (
+        lower.startswith("enhancement") and ":" in lower
+    ) or lower.startswith("daemonic allegiance:") or lower.startswith("mark of chaos:") or re.search(
+        r"\bkeywords?:", lower
+    ):
+        return True
+    if re.match(r"^\d+\s*x\s+\S", text, flags=re.IGNORECASE) is None:
+        return False
+    return re.search(r"\(([\d,]+)\s*points?\)", text, flags=re.IGNORECASE) is None
+
+
+def _model_name_variants(value: object) -> set[str]:
+    key = canonical_rules_key(value)
+    if not key:
+        return set()
+    variants = {key}
+    singular_words: list[str] = []
+    for word in key.split():
+        if word.endswith("z") and len(word) > 2:
+            singular_words.append(word[:-1])
+        elif word.endswith("men") and len(word) > 3:
+            singular_words.append(f"{word[:-3]}man")
+        elif word == "chaos" or word.endswith("ss"):
+            singular_words.append(word)
+        elif word.endswith("ches") and len(word) > 4:
+            singular_words.append(word[:-2])
+        elif word.endswith("ies") and len(word) > 3:
+            singular_words.append(f"{word[:-3]}y")
+        elif word.endswith("s") and len(word) > 3:
+            singular_words.append(word[:-1])
+        else:
+            singular_words.append(word)
+    singular_key = " ".join(singular_words).strip()
+    if singular_key:
+        variants.add(singular_key)
+    if key.endswith("ies") and len(key) > 3:
+        variants.add(f"{key[:-3]}y")
+    if key.endswith("ches") and len(key) > 4:
+        variants.add(key[:-2])
+    if key.endswith("men") and len(key) > 3:
+        variants.add(f"{key[:-3]}man")
+    if key.endswith("s") and len(key) > 1:
+        variants.add(key[:-1])
+    return {variant for variant in variants if variant}
+
+
+def _composition_model_match_rank(item_label: object, model_label: object) -> tuple[int, int, str] | None:
+    item_key = canonical_rules_key(item_label)
+    model_key = canonical_rules_key(model_label)
+    if not item_key or not model_key:
+        return None
+    if item_key == model_key:
+        return (0, -len(model_key), model_key)
+    item_variants = _model_name_variants(item_key)
+    model_variants = _model_name_variants(model_key)
+    if item_variants.intersection(model_variants):
+        return (1, -len(model_key), model_key)
+    # App-export model headings can include a model name plus a qualifier. Keep
+    # this narrower than substring matching so "Dire Avenger" does not match
+    # "Dire Avenger Exarch".
+    qualifier_prefixes = ("with", "w", "equipped with")
+    for variant in sorted(model_variants, key=len, reverse=True):
+        for qualifier in qualifier_prefixes:
+            if item_key.startswith(f"{variant} {qualifier} "):
+                return (2, -len(model_key), model_key)
+    for item_variant in sorted(item_variants, key=len, reverse=True):
+        for model_variant in sorted(model_variants, key=len, reverse=True):
+            if item_variant.endswith(f" {model_variant}"):
+                return (3, -len(model_key), model_key)
+            if model_variant.startswith(f"{item_variant} "):
+                return (4, -len(model_key), model_key)
+    return None
+
+
+def _match_composition_model_name(current_unit: Unit, item_label: object, *, quantity: int) -> str | None:
+    matches: list[tuple[tuple[int, int, str], str]] = []
+    for model_name in current_unit.unit_composition.keys():
+        model_label = str(model_name or "").strip()
+        rank = _composition_model_match_rank(item_label, model_label)
+        if rank is not None:
+            matches.append((rank, model_label))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0])
+    matched_label = matches[0][1]
+    resolve_model_name = getattr(current_unit, "_resolve_composition_model_name", None)
+    if callable(resolve_model_name):
+        return str(
+            resolve_model_name(
+                getattr(current_unit, "_datasheet", None),
+                matched_label,
+                model_count=quantity,
+            )
+        ).strip()
+    return matched_label
+
+
+def _unit_heading_name(line: str) -> str:
+    text = str(line or "").strip()
+    match = re.match(
+        r"^(.*?)\s*(?:\(|\[)\s*[\d,]+\s*points?\s*(?:\]|\))",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match is not None:
+        return match.group(1).strip()
+    return text.split(" (")[0].strip()
+
+
+def _apply_parsed_keyword_line(current_unit: Unit, data: str) -> None:
+    if current_unit is None:
+        return
+    _, _, raw_keywords = str(data or "").partition(":")
+    selected_keywords = [
+        str(keyword or "").strip().upper()
+        for keyword in re.split(r"[,;/]", raw_keywords)
+        if str(keyword or "").strip()
+    ]
+    if not selected_keywords:
+        return
+    existing = [
+        str(keyword or "").strip().upper()
+        for keyword in list(getattr(current_unit, "keywords", []) or [])
+        if str(keyword or "").strip()
+    ]
+    for keyword in selected_keywords:
+        if keyword not in existing:
+            existing.append(keyword)
+    current_unit.keywords = existing
+    build_metadata = dict(getattr(current_unit, "build_metadata", {}) or {})
+    build_metadata.setdefault("parsed_keyword_selections", [])
+    build_metadata["parsed_keyword_selections"].extend(selected_keywords)
+    current_unit.build_metadata = build_metadata
+
+
+def _apply_mark_of_chaos_line(current_unit: Unit, data: str) -> None:
+    if current_unit is None:
+        return
+    _, _, raw_mark = str(data or "").partition(":")
+    mark = str(raw_mark or "").strip()
+    if not mark:
+        return
+    build_metadata = dict(getattr(current_unit, "build_metadata", {}) or {})
+    build_metadata["mark_of_chaos"] = mark
+    current_unit.build_metadata = build_metadata
+    special_rules = getattr(current_unit, "special_rules", None)
+    if not isinstance(special_rules, dict):
+        special_rules = {}
+    special_rules["mark_of_chaos"] = mark
+    current_unit.special_rules = special_rules
 
 
 def _serialize_wargear_dict(
@@ -224,6 +456,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         raise ValueError(f"Army list is empty: {file_path!r}")
 
     points_limit = _find_points_limit(lines, file_path=file_path)
+    start_index = _first_section_index(stripped)
     is_app_format = _is_app_export(lines)
     if is_app_format:
         faction_keyword = ""
@@ -246,15 +479,14 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         if not detachment_type:
             detachment_type = "Unknown Detachment"
     else:
-        faction_header = (stripped[0] or "").strip()
-        if not faction_header:
-            raise ValueError(f"Army list header is missing faction info: {file_path!r}")
-        faction_keyword = (
-            re.split(r"\s*[-\u2013]\s*", faction_header) or [faction_header]
-        )[-1].strip() or faction_header
-        detachment_type = (stripped[2] or "").strip() if len(stripped) > 2 else "Unknown Detachment"
+        try:
+            faction_keyword, detachment_type = _plain_header_faction_and_detachment(
+                stripped,
+                section_index=start_index,
+            )
+        except ValueError as exc:
+            raise ValueError(f"{exc} Army list: {file_path!r}") from exc
 
-    start_index = _first_section_index(stripped)
     logger.info(
         "Parsing army: %s - %s (%s points)",
         faction_keyword,
@@ -286,12 +518,17 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
 
     for line in lines[start_index:]:
         line = line.strip()
-        if not line or line.upper() in _SECTION_HEADERS:
+        if not line or _is_section_header(line):
             continue
         if line.startswith("Exported with"):
             break
 
-        if not _is_bullet_line(line):
+        is_detail_continuation = bool(
+            current_unit is not None
+            and not _is_bullet_line(line)
+            and _looks_like_unit_detail_continuation(line)
+        )
+        if not _is_bullet_line(line) and not is_detail_continuation:
             if current_unit:
                 parsed_entry_id = f"parsed_unit_{len(parsed_unit_entries) + 1}"
                 add_unit_to_army(
@@ -322,7 +559,12 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                 current_enhancement = None
                 is_warlord = False
 
-            unit_name = line.split(" (")[0].strip()
+            current_model_name = None
+            current_model_count = 0
+            current_wargear = {}
+            current_enhancement = None
+            is_warlord = False
+            unit_name = _unit_heading_name(line)
             ally_metadata: dict[str, str] = {}
             if faction_id:
                 datasheet, ally_metadata = _resolve_pact_ally_datasheet(
@@ -367,6 +609,12 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             if current_unit is not None:
                 current_unit.daemonic_allegiance = allegiance
             continue
+        if data.lower().startswith("mark of chaos:"):
+            _apply_mark_of_chaos_line(current_unit, data)
+            continue
+        if re.search(r"\bkeywords?:", data, flags=re.IGNORECASE):
+            _apply_parsed_keyword_line(current_unit, data)
+            continue
 
         if "x " in data:
             quantity_text, item_name = data.split("x ", 1)
@@ -378,29 +626,16 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
         matched_model_name = None
         if current_unit:
             item_label = item_name.strip()
-            item_key = item_label.casefold()
-            for model_name in current_unit.unit_composition.keys():
-                model_label = str(model_name or "").strip()
-                model_key = model_label.casefold()
-                singular_model_key = model_key.rstrip("s")
-                if item_key in {model_key, singular_model_key} or item_key in singular_model_key:
-                    resolve_model_name = getattr(current_unit, "_resolve_composition_model_name", None)
-                    if callable(resolve_model_name):
-                        matched_model_name = str(
-                            resolve_model_name(
-                                getattr(current_unit, "_datasheet", None),
-                                model_label,
-                                model_count=quantity,
-                            )
-                        ).strip()
-                    else:
-                        matched_model_name = model_label
-                    break
+            matched_model_name = _match_composition_model_name(
+                current_unit,
+                item_label,
+                quantity=quantity,
+            )
 
         if matched_model_name:
             current_model_count += quantity
             current_model_name = matched_model_name
-            current_wargear[current_model_name] = set()
+            current_wargear.setdefault(current_model_name, set())
             continue
 
         target_name = current_model_name or (current_unit.name if current_unit is not None else "")

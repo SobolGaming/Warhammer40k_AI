@@ -92,6 +92,7 @@ def canonical_rules_key(text: object) -> str:
     """Return a stable lowercase key for matching rules names and wargear."""
 
     value = normalize_display_text(text).lower()
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
     value = re.sub(r"[^a-z0-9]+", " ", value)
     return re.sub(r"\s+", " ", value).strip()
 

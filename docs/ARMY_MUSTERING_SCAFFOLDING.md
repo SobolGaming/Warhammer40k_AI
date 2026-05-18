@@ -164,6 +164,15 @@ units directly.
 - Parsed list units now also receive deterministic `build_entry_id` values aligned with
   the parsed `RosterEntry` records so authored attachment bindings can be projected into
   runtime setup when present.
+- Copied army-list text may omit continuation bullets on model loadout lines; quantity
+  lines under an active unit are parsed as model/loadout details unless they include a
+  points value, so copied wargear lines do not become bogus unit headers.
+- Non-app text headers support both list-name-first exports and faction/battle-size/
+  detachment headers, preserving the intended faction and detachment in parsed rosters.
+- Tournament-list imports now tolerate accent-insensitive datasheet/model labels,
+  slash-separated category headers, common singular/plural model-heading variants
+  (`Guardsmen`/`Guardsman`, `Boyz`/`Boy`, `Wyches`/`Wych`), and wargear ability
+  labels that would otherwise collide with parsed replacement-option bundles.
 
 #### Save/load scaffolding
 

@@ -1,0 +1,158 @@
+T'au Empire
+Strike Force (2000 points)
+Mont'ka
+CHARACTERS
+Cadre Fireblade (50 points)
+- 1x Close combat weapon
+1x Fireblade pulse rifle
+1x Gun Drone
+1x Marker Drone
+Cadre Fireblade (50 points)
+- 1x Close combat weapon
+1x Fireblade pulse rifle
+1x Gun Drone
+1x Marker Drone
+Commander Shadowsun (100 points)
+- Warlord
+- 1x Advanced Guardian Drone
+1x Battlesuit fists
+1x Command-link Drone (Aura)
+1x Flechette launcher
+2x High-energy fusion blaster
+1x Light missile pod
+1x Pulse pistol
+Ethereal (50 points)
+- 1x Honour stave
+1x Hover Drone
+1x Marker Drone
+1x Shield Drone
+The Twin Lance (185 points)
+- 1x Ri'Lantar
+- 1x Fusion eliminator
+1x MV15 Gun Drone
+1x Shardstorm burst system
+1x XV pulse pistol
+- 1x Ri'Locai
+- 1x Ion scattercannon
+1x MV15 Gun Drone
+1x Shardstorm burst system
+1x XV pulse pistol
+BATTLELINE
+Breacher Team (90 points)
+- 1x Support turret
+- 1x Breacher Fire Warrior Shas'ui
+- 1x Close combat weapon
+1x Guardian Drone
+1x Gun Drone
+1x Pulse blaster
+1x Pulse pistol
+- 9x Breacher Fire Warrior
+- 9x Close combat weapon
+9x Pulse blaster
+9x Pulse pistol
+Breacher Team (90 points)
+- 1x Support turret
+- 1x Breacher Fire Warrior Shas'ui
+- 1x Close combat weapon
+1x Guardian Drone
+1x Gun Drone
+1x Pulse blaster
+1x Pulse pistol
+- 9x Breacher Fire Warrior
+- 9x Close combat weapon
+9x Pulse blaster
+9x Pulse pistol
+Strike Team (70 points)
+- 1x Support turret
+- 1x Fire Warrior Shas'ui
+- 1x Close combat weapon
+1x Guardian Drone
+1x Gun Drone
+1x Pulse pistol
+1x Pulse rifle
+- 9x Fire Warrior
+- 9x Close combat weapon
+9x Pulse pistol
+9x Pulse rifle
+DEDICATED TRANSPORTS
+Devilfish (85 points)
+- 1x Accelerator burst cannon
+1x Armoured hull
+2x Seeker missile
+2x Smart missile system
+Devilfish (85 points)
+- 1x Accelerator burst cannon
+1x Armoured hull
+2x Seeker missile
+2x Smart missile system
+OTHER DATASHEETS
+Broadside Battlesuits (80 points)
+- 1x Crushing bulk
+1x Heavy rail rifle
+2x Missile Drone
+1x Seeker missile
+1x Twin plasma rifle
+Broadside Battlesuits (80 points)
+- 1x Crushing bulk
+1x Heavy rail rifle
+2x Missile Drone
+1x Seeker missile
+1x Twin plasma rifle
+Ghostkeel Battlesuit (160 points)
+- 1x Battlesuit Support System
+1x Cyclic ion raker
+1x Ghostkeel fists
+1x Twin fusion blaster
+Hammerhead Gunship (145 points)
+- 2x Accelerator burst cannon
+1x Armoured hull
+1x Ion cannon
+2x Seeker missile
+Pathfinder Team (90 points)
+- 1x Pathfinder Shas'ui
+- 1x Close combat weapon
+1x Grav-inhibitor Drone
+2x Gun Drone
+1x Pulse carbine
+1x Pulse pistol
+1x Semi-automatic grenade launcher
+- 9x Pathfinder
+- 9x Close combat weapon
+3x Ion rifle
+6x Pulse carbine
+9x Pulse pistol
+Pathfinder Team (90 points)
+- 1x Pathfinder Shas'ui
+- 1x Close combat weapon
+2x Gun Drone
+1x Pulse carbine
+1x Pulse pistol
+1x Recon Drone
+1x Semi-automatic grenade launcher
+- 9x Pathfinder
+- 9x Close combat weapon
+3x Ion rifle
+6x Pulse carbine
+9x Pulse pistol
+Riptide Battlesuit (200 points)
+- 1x Ion accelerator
+2x Missile Drone
+1x Riptide fists
+1x Twin plasma rifle
+Riptide Battlesuit (200 points)
+- 1x Ion accelerator
+2x Missile Drone
+1x Riptide fists
+1x Twin plasma rifle
+Stealth Battlesuits (100 points)
+- 1x Stealth Shas'vre
+- 1x Battlesuit fists
+1x Fusion blaster
+1x Gun Drone
+1x Marker Drone
+1x Pulse pistol
+- 4x Stealth Shas'ui
+- 4x Battlesuit fists
+3x Burst cannon
+1x Fusion blaster
+1x Homing Beacon

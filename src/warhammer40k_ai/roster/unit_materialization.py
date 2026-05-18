@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 import logging
 import re
@@ -29,9 +30,66 @@ def _normalize_gear_name(text: str) -> str:
     return canonical_rules_key(text)
 
 
+def _singularized_gear_key(key: str) -> str:
+    words: list[str] = []
+    for word in str(key or "").split():
+        if word.endswith("z") and len(word) > 2:
+            words.append(word[:-1])
+        elif word.endswith("men") and len(word) > 3:
+            words.append(f"{word[:-3]}man")
+        elif word.endswith("ches") and len(word) > 4:
+            words.append(word[:-2])
+        elif word.endswith("ies") and len(word) > 3:
+            words.append(f"{word[:-3]}y")
+        elif word.endswith("s") and len(word) > 3 and not word.endswith("ss"):
+            words.append(word[:-1])
+        else:
+            words.append(word)
+    return " ".join(words).strip()
+
+
 def _gear_name_match_keys(text: object) -> set[str]:
     key = _normalize_gear_name(str(text or ""))
     keys = {key} if key else set()
+    if "acquila" in key:
+        keys.add(key.replace("acquila", "aquila"))
+    if key.startswith("chainbreaker "):
+        keys.add(key.removeprefix("chainbreaker ").strip())
+    if key.startswith("questoris "):
+        keys.add(key.removeprefix("questoris ").strip())
+    if " s " in key:
+        keys.add(key.replace(" s ", "s "))
+    singular_key = _singularized_gear_key(key)
+    if singular_key:
+        keys.add(singular_key)
+    no_and_key = key.replace(" and ", " ")
+    if no_and_key:
+        keys.add(no_and_key)
+        singular_no_and_key = _singularized_gear_key(no_and_key)
+        if singular_no_and_key:
+            keys.add(singular_no_and_key)
+    with_prefix = key.split(" with ", 1)[0].strip()
+    if with_prefix and with_prefix != key:
+        keys.add(with_prefix)
+        singular_with_prefix = _singularized_gear_key(with_prefix)
+        if singular_with_prefix:
+            keys.add(singular_with_prefix)
+    leading_quantity = re.match(r"^\s*(?:up to\s+)?\d+\s+(.+)$", key)
+    if leading_quantity is not None:
+        quantity_suffix = leading_quantity.group(1).strip()
+        if quantity_suffix:
+            keys.add(quantity_suffix)
+            singular_quantity_suffix = _singularized_gear_key(quantity_suffix)
+            if singular_quantity_suffix:
+                keys.add(singular_quantity_suffix)
+    embedded_quantity = re.match(r"^.+\b\d+\s+(.+)$", key)
+    if embedded_quantity is not None:
+        embedded_quantity_suffix = embedded_quantity.group(1).strip()
+        if embedded_quantity_suffix:
+            keys.add(embedded_quantity_suffix)
+            singular_embedded_quantity_suffix = _singularized_gear_key(embedded_quantity_suffix)
+            if singular_embedded_quantity_suffix:
+                keys.add(singular_embedded_quantity_suffix)
     if " s " in key:
         suffix = key.split(" s ", 1)[1].strip()
         if suffix:
@@ -49,6 +107,99 @@ def _matches_requested_gear_name(candidate_name: object, requested_name: object)
     candidate_keys = _gear_name_match_keys(candidate_name)
     requested_keys = _gear_name_match_keys(requested_name)
     return bool(candidate_keys and requested_keys and candidate_keys.intersection(requested_keys))
+
+
+def _choice_matches_requested_wargear(
+    choice: object,
+    requested_wargear: list[tuple[str, int]],
+) -> list[tuple[int, int]] | None:
+    requested_remaining = Counter(
+        {index: int(quantity or 0) for index, (_name, quantity) in enumerate(requested_wargear)}
+    )
+    consumed: list[tuple[int, int]] = []
+    for raw_quantity, raw_name in list(choice or []):
+        choice_quantity = int(raw_quantity or 0)
+        choice_name = str(raw_name or "").strip()
+        if choice_quantity <= 0 or not choice_name:
+            return None
+        matched_index = None
+        for index, (requested_name, _requested_quantity) in enumerate(requested_wargear):
+            if requested_remaining[index] < choice_quantity:
+                continue
+            if _matches_requested_gear_name(choice_name, requested_name):
+                matched_index = index
+                break
+        if matched_index is None:
+            return None
+        requested_remaining[matched_index] -= choice_quantity
+        consumed.append((matched_index, choice_quantity))
+    return consumed
+
+
+def _remove_consumed_wargear(
+    requested_wargear: list[tuple[str, int]],
+    consumed: list[tuple[int, int]],
+) -> list[tuple[str, int]]:
+    remaining_quantities = [int(quantity or 0) for _name, quantity in requested_wargear]
+    for index, consumed_quantity in consumed:
+        remaining_quantities[index] -= int(consumed_quantity or 0)
+    remaining: list[tuple[str, int]] = []
+    for index, (name, _quantity) in enumerate(requested_wargear):
+        quantity = remaining_quantities[index]
+        if quantity > 0:
+            remaining.append((name, quantity))
+    return remaining
+
+
+def _unit_can_resolve_wargear_directly(unit: Unit, requested_name: object) -> bool:
+    if any(
+        _matches_requested_gear_name(gear.name, requested_name)
+        for gear in list(getattr(unit, "possible_wargear", []) or [])
+    ):
+        return True
+    return any(
+        _matches_requested_gear_name(ability.name, requested_name)
+        and getattr(ability, "type", None) == "Wargear"
+        for ability in list(getattr(unit, "possible_abilities", []) or [])
+    )
+
+
+def _apply_exact_wargear_bundles(
+    unit: Unit,
+    requested_wargear: list[tuple[str, int]],
+) -> list[tuple[str, int]]:
+    remaining = list(requested_wargear)
+    bundle_choices: list[tuple[str, object]] = []
+    for option in list(getattr(unit, "wargear_options", []) or []):
+        for choice in list(getattr(option, "wargear_to", []) or []):
+            if len(list(choice or [])) <= 1:
+                continue
+            if all(
+                _unit_can_resolve_wargear_directly(unit, name)
+                for _quantity, name in list(choice or [])
+            ):
+                continue
+            bundle_label = " and ".join(
+                f"{int(quantity or 0)} {name}"
+                for quantity, name in list(choice or [])
+                if int(quantity or 0) > 0 and str(name or "").strip()
+            )
+            if bundle_label:
+                bundle_choices.append((bundle_label, choice))
+    bundle_choices.sort(key=lambda item: canonical_rules_key(item[0]))
+
+    changed = True
+    while changed:
+        changed = False
+        for bundle_label, choice in bundle_choices:
+            consumed = _choice_matches_requested_wargear(choice, remaining)
+            if consumed is None:
+                continue
+            unit.apply_wargear_options_strict(bundle_label)
+            remaining = _remove_consumed_wargear(remaining, consumed)
+            changed = True
+            break
+    return remaining
 
 
 def _coerce_positive_int(value: object, *, field_name: str) -> int:
@@ -184,7 +335,11 @@ def add_materialized_unit_to_army(
     unit.configure_models(model_count, [])
 
     for model_name, wargear_list in wargear_dict.items():
-        for wargear_name, quantity in wargear_list:
+        remaining_wargear = _apply_exact_wargear_bundles(
+            unit,
+            sorted(list(wargear_list or []), key=lambda item: (canonical_rules_key(item[0]), int(item[1] or 0))),
+        )
+        for wargear_name, quantity in remaining_wargear:
             gear_name = _normalize_gear_name(wargear_name)
             display_gear_name = normalize_display_text(wargear_name)
             matching_gear = next(
@@ -226,6 +381,19 @@ def add_materialized_unit_to_army(
                             model.wargear.append(matching_gear)
                 continue
 
+            matching_ability = next(
+                (
+                    ability
+                    for ability in unit.possible_abilities
+                    if _matches_requested_gear_name(ability.name, wargear_name)
+                    and ability.type == "Wargear"
+                ),
+                None,
+            )
+            if matching_ability is not None:
+                unit.add_ability(matching_ability, model_name)
+                continue
+
             matching_option = None
             for gear in unit.wargear_options:
                 for choice in gear.wargear_to or []:
@@ -240,19 +408,6 @@ def add_materialized_unit_to_army(
                     break
             if matching_option is not None:
                 unit.apply_wargear_options_strict(display_gear_name)
-                continue
-
-            matching_ability = next(
-                (
-                    ability
-                    for ability in unit.possible_abilities
-                    if _matches_requested_gear_name(ability.name, wargear_name)
-                    and ability.type == "Wargear"
-                ),
-                None,
-            )
-            if matching_ability is not None:
-                unit.add_ability(matching_ability, model_name)
                 continue
 
             if strict_unknown_wargear:

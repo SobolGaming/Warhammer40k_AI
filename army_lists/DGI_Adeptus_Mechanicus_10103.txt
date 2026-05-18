@@ -1,0 +1,114 @@
+Adeptus Mechanicus
+Strike Force (2000 points)
+Haloscreed Battle Clade
+CHARACTERS
+Belisarius Cawl (210 points)
+- Warlord
+- 1x Arc scourge
+1x Cawl's Omnissian axe
+1x Mechadendrite hive
+1x Solar atomiser
+Tech-Priest Manipulus (60 points)
+- 1x Omnissian staff
+1x Transonic cannon
+BATTLELINE
+Skitarii Rangers (85 points)
+- 1x Skitarii Ranger Alpha
+- 1x Alpha combat weapon
+1x Close combat weapon
+1x Galvanic rifle
+- 9x Skitarii Ranger
+- 1x Arc rifle
+9x Close combat weapon
+6x Galvanic rifle
+1x Omnispex
+1x Plasma caliver
+1x Transuranic arquebus
+Skitarii Rangers (85 points)
+- 1x Skitarii Ranger Alpha
+- 1x Alpha combat weapon
+1x Close combat weapon
+1x Galvanic rifle
+- 9x Skitarii Ranger
+- 1x Arc rifle
+9x Close combat weapon
+6x Galvanic rifle
+1x Omnispex
+1x Plasma caliver
+1x Transuranic arquebus
+DEDICATED TRANSPORTS
+Skorpius Dunerider (85 points)
+- 1x Armoured hull
+1x Cognis heavy stubber array
+OTHER DATASHEETS
+Corpuscarii Electro-Priests (130 points)
+- 10x Corpuscarii Electro-Priest
+- 10x Electrostatic gauntlets
+Ironstrider Ballistarii (255 points)
+- 3x Ironstrider Ballistarii
+- 3x Ironstrider feet
+3x Twin cognis lascannon
+Ironstrider Ballistarii (255 points)
+- 3x Ironstrider Ballistarii
+- 3x Ironstrider feet
+3x Twin cognis lascannon
+Onager Dunecrawler (155 points)
+- 1x Broad spectrum data-tether
+1x Cognis heavy stubber
+1x Dunecrawler legs
+1x Eradication beamer
+Servitor Battleclade (60 points)
+- 1x Servitor Underseer
+- 1x Dataspikes
+1x Mechanicus pistol
+- 2x Gun Servitor
+- 1x Heavy arc rifle
+1x Heavy bolter
+2x Servo-claw
+- 6x Combat Servitor
+- 3x Incendine igniter
+1x Meltagun
+2x Phosphor blaster
+6x Servo-claw
+Servitor Battleclade (60 points)
+- 1x Servitor Underseer
+- 1x Dataspikes
+1x Mechanicus pistol
+- 2x Gun Servitor
+- 1x Heavy arc rifle
+1x Heavy bolter
+2x Servo-claw
+- 6x Combat Servitor
+- 3x Incendine igniter
+1x Meltagun
+2x Phosphor blaster
+6x Servo-claw
+Sicarian Infiltrators (75 points)
+- 1x Sicarian Infiltrator Princeps
+- 1x Flechette blaster
+1x Taser goad
+- 4x Sicarian Infiltrator
+- 4x Flechette blaster
+4x Taser goad
+Sicarian Infiltrators (155 points)
+- 1x Sicarian Infiltrator Princeps
+- 1x Flechette blaster
+1x Taser goad
+- 9x Sicarian Infiltrator
+- 9x Flechette blaster
+9x Taser goad
+Sicarian Ruststalkers (165 points)
+- 1x Sicarian Ruststalker Princeps
+- 1x Transonic blades and chordclaw
+- 9x Sicarian Ruststalker
+- 9x Transonic razor and chordclaw
+Sicarian Ruststalkers (80 points)
+- 1x Sicarian Ruststalker Princeps
+- 1x Transonic blades and chordclaw
+- 4x Sicarian Ruststalker
+- 4x Transonic razor and chordclaw
+Sicarian Ruststalkers (80 points)
+- 1x Sicarian Ruststalker Princeps
+- 1x Transonic blades and chordclaw
+- 4x Sicarian Ruststalker
+- 4x Transonic razor and chordclaw
