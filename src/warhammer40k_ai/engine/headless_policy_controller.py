@@ -1628,59 +1628,14 @@ class HeadlessPolicyDecisionController(DecisionController):
         return [dict(row) for row in list(declarations or [])]
 
     @classmethod
-    def _unit_has_ranged_shooting_potential(cls, game: object | None, unit: object) -> bool:
-        if unit is None:
-            return False
-        if not cls._enemy_units_for_shooting(game, unit):
-            return False
-        for model in cls._attached_alive_models(unit):
-            for wargear in list(getattr(model, "wargear", []) or []):
-                is_ranged = getattr(wargear, "is_ranged", None)
-                if not callable(is_ranged):
-                    continue
-                try:
-                    if not bool(is_ranged()):
-                        continue
-                except (AttributeError, RuntimeError, TypeError, ValueError):
-                    continue
-                if dict(getattr(wargear, "profiles", {}) or {}):
-                    return True
-        return False
-
-    @staticmethod
-    def _use_fast_shooting_selection_precheck(game: object | None) -> bool:
-        if game is None:
-            return False
-        return bool(
-            getattr(game, "_headless_fast_shooting_selection_precheck", False)
-            or getattr(game, "_headless_policy_controller_attached", False)
-        )
-
-    @classmethod
     def _unit_has_legal_shooting_declaration(cls, game: object | None, unit: object) -> bool:
         if unit is None:
             return False
-        game_map = getattr(game, "map", None) if game is not None else None
-        targets = cls._enemy_units_for_shooting(game, unit)
-        if not targets:
+        try:
+            from .decision_requests import unit_has_legal_shooting_target_candidates
+        except ImportError:
             return False
-        for model in cls._attached_alive_models(unit):
-            for wargear in list(getattr(model, "wargear", []) or []):
-                is_ranged = getattr(wargear, "is_ranged", None)
-                if not callable(is_ranged):
-                    continue
-                try:
-                    if not bool(is_ranged()):
-                        continue
-                except (AttributeError, RuntimeError, TypeError, ValueError):
-                    continue
-                for _profile_name, profile in sorted(dict(getattr(wargear, "profiles", {}) or {}).items(), key=lambda item: str(item[0])):
-                    if profile is None:
-                        continue
-                    for target in targets:
-                        if cls._shooting_profile_valid(unit, model, profile, target, game_map):
-                            return True
-        return False
+        return bool(unit_has_legal_shooting_target_candidates(game, unit))
 
     @staticmethod
     def _shooting_profile_valid(
@@ -2267,8 +2222,6 @@ class HeadlessPolicyDecisionController(DecisionController):
                 firing_deck_entries = [] if bool(getattr(unit, "_firing_deck_declared_this_phase", False)) else firing_deck_selection_entries(unit)
             if firing_deck_entries:
                 return True
-            if cls._use_fast_shooting_selection_precheck(game):
-                return cls._unit_has_ranged_shooting_potential(game, unit)
             return cls._unit_has_legal_shooting_declaration(game, unit)
 
         return True

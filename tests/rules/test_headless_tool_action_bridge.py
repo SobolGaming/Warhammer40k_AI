@@ -2037,10 +2037,7 @@ def test_maybe_queue_post_command_tool_decisions_skips_phase_actions_after_dice_
         )
         is False
     )
-    assert calls == [
-        ("opponent", True),
-        ("current", True),
-    ]
+    assert calls == []
 
 
 def test_maybe_queue_post_command_tool_decisions_skips_setup() -> None:

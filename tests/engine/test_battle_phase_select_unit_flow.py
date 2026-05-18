@@ -231,6 +231,8 @@ class _FlowGame(GamePhaseHandlersMixin):
         registry_items.extend(list(enemy_units or []))
         for registry_unit in list(registry_items):
             registry_items.extend(list(getattr(registry_unit, "models", []) or []))
+            for model in list(getattr(registry_unit, "models", []) or []):
+                registry_items.extend(list(getattr(model, "wargear", []) or []))
         self.entity_registry = _RegistryStub(registry_items)
         self._player = unit.parent_army.player
         self._opponent = _PlayerStub("player-2", "Opponent")
@@ -289,8 +291,8 @@ def _build_players_with_unit(*, charge_targets=False):
 
 
 def test_shooting_phase_selection_request_is_queued() -> None:
-    _player, _army, unit, _enemy = _build_players_with_unit()
-    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit)
+    _player, _army, unit, enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit, enemy_units=[enemy])
 
     request = game._queue_shooting_phase_selection()
 
@@ -301,8 +303,8 @@ def test_shooting_phase_selection_request_is_queued() -> None:
 
 
 def test_shooting_select_unit_resolution_queues_declare_shots_request() -> None:
-    _player, _army, unit, _enemy = _build_players_with_unit()
-    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit)
+    _player, _army, unit, enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit, enemy_units=[enemy])
     request = build_select_unit_request(
         [unit],
         player_id="player-1",
@@ -357,7 +359,7 @@ def test_shooting_followup_after_skip_requeues_only_remaining_unactivated_units(
     player, army, unit, _enemy = _build_players_with_unit()
     second_unit = _UnitStub("unit-2", army)
     army.units.append(second_unit)
-    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit)
+    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit, enemy_units=[_enemy])
     request = build_declare_shots_request(
         unit,
         player_id=player.id,
@@ -380,6 +382,20 @@ def test_shooting_followup_after_skip_requeues_only_remaining_unactivated_units(
     followup = game.queued_requests[0]
     assert followup.decision_type == DECISION_SELECT_UNIT
     assert followup.context["allowed_unit_ids"] == [second_unit.id]
+
+
+def test_shooting_phase_selection_excludes_unit_without_legal_targets() -> None:
+    player, _army, unit, enemy = _build_players_with_unit()
+    game = _FlowGame(phase_name="SHOOTING_PHASE", unit=unit, enemy_units=[enemy])
+    del player
+
+    def _invalid_declaration(_profile, _target, _models, _game_map):
+        return {"valid": False, "reason": "No models in range or line of sight"}
+
+    unit._validate_shooting_declaration = _invalid_declaration
+
+    assert game._queue_shooting_phase_selection() is None
+    assert unit.round_state.shot_this_round is False
 
 
 def test_charge_phase_selection_request_is_queued() -> None:

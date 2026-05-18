@@ -260,6 +260,9 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     unit = get_unit(game, unit_id)
     if unit is None:
         return ("Shooting unit not found.",)
+    out_of_phase = bool(request.context.get("out_of_phase", False))
+    if not out_of_phase and _unit_has_consumed_normal_shooting(unit):
+        return ("Unit has already been selected to shoot this round.",)
     try:
         if hasattr(unit, "_formless_horror_has_pending_gate") and unit._formless_horror_has_pending_gate():
             return ("Formless Horror: Battle-shock test pending.",)
@@ -338,7 +341,6 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 and (marked_turn <= 0 or current_turn <= 0 or marked_turn == current_turn)
             ):
                 force_target_id = target_id
-    out_of_phase = bool(request.context.get("out_of_phase", False))
     for decl in declarations:
         if not isinstance(decl, dict):
             return ("Declaration entry must be a dict.",)

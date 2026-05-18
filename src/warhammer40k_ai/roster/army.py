@@ -605,14 +605,25 @@ class Army:
 
     def get_detachment_instances(self) -> list:
         detachments = list(getattr(self, "detachments", []) or [])
+        if not detachments:
+            return []
+        has_snapshot_dict = False
+        for detachment in detachments:
+            if type(detachment) is dict:
+                has_snapshot_dict = True
+                break
+        if not has_snapshot_dict:
+            return detachments
         from .army_runtime import DetachmentInstance
 
-        normalized = [
-            detachment
-            if isinstance(detachment, DetachmentInstance)
-            else DetachmentInstance.from_dict(detachment)
-            for detachment in detachments
-        ]
+        normalized = []
+        for detachment in detachments:
+            if isinstance(detachment, DetachmentInstance):
+                normalized.append(detachment)
+                continue
+            if type(detachment) is not dict:
+                raise TypeError("Army detachments must be mappings or DetachmentInstance values.")
+            normalized.append(DetachmentInstance.from_dict(detachment))
         self.detachments = normalized
         return normalized
 

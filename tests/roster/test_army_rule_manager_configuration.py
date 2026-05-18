@@ -1,4 +1,5 @@
 import ast
+import builtins
 from pathlib import Path
 
 from warhammer40k_ai.roster.army import Army
@@ -52,6 +53,23 @@ def test_all_registered_detachment_managers_configure_on_army() -> None:
         assert isinstance(manager, manager_cls), f"{attr_name} did not configure for {faction_id}"
         assert army.detachment_managers.get(attr_name) is manager
         assert army.get_detachment_manager_for_faction(faction_id) is manager
+
+
+def test_live_detachment_lookup_does_not_reimport_runtime_module(monkeypatch) -> None:
+    army = Army.with_detachment("World Eaters", detachment_type="Berzerker Warband")
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.endswith("army_runtime") or (level and name == "army_runtime"):
+            raise AssertionError("live detachment lookup should not re-import army_runtime")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    detachments = army.get_detachment_instances_for_faction("WE")
+
+    assert [detachment.detachment_type for detachment in detachments] == ["Berzerker Warband"]
 
 
 def test_ability_decision_handlers_use_registered_detachment_manager_attrs() -> None:

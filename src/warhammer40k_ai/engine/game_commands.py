@@ -149,6 +149,9 @@ class GameCommandService:
 
         if _pending_not_in_progress():
             return False
+        resolved_decision_type = str(getattr(resolved_request, "decision_type", "") or "")
+        if resolved_decision_type in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
+            return False
 
         current_player = None
         if list(getattr(game, "players", []) or []):
@@ -176,9 +179,6 @@ class GameCommandService:
             return True
         if _pending_not_in_progress():
             return True
-        resolved_decision_type = str(getattr(resolved_request, "decision_type", "") or "")
-        if resolved_decision_type in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
-            return False
         if int(getattr(game, "_pre_attack_reaction_window_depth", 0) or 0) > 0:
             return False
         return _queue_for_players(current_then_others, reactions_only=False)

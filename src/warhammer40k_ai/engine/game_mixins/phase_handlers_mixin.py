@@ -660,6 +660,7 @@ class GamePhaseHandlersMixin:
             firing_deck_selection_entries,
             _unit_has_consumed_normal_shooting,
             build_declare_shots_request,
+            unit_has_legal_shooting_target_candidates,
         )
 
         candidates = _eligible_units_for_phase_step(getattr(army, "units", []) or [], require_in_reserves=False)
@@ -683,6 +684,8 @@ class GamePhaseHandlersMixin:
                     "selection_purpose": "ACTIVATE_SHOOTING_UNIT",
                 },
             ) is None:
+                continue
+            if not has_firing_deck_choices and not unit_has_legal_shooting_target_candidates(self, unit):
                 continue
             eligible.append(unit)
         return eligible

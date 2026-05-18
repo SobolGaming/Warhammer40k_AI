@@ -41,6 +41,7 @@ from ..utility.entity_ids import get_entity_id, maybe_entity_id
 PLAYER_COLOR_HUE_STEP_DEGREES = 15
 PLAYER_COLOR_SATURATION = 0.85
 PLAYER_COLOR_VALUE = 0.95
+_SHOOTING_TARGET_CANDIDATES_CACHE_MAX = 512
 
 
 def _iter_units(units: Iterable[object] | None) -> List[object]:
@@ -866,26 +867,6 @@ def _profile_is_targetless(profile: object) -> bool:
     return False
 
 
-def _uses_headless_policy_controller(game: object | None) -> bool:
-    if game is None:
-        return False
-    if bool(getattr(game, "_headless_fast_shooting_target_candidates", False)):
-        return True
-    if hasattr(game, "_headless_disable_generic_tool_decisions"):
-        return True
-    hub = getattr(game, "decision_controller_hub", None)
-    controllers = getattr(hub, "_controllers", None)
-    if not isinstance(controllers, list):
-        return False
-    for controller in controllers:
-        cls = controller.__class__
-        if cls.__name__ == "HeadlessPolicyDecisionController" and cls.__module__.endswith(
-            ".headless_policy_controller"
-        ):
-            return True
-    return False
-
-
 def _shooting_profile_target_ids(
     game: object | None,
     unit: object,
@@ -894,23 +875,336 @@ def _shooting_profile_target_ids(
     targets: list[object],
     *,
     validate_targets: bool = True,
+    distance_cache: dict[tuple[str, str], float | None] | None = None,
 ) -> list[str]:
     validate = getattr(unit, "_validate_shooting_declaration", None) if validate_targets else None
-    game_map = getattr(game, "map", None) if game is not None else None
     target_ids: list[str] = []
     for target in list(targets or []):
         target_id = str(get_entity_id(target) or "").strip()
         if not target_id:
             continue
+        if not _shooting_profile_can_reach_target(
+            game=game,
+            unit=unit,
+            model=model,
+            profile=profile,
+            target=target,
+            distance_cache=distance_cache,
+        ):
+            continue
         if callable(validate):
-            try:
-                validation = validate(profile, target, [model], game_map)
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                validation = {"valid": False}
-            if not bool(isinstance(validation, dict) and validation.get("valid", False)):
+            if not _shooting_profile_target_validation_is_valid(
+                game,
+                unit,
+                model,
+                profile,
+                target,
+                validate,
+            ):
                 continue
         target_ids.append(target_id)
     return target_ids
+
+
+def _shooting_target_candidate_cache(game: object | None) -> dict | None:
+    if game is None:
+        return None
+    cache = getattr(game, "_shooting_target_candidates_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(game, "_shooting_target_candidates_cache", cache)
+    return cache
+
+
+def _shooting_declaration_validation_cache(game: object | None) -> dict | None:
+    if game is None:
+        return None
+    cache = getattr(game, "_shooting_declaration_validation_cache", None)
+    if not isinstance(cache, dict):
+        cache = {}
+        setattr(game, "_shooting_declaration_validation_cache", cache)
+    return cache
+
+
+def _alive_models_for_range(unit: object | None) -> list[object]:
+    if unit is None:
+        return []
+    get_collision_models = getattr(unit, "get_models_for_collision", None)
+    if callable(get_collision_models):
+        try:
+            models = list(get_collision_models() or [])
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            models = []
+    else:
+        get_attached_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_attached_models):
+            try:
+                models = list(get_attached_models() or [])
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                models = []
+        else:
+            models = list(getattr(unit, "models", []) or [])
+    alive: list[object] = []
+    for model in models:
+        alive_attr = getattr(model, "is_alive", True)
+        try:
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            is_alive = False
+        if is_alive:
+            alive.append(model)
+    return alive
+
+
+def _profile_effective_range_max(profile: object, model: object) -> float | None:
+    effective_fn = getattr(profile, "_effective_range_max", None)
+    if callable(effective_fn):
+        try:
+            return float(effective_fn(model))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass
+    range_value = getattr(profile, "range", None)
+    max_value = getattr(range_value, "max", None)
+    if max_value is None:
+        return None
+    try:
+        return float(max_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _shooting_model_target_min_distance(
+    model: object,
+    target: object,
+    *,
+    distance_cache: dict[tuple[str, str], float | None] | None = None,
+) -> float | None:
+    model_id = str(maybe_entity_id(model) or id(model))
+    target_id = str(maybe_entity_id(target) or id(target))
+    key = (model_id, target_id)
+    if distance_cache is not None and key in distance_cache:
+        return distance_cache[key]
+    target_models = _alive_models_for_range(target)
+    if not target_models:
+        if distance_cache is not None:
+            distance_cache[key] = None
+        return None
+    from ..utility.aura_utils import distance_between_models_bases_3d
+
+    best = float("inf")
+    for target_model in target_models:
+        try:
+            distance = float(distance_between_models_bases_3d(model, target_model))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            continue
+        if distance < best:
+            best = distance
+            if best <= 0.0:
+                break
+    value = None if best == float("inf") else float(best)
+    if distance_cache is not None:
+        distance_cache[key] = value
+    return value
+
+
+def _shooting_model_has_any_target_in_range(
+    model: object,
+    targets: list[object],
+    *,
+    max_range: float | None,
+    distance_cache: dict[tuple[str, str], float | None] | None = None,
+) -> bool:
+    if max_range is None:
+        return True
+    for target in list(targets or []):
+        distance = _shooting_model_target_min_distance(model, target, distance_cache=distance_cache)
+        if distance is None:
+            return True
+        if distance <= float(max_range) + 1e-6:
+            return True
+    return False
+
+
+def _target_range_restriction_allows_profile(
+    *,
+    game: object | None,
+    unit: object,
+    model: object,
+    target: object,
+    distance: float | None,
+) -> bool:
+    if distance is None:
+        return True
+    game_map = getattr(game, "map", None) if game is not None else None
+    ignore_lone_operative = False
+    ignore_fn = getattr(unit, "_model_can_ignore_lone_operative_when_selecting_targets", None)
+    if callable(ignore_fn):
+        try:
+            ignore_lone_operative = bool(ignore_fn(model))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            ignore_lone_operative = False
+    restriction_fn = getattr(target, "get_ranged_targeting_restriction", None)
+    if not callable(restriction_fn):
+        return True
+    try:
+        limit, _sources = restriction_fn(
+            game_map=game_map,
+            ignore_lone_operative=ignore_lone_operative,
+        )
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return True
+    if limit is None:
+        return True
+    try:
+        return bool(float(distance) <= float(limit) + 1e-6)
+    except (TypeError, ValueError):
+        return True
+
+
+def _shooting_profile_can_reach_target(
+    *,
+    game: object | None,
+    unit: object,
+    model: object,
+    profile: object,
+    target: object,
+    distance_cache: dict[tuple[str, str], float | None] | None = None,
+) -> bool:
+    max_range = _profile_effective_range_max(profile, model)
+    distance = _shooting_model_target_min_distance(model, target, distance_cache=distance_cache)
+    if distance is None:
+        return True
+    if max_range is not None and distance > float(max_range) + 1e-6:
+        return False
+    return _target_range_restriction_allows_profile(
+        game=game,
+        unit=unit,
+        model=model,
+        target=target,
+        distance=distance,
+    )
+
+
+def _copy_shooting_target_candidates(candidates: list[dict[str, object]]) -> list[dict[str, object]]:
+    copied: list[dict[str, object]] = []
+    for candidate in list(candidates or []):
+        row = dict(candidate)
+        if isinstance(row.get("target_unit_ids"), list):
+            row["target_unit_ids"] = list(row.get("target_unit_ids") or [])
+        if isinstance(row.get("candidate_tags"), dict):
+            row["candidate_tags"] = dict(row.get("candidate_tags") or {})
+        copied.append(row)
+    return copied
+
+
+def _unit_alive_signature(unit: object | None) -> bool:
+    if unit is None:
+        return False
+    alive = getattr(unit, "is_alive", True)
+    try:
+        return bool(alive() if callable(alive) else alive)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return False
+
+
+def _unit_reserve_signature(unit: object | None) -> tuple[object, ...]:
+    if unit is None:
+        return ("", False)
+    reserve_check = getattr(unit, "is_in_reserves", None)
+    in_reserves = False
+    if callable(reserve_check):
+        try:
+            in_reserves = bool(reserve_check())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            in_reserves = True
+    return (str(getattr(unit, "reserve_status", "") or ""), bool(in_reserves))
+
+
+def _unit_shooting_state_signature(unit: object | None) -> tuple[object, ...]:
+    if unit is None:
+        return ("",)
+    round_state = getattr(unit, "round_state", None)
+    return (
+        str(get_entity_id(unit) or "").strip(),
+        _unit_alive_signature(unit),
+        bool(getattr(unit, "deployed", True)),
+        bool(getattr(unit, "is_embarked", False)),
+        str(maybe_entity_id(getattr(unit, "embarked_in", None)) or ""),
+        _unit_reserve_signature(unit),
+        bool(getattr(round_state, "shot_this_round", False)) if round_state is not None else False,
+        bool(getattr(round_state, "advanced_this_round", False)) if round_state is not None else False,
+        bool(getattr(round_state, "fell_back_this_round", False)) if round_state is not None else False,
+        bool(getattr(round_state, "action_locked_until_turn_end", False)) if round_state is not None else False,
+        bool(getattr(round_state, "action_permitted_shoot_used", False)) if round_state is not None else False,
+        int(getattr(unit, "_ability_structure_generation", 0) or 0),
+        int(getattr(unit, "_ability_activity_generation", 0) or 0),
+    )
+
+
+def _shooting_target_candidates_cache_key(
+    game: object | None,
+    unit: object,
+    targets: list[object],
+    *,
+    force_target_unit_id: str,
+) -> tuple[object, ...]:
+    game_map = getattr(game, "map", None) if game is not None else None
+    phase = getattr(game, "phase", None) if game is not None else None
+    return (
+        "shooting_target_candidates_v2",
+        int(getattr(game_map, "state_generation", 0) or 0),
+        int(getattr(game, "turn", 0) or 0) if game is not None else 0,
+        str(getattr(phase, "name", "") or ""),
+        str(force_target_unit_id or "").strip(),
+        _unit_shooting_state_signature(unit),
+        tuple(_unit_shooting_state_signature(target) for target in list(targets or [])),
+    )
+
+
+def _shooting_profile_validation_cache_key(
+    game: object | None,
+    unit: object,
+    model: object,
+    profile: object,
+    target: object,
+) -> tuple[object, ...]:
+    game_map = getattr(game, "map", None) if game is not None else None
+    return (
+        "shooting_profile_target_validation_v1",
+        int(getattr(game_map, "state_generation", 0) or 0),
+        _unit_shooting_state_signature(unit),
+        _unit_shooting_state_signature(target),
+        str(maybe_entity_id(model) or id(model)),
+        str(maybe_entity_id(profile) or id(profile)),
+        str(getattr(profile, "name", "") or ""),
+    )
+
+
+def _shooting_profile_target_validation_is_valid(
+    game: object | None,
+    unit: object,
+    model: object,
+    profile: object,
+    target: object,
+    validate: object,
+) -> bool:
+    if not callable(validate):
+        return True
+    cache = _shooting_declaration_validation_cache(game)
+    cache_key = _shooting_profile_validation_cache_key(game, unit, model, profile, target)
+    if cache is not None and cache_key in cache:
+        return bool(cache[cache_key])
+    game_map = getattr(game, "map", None) if game is not None else None
+    try:
+        validation = validate(profile, target, [model], game_map)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        validation = {"valid": False}
+    is_valid = bool(isinstance(validation, dict) and validation.get("valid", False))
+    if cache is not None:
+        if cache_key not in cache and len(cache) >= _SHOOTING_TARGET_CANDIDATES_CACHE_MAX * 8:
+            cache.clear()
+        cache[cache_key] = bool(is_valid)
+    return bool(is_valid)
 
 
 def _shooting_target_candidates(
@@ -918,6 +1212,7 @@ def _shooting_target_candidates(
     unit: object,
     *,
     force_target_unit_id: str = "",
+    first_only: bool = False,
 ) -> list[dict[str, object]]:
     if game is None or unit is None:
         return []
@@ -930,12 +1225,22 @@ def _shooting_target_candidates(
     forced_target_id = str(force_target_unit_id or "").strip()
     if forced_target_id:
         targets = [target for target in targets if str(get_entity_id(target) or "").strip() == forced_target_id]
-    validate_targets = not _uses_headless_policy_controller(game)
+    cache_key = _shooting_target_candidates_cache_key(
+        game,
+        unit,
+        targets,
+        force_target_unit_id=forced_target_id,
+    ) + (bool(first_only),)
+    cache = _shooting_target_candidate_cache(game)
+    if cache is not None and cache_key in cache:
+        return _copy_shooting_target_candidates(cache[cache_key])
     candidates: list[dict[str, object]] = []
+    distance_cache: dict[tuple[str, str], float | None] = {}
     for model in _attached_alive_models(unit):
         model_id = str(get_entity_id(model) or "").strip()
         if not model_id:
             continue
+        profile_entries: list[tuple[float, str, str, object, object]] = []
         wargear_items = sorted(
             list(getattr(model, "wargear", []) or []),
             key=lambda item: (str(get_entity_id(item) or ""), str(getattr(item, "name", "") or "")),
@@ -958,36 +1263,60 @@ def _shooting_target_candidates(
             ):
                 if profile is None:
                     continue
-                is_targetless = _profile_is_targetless(profile)
-                entry: dict[str, object] = {
-                    "unit_id": unit_id,
-                    "model_id": model_id,
-                    "wargear_id": wargear_id,
-                    "weapon_instance_id": wargear_id,
-                    "profile_name": str(profile_name or ""),
-                    "is_plasma_warhead": bool(is_targetless),
-                    "map_state_generation": map_generation,
-                }
-                if is_targetless:
-                    entry["targetless"] = True
-                    candidates.append(entry)
-                    continue
-                target_ids = _shooting_profile_target_ids(
-                    game,
-                    unit,
-                    model,
-                    profile,
-                    targets,
-                    validate_targets=validate_targets,
-                )
-                if not target_ids:
-                    continue
-                entry["target_unit_ids"] = target_ids
-                entry["candidate_tags"] = {
-                    "target_count": len(target_ids),
-                    "forced_target": bool(forced_target_id),
-                }
+                max_range = _profile_effective_range_max(profile, model)
+                range_key = float("inf") if max_range is None else float(max_range)
+                profile_entries.append((range_key, wargear_id, str(profile_name or ""), wargear, profile))
+        if not profile_entries:
+            continue
+        profile_entries.sort(key=lambda item: (-item[0], item[1], item[2]))
+        longest_range = None if profile_entries[0][0] == float("inf") else float(profile_entries[0][0])
+        if not _shooting_model_has_any_target_in_range(
+            model,
+            targets,
+            max_range=longest_range,
+            distance_cache=distance_cache,
+        ):
+            continue
+        for _range_key, wargear_id, profile_name, _wargear, profile in profile_entries:
+            is_targetless = _profile_is_targetless(profile)
+            entry: dict[str, object] = {
+                "unit_id": unit_id,
+                "model_id": model_id,
+                "wargear_id": wargear_id,
+                "weapon_instance_id": wargear_id,
+                "profile_name": str(profile_name or ""),
+                "is_plasma_warhead": bool(is_targetless),
+                "map_state_generation": map_generation,
+            }
+            if is_targetless:
+                entry["targetless"] = True
                 candidates.append(entry)
+                if first_only:
+                    if cache is not None:
+                        cache[cache_key] = _copy_shooting_target_candidates(candidates)
+                    return _copy_shooting_target_candidates(candidates)
+                continue
+            target_ids = _shooting_profile_target_ids(
+                game,
+                unit,
+                model,
+                profile,
+                targets,
+                validate_targets=True,
+                distance_cache=distance_cache,
+            )
+            if not target_ids:
+                continue
+            entry["target_unit_ids"] = target_ids
+            entry["candidate_tags"] = {
+                "target_count": len(target_ids),
+                "forced_target": bool(forced_target_id),
+            }
+            candidates.append(entry)
+            if first_only:
+                if cache is not None:
+                    cache[cache_key] = _copy_shooting_target_candidates(candidates)
+                return _copy_shooting_target_candidates(candidates)
     candidates.sort(
         key=lambda entry: (
             str(entry.get("model_id", "") or ""),
@@ -995,7 +1324,28 @@ def _shooting_target_candidates(
             str(entry.get("profile_name", "") or ""),
         )
     )
-    return candidates
+    if cache is not None:
+        if cache_key not in cache and len(cache) >= _SHOOTING_TARGET_CANDIDATES_CACHE_MAX:
+            cache.clear()
+        cache[cache_key] = _copy_shooting_target_candidates(candidates)
+    return _copy_shooting_target_candidates(candidates)
+
+
+def unit_has_legal_shooting_target_candidates(
+    game: object | None,
+    unit: object,
+    *,
+    force_target_unit_id: str = "",
+) -> bool:
+    return bool(
+        _shooting_target_candidates(
+            game,
+            unit,
+            force_target_unit_id=force_target_unit_id,
+            first_only=True,
+        )
+    )
+
 
 
 def _source_root_for_model(model: object) -> object | None:
@@ -1468,19 +1818,20 @@ def queue_declare_shots_request(
         unit,
         force_target_unit_id=str((context or {}).get("force_target_unit_id", "") or ""),
     )
-    if target_candidates:
-        game_map = getattr(game, "map", None)
-        request.context.setdefault("shooting_target_generation", int(getattr(game_map, "state_generation", 0) or 0))
-        request.context.setdefault("shooting_target_candidates", target_candidates)
-        allowed_target_ids = sorted(
-            {
-                str(target_id or "").strip()
-                for candidate in target_candidates
-                for target_id in list(candidate.get("target_unit_ids", []) or [])
-                if str(target_id or "").strip()
-            }
-        )
-        request.context.setdefault("allowed_target_unit_ids", allowed_target_ids)
+    if not target_candidates:
+        return None
+    game_map = getattr(game, "map", None)
+    request.context.setdefault("shooting_target_generation", int(getattr(game_map, "state_generation", 0) or 0))
+    request.context.setdefault("shooting_target_candidates", target_candidates)
+    allowed_target_ids = sorted(
+        {
+            str(target_id or "").strip()
+            for candidate in target_candidates
+            for target_id in list(candidate.get("target_unit_ids", []) or [])
+            if str(target_id or "").strip()
+        }
+    )
+    request.context.setdefault("allowed_target_unit_ids", allowed_target_ids)
     request_decision = getattr(game, "request_decision", None)
     if not callable(request_decision):
         raise RuntimeError("Game does not support request_decision().")
