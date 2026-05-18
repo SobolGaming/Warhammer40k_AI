@@ -91,6 +91,31 @@ def _shooting_target_candidate_map(context: dict) -> dict[tuple[str, str, str], 
     return candidate_map
 
 
+def _shooting_target_candidate_context_state(game: object, context: dict) -> str:
+    candidates = [entry for entry in list(context.get("shooting_target_candidates", []) or []) if isinstance(entry, dict)]
+    if not candidates:
+        return "absent"
+    if "shooting_target_generation" not in context:
+        return "unknown"
+    game_map = getattr(game, "map", None)
+    try:
+        current_generation = int(getattr(game_map, "state_generation", 0) or 0)
+        context_generation = int(context.get("shooting_target_generation", -1))
+    except (TypeError, ValueError):
+        return "unknown"
+    if current_generation != context_generation:
+        return "stale"
+    for entry in candidates:
+        if "map_state_generation" not in entry:
+            continue
+        try:
+            if int(entry.get("map_state_generation", -1)) != current_generation:
+                return "stale"
+        except (TypeError, ValueError):
+            return "unknown"
+    return "fresh"
+
+
 def _validate_target_candidate_context(
     *,
     target_id: str,
@@ -266,7 +291,10 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         if str(value or "").strip()
     }
     target_candidate_map = _shooting_target_candidate_map(dict(request.context or {}))
-    strict_target_context = bool(allowed_target_ids or target_candidate_map)
+    candidate_context_state = _shooting_target_candidate_context_state(game, dict(request.context or {}))
+    candidate_context_is_stale = candidate_context_state == "stale"
+    candidate_context_can_constrain = candidate_context_state in {"fresh", "unknown"}
+    strict_target_context = bool(allowed_target_ids or target_candidate_map) and candidate_context_can_constrain
     game_map = getattr(game, "map", None)
     try:
         max_declarations = int(request.context.get("max_declarations", 0) or 0)
@@ -370,7 +398,7 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         if not isinstance(model_ids, list) or not model_ids:
             return ("Declaration requires model_ids list.",)
         normalized_model_ids = [str(model_id or "").strip() for model_id in list(model_ids or [])]
-        if not is_plasma_warhead:
+        if not is_plasma_warhead and candidate_context_can_constrain:
             candidate_errors = _validate_target_candidate_context(
                 target_id=target_id,
                 model_ids=normalized_model_ids,
@@ -526,7 +554,15 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
                     return ("Linked Fire origin must be visible to the bearer unit.",)
 
-        if strict_target_context and not is_plasma_warhead:
+        needs_full_legality_validation = (
+            candidate_context_is_stale
+            or candidate_context_state == "unknown"
+            or bool(force_target_id)
+            or linked_fire_origin_id is not None
+        )
+        if strict_target_context and candidate_context_state == "fresh" and not needs_full_legality_validation:
+            needs_full_legality_validation = False
+        if needs_full_legality_validation and not is_plasma_warhead:
             validate_declaration = getattr(unit, "_validate_shooting_declaration", None)
             if callable(validate_declaration):
                 validation = validate_declaration(

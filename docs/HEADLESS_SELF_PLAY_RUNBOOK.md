@@ -113,7 +113,8 @@ Random matchup batch controls:
 - Filtered unit-geometry failures are recorded in `data/unit_synthesis_failure.json`, keyed by Wahapedia datasheet id with faction and Wahapedia model `base_size`/`base_size_descr` rows so missing overrides can be triaged without duplicate entries.
 
 Default shooting policy:
-- Headless `DECLARE_SHOTS` synthesis declares one legal profile for each ranged weapon carried by an eligible model.
+- Headless `DECLARE_SHOTS` synthesis first reduces fresh request-provided `shooting_target_candidates` into declarations, grouping compatible models by weapon/profile/target.
+- If target candidate context is missing or stale, the controller falls back to legal-profile search and apply validation performs full legality checks.
 - Hazardous profiles are eligible during default shooting.
 - For weapons with multiple legal targetable profiles, the controller chooses the profile/target pair with the best hit-probability x wound-probability, using expected damage only as a tie-breaker.
 - Generic headless `SELECT_REALM_OF_CHAOS_UNITS` handling now synthesizes deterministic `unit_ids`

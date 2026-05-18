@@ -77,6 +77,27 @@ def test_queue_reaction_strips_wall_clock_expiry_from_engine_state() -> None:
     assert manager._pending_reactions
 
 
+def test_headless_reaction_windows_do_not_use_wall_clock_expiry() -> None:
+    manager, _player, _game, target_unit = _build_remote_tool_manager()
+    manager._pending_reactions = []
+    manager._reaction_timeout_s = 5.0
+    manager._now = lambda: 100.0
+
+    manager._queue_reaction(
+        {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": "GO TO GROUND",
+            "target_unit": target_unit,
+        }
+    )
+
+    assert len(manager._pending_reactions) == 1
+    assert "expires_at" not in manager._pending_reactions[0]
+    manager._prune_expired_reactions(now=999.0)
+    assert len(manager._pending_reactions) == 1
+
+
 def _build_remote_tool_manager():
     decision_queue = DecisionQueue()
     target_unit = SimpleNamespace(id="unit:target", name="Target Unit")

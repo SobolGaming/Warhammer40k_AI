@@ -1716,6 +1716,168 @@ class HeadlessPolicyDecisionController(DecisionController):
             if str(maybe_entity_id(model) or "")
         ]
 
+    @staticmethod
+    def _shooting_target_context_is_current(game: object | None, ctx: dict[str, Any]) -> bool:
+        if not list(ctx.get("shooting_target_candidates", []) or []):
+            return False
+        if "shooting_target_generation" not in ctx:
+            return False
+        game_map = getattr(game, "map", None) if game is not None else None
+        try:
+            current_generation = int(getattr(game_map, "state_generation", 0) or 0)
+            context_generation = int(ctx.get("shooting_target_generation", -1))
+        except (TypeError, ValueError):
+            return False
+        return current_generation == context_generation
+
+    @classmethod
+    def _shooting_declarations_from_target_candidates(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        payload: dict[str, Any],
+    ) -> list[dict[str, object]]:
+        ctx = dict(getattr(request, "context", {}) or {})
+        candidate_rows = [dict(row) for row in list(ctx.get("shooting_target_candidates", []) or []) if isinstance(row, dict)]
+        if not candidate_rows or not cls._shooting_target_context_is_current(game, ctx):
+            return []
+        unit_id = str(payload.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
+        unit = cls._resolve_unit(game, unit_id)
+        if unit is None:
+            return []
+
+        allowed_model_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_model_ids", []) or [])
+            if str(value or "").strip()
+        }
+        allowed_wargear_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("allowed_wargear_ids", []) or [])
+            if str(value or "").strip()
+        }
+        force_target_id = str(ctx.get("force_target_unit_id", "") or "").strip()
+        try:
+            max_declarations = int(payload.get("max_declarations", ctx.get("max_declarations", 0)) or 0)
+        except (TypeError, ValueError):
+            max_declarations = 0
+
+        models_by_id = {
+            str(maybe_entity_id(model) or ""): model
+            for model in cls._attached_alive_models(unit)
+            if str(maybe_entity_id(model) or "")
+        }
+        wargear_by_id: dict[str, object] = {}
+        model_wargear_ids: dict[str, set[str]] = {}
+        for model_id, model in models_by_id.items():
+            carried: set[str] = set()
+            for wargear in list(getattr(model, "wargear", []) or []):
+                wargear_id = str(maybe_entity_id(wargear) or "")
+                if not wargear_id:
+                    continue
+                wargear_by_id.setdefault(wargear_id, wargear)
+                carried.add(wargear_id)
+            model_wargear_ids[model_id] = carried
+
+        best_by_model_wargear: dict[tuple[str, str], tuple[tuple[float, float, float, float, str, str], dict[str, object]]] = {}
+        for row in candidate_rows:
+            if bool(row.get("targetless", False)) or bool(row.get("is_plasma_warhead", False)):
+                continue
+            row_unit_id = str(row.get("unit_id", "") or "").strip()
+            if row_unit_id and row_unit_id != unit_id:
+                continue
+            model_id = str(row.get("model_id", "") or "").strip()
+            wargear_id = str(row.get("wargear_id", "") or "").strip()
+            profile_name = str(row.get("profile_name", "") or "").strip()
+            if not model_id or not wargear_id or not profile_name:
+                continue
+            if allowed_model_ids and model_id not in allowed_model_ids:
+                continue
+            if allowed_wargear_ids and wargear_id not in allowed_wargear_ids:
+                continue
+            if model_id not in models_by_id or wargear_id not in model_wargear_ids.get(model_id, set()):
+                continue
+            wargear = wargear_by_id.get(wargear_id)
+            if wargear is None:
+                continue
+            profile = dict(getattr(wargear, "profiles", {}) or {}).get(profile_name)
+            if profile is None:
+                continue
+            target_ids = [
+                str(target_id or "").strip()
+                for target_id in list(row.get("target_unit_ids", []) or [])
+                if str(target_id or "").strip()
+            ]
+            if force_target_id:
+                target_ids = [target_id for target_id in target_ids if target_id == force_target_id]
+            if not target_ids:
+                continue
+
+            best_target_id = ""
+            best_key: tuple[float, float, float, float, str, str] | None = None
+            for target_id in sorted(set(target_ids)):
+                target_unit = cls._resolve_unit(game, target_id)
+                if target_unit is None:
+                    continue
+                accuracy_key = cls._profile_accuracy_key(profile, target_unit)
+                key = (
+                    accuracy_key[0],
+                    accuracy_key[1],
+                    accuracy_key[2],
+                    accuracy_key[3],
+                    target_id,
+                    profile_name,
+                )
+                if best_key is None or key > best_key:
+                    best_key = key
+                    best_target_id = target_id
+            if best_key is None or not best_target_id:
+                continue
+
+            entry: dict[str, object] = {
+                "wargear_id": wargear_id,
+                "profile_name": profile_name,
+                "target_unit_id": best_target_id,
+                "model_ids": [model_id],
+            }
+            linked_fire_origin_id = str(row.get("linked_fire_origin_unit_id", "") or "").strip()
+            linked_fire_mode = str(row.get("linked_fire_mode", "") or "").strip()
+            if linked_fire_origin_id:
+                entry["linked_fire_origin_unit_id"] = linked_fire_origin_id
+                if linked_fire_mode:
+                    entry["linked_fire_mode"] = linked_fire_mode
+            source_model_ids = cls._firing_deck_source_model_ids(unit, profile)
+            if source_model_ids:
+                entry["firing_deck_source_model_ids"] = source_model_ids
+            key_by_model = (model_id, wargear_id)
+            existing = best_by_model_wargear.get(key_by_model)
+            if existing is None or best_key > existing[0]:
+                best_by_model_wargear[key_by_model] = (best_key, entry)
+
+        grouped: dict[tuple[str, str, str, str, str], dict[str, object]] = {}
+        group_order: dict[tuple[str, str, str, str, str], tuple[str, str]] = {}
+        for (model_id, wargear_id), (_score, entry) in sorted(best_by_model_wargear.items(), key=lambda item: item[0]):
+            group_key = (
+                wargear_id,
+                str(entry.get("profile_name", "") or ""),
+                str(entry.get("target_unit_id", "") or ""),
+                str(entry.get("linked_fire_origin_unit_id", "") or ""),
+                str(entry.get("linked_fire_mode", "") or ""),
+            )
+            if group_key not in grouped:
+                grouped[group_key] = {key: value for key, value in entry.items() if key != "model_ids"}
+                grouped[group_key]["model_ids"] = []
+                group_order[group_key] = (model_id, wargear_id)
+            grouped[group_key]["model_ids"].append(model_id)
+
+        ordered_keys = sorted(grouped.keys(), key=lambda key: (group_order.get(key, ("", "")), key))
+        declarations = [grouped[key] for key in ordered_keys]
+        for declaration in declarations:
+            declaration["model_ids"] = sorted({str(model_id or "") for model_id in list(declaration.get("model_ids", []) or []) if str(model_id or "")})
+        if max_declarations > 0:
+            return declarations[:max_declarations]
+        return declarations
+
     @classmethod
     def _default_shooting_declarations(
         cls,
@@ -1724,6 +1886,20 @@ class HeadlessPolicyDecisionController(DecisionController):
         payload: dict[str, Any],
     ) -> list[dict[str, object]]:
         ctx = dict(getattr(request, "context", {}) or {})
+        candidate_declarations = cls._shooting_declarations_from_target_candidates(game, request, payload)
+        if candidate_declarations:
+            return candidate_declarations
+        candidate_rows = [row for row in list(ctx.get("shooting_target_candidates", []) or []) if isinstance(row, dict)]
+        if candidate_rows and cls._shooting_target_context_is_current(game, ctx):
+            has_fallback_only_rows = any(
+                bool(dict(row).get("targetless", False))
+                or bool(dict(row).get("is_plasma_warhead", False))
+                or bool(dict(row).get("linked_fire_origin_unit_id", ""))
+                or bool(dict(row).get("linked_fire_mode", ""))
+                for row in candidate_rows
+            )
+            if not has_fallback_only_rows:
+                return []
         unit_id = str(payload.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
         unit = cls._resolve_unit(game, unit_id)
         if unit is None:

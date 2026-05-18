@@ -195,11 +195,17 @@ def test_headless_declare_shots_request_uses_fast_target_context_without_los_val
     assert request is queued[0]
     assert calls["validate"] == 0
     assert request.context["allowed_target_unit_ids"] == ["target-a", "target-b"]
+    assert request.context["shooting_target_generation"] == 1
     assert request.context["shooting_target_candidates"] == [
         {
+            "unit_id": "unit",
             "model_id": "model",
             "wargear_id": "wargear",
+            "weapon_instance_id": "wargear",
             "profile_name": "main",
+            "is_plasma_warhead": False,
+            "map_state_generation": 1,
             "target_unit_ids": ["target-a", "target-b"],
+            "candidate_tags": {"target_count": 2, "forced_target": False},
         }
     ]
