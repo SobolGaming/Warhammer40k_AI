@@ -150,6 +150,11 @@ _MANAGER_STATE_EXCLUDE = {
     "player",
 }
 
+
+def _is_manager_state_excluded(key: str) -> bool:
+    return key in _MANAGER_STATE_EXCLUDE or key.endswith("_cache")
+
+
 _UNIT_ROUND_FIELDS = [
     "remained_stationary_this_round",
     "advanced_this_round",
@@ -1403,7 +1408,7 @@ def _serialize_manager_state(manager: object) -> dict | None:
         return None
     state: dict[str, Any] = {}
     for key, value in manager.__dict__.items():
-        if key in _MANAGER_STATE_EXCLUDE:
+        if _is_manager_state_excluded(str(key)):
             continue
         if callable(value):
             continue
@@ -1430,7 +1435,7 @@ def _apply_manager_state(manager: object, data: dict | None, registry: EntityReg
         return
     decoded = decode_refs(data, registry)
     for key, value in decoded.items():
-        if key in _MANAGER_STATE_EXCLUDE:
+        if _is_manager_state_excluded(str(key)):
             continue
         value = _coerce_manager_state_value(manager, key, value)
         setattr(manager, key, value)

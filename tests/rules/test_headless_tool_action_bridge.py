@@ -51,6 +51,32 @@ def test_tool_action_action_id_ignores_volatile_expiry_fields() -> None:
     )
 
 
+def test_queue_reaction_strips_wall_clock_expiry_from_engine_state() -> None:
+    manager = StratagemManager.__new__(StratagemManager)
+    manager._pending_reactions = []
+    manager._reaction_timeout_s = 0.0
+    manager._now = lambda: 999.0
+
+    manager._queue_reaction(
+        {
+            "event": "shooting_targets_selected",
+            "stratagem": "GO TO GROUND",
+            "expires_at": 123.456,
+        },
+        use_timer=True,
+    )
+
+    assert manager._pending_reactions == [
+        {
+            "event": "shooting_targets_selected",
+            "stratagem": "GO TO GROUND",
+            "reaction": True,
+        }
+    ]
+    manager._prune_expired_reactions(now=1000.0)
+    assert manager._pending_reactions
+
+
 def _build_remote_tool_manager():
     decision_queue = DecisionQueue()
     target_unit = SimpleNamespace(id="unit:target", name="Target Unit")

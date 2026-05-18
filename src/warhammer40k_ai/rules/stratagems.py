@@ -7139,11 +7139,12 @@ class StratagemManager(
                 sr.pop("armour_of_contempt_ap_worsen", None)
             unit.special_rules = sr
 
-    def _queue_reaction(self, payload: Dict[str, Any], use_timer: bool = True) -> None:
+    def _queue_reaction(self, payload: Dict[str, Any], use_timer: bool = False) -> None:
         if not isinstance(payload, dict):
             return
-        if use_timer:
-            payload["expires_at"] = self._now() + float(self._reaction_timeout_s)
+        # Reaction windows are engine decisions scoped by the triggering phase/event,
+        # not wall-clock timers. Server/UI timeout policy must live outside game state.
+        payload.pop("expires_at", None)
         payload["reaction"] = True
         self._pending_reactions.append(payload)
 

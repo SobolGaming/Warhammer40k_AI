@@ -847,10 +847,15 @@ def test_snapshot_filters_runtime_callbacks_and_base_caches_from_state(waha_help
             "callback": lambda: None,
         }
     ]
+    player_one.stratagems.snapshot_runtime_cache = {
+        ("cache-key", id(unit_one)): {"unit": unit_one},
+    }
 
     snapshot = snapshot_game(game)
     unit_payload = next(entry for entry in list(snapshot["units"] or []) if entry["id"] == unit_one.id)
     assert "_wargear_constraints" not in dict(unit_payload.get("state", {}) or {})
+    player_payload = next(entry for entry in list(snapshot["players"] or []) if entry["id"] == player_one.id)
+    assert "snapshot_runtime_cache" not in dict(player_payload.get("stratagems_state", {}) or {})
 
     loaded = load_game_snapshot(snapshot)
     loaded_players = {player.id: player for player in list(loaded.players or [])}

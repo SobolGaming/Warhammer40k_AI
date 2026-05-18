@@ -282,6 +282,10 @@ General pattern:
 3. If any reactions are available, the server **queues decisions** and waits for `RESOLVE_DECISION`.
 4. Once reactions resolve (or are declined), the server **broadcasts the phase transition** and continues.
 
+Engine reaction windows are scoped by the rule trigger and current phase/event. They do not expire from
+wall-clock time inside game state; any future client/server timeout must resolve the pending
+`DecisionRequest` explicitly so the command stream remains deterministic and replayable.
+
 Examples:
 - **Rapid Ingress**: at the end of the opponent’s Movement phase, if the defending player has CP and an
   eligible unit in reserves, the server queues a decision to use Rapid Ingress before advancing to Shooting.

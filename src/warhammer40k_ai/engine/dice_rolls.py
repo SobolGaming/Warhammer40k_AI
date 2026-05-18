@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import time
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .roll_explanation import apply_roll_explanation
@@ -25,13 +24,6 @@ def get_roll_handler(key: str) -> Optional[RollHandler]:
     if not key:
         return None
     return _ROLL_HANDLERS.get(key)
-
-
-def _now() -> float:
-    try:
-        return time.time()
-    except Exception:
-        return 0.0
 
 
 def _die_id(roll_id: int, index: int) -> str:
@@ -238,7 +230,7 @@ class DiceRollState:
     sum_success: Optional[bool] = None
     reroll_options: List[dict] = field(default_factory=list)
     reroll_history: List[dict] = field(default_factory=list)
-    created_at: float = field(default_factory=_now)
+    created_at: float = 0.0
     resolved_at: Optional[float] = None
     final: bool = False
 
@@ -682,7 +674,7 @@ class DiceRollManager:
             if len(base_vals) >= 2:
                 state.total = int(base_vals[0] * 10 + base_vals[1])
         state.status = "rolled"
-        state.resolved_at = _now()
+        state.resolved_at = 0.0
         self._compute_success(state)
         state.reroll_options = self._compute_reroll_options(game, state)
 
@@ -754,7 +746,7 @@ class DiceRollManager:
             if len(base_vals) >= 2:
                 state.total = int(base_vals[0] * 10 + base_vals[1])
         state.status = "rolled"
-        state.resolved_at = _now()
+        state.resolved_at = 0.0
         self._compute_success(state)
         state.reroll_options = list(roll_results.get("reroll_options", []) or [])
         # Clients should not enqueue new decisions; rely on server broadcasts.
@@ -1001,7 +993,7 @@ class DiceRollManager:
             {
                 "action_id": str(action_id),
                 "selected": list(chosen),
-                "time": _now(),
+                "reroll_index": len(list(state.reroll_history or [])) + 1,
             }
         )
         if rerolled_ids:

@@ -274,6 +274,8 @@ def test_auto_pick_charge_reroll_uses_required_charge_total_failure():
     assert updated.total == 8
     assert updated.sum_success is True
     assert updated.reroll_history[-1]["action_id"] == "reroll_charge"
+    assert updated.reroll_history[-1]["reroll_index"] == 1
+    assert "time" not in updated.reroll_history[-1]
 
 
 def test_auto_pick_charge_command_reroll_when_charge_failed_and_no_rule_reroll():
