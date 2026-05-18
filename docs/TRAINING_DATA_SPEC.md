@@ -13,9 +13,28 @@ CLI:
 - `scripts/annotate_decision_rewards.py`
 - `scripts/build_deployment_ranking_dataset.py`
 - `scripts/train_deployment_ranker.py`
+- `scripts/collect_training_corpus.py`
 
 Operational runbook:
 - `docs/HEADLESS_SELF_PLAY_RUNBOOK.md`
+
+Validated corpus collection:
+
+```bash
+uv run python scripts/collect_training_corpus.py \
+  --target-accepted-games 100 \
+  --workers 5 \
+  --games-per-batch 5 \
+  --seed-base 2026051800 \
+  --output-dir data/training_corpus/pre_ml_baseline
+```
+
+The collector runs deterministic headless self-play with full DecisionRecord/event retention, validates every
+game, and writes only accepted games to `accepted_decision_records.json`. A game is rejected if any record fails
+the DecisionRecord schema or candidate/mask/chosen-action checks, if strict replay reconstruction fails or its
+final scores do not match the self-play report, or if engine diagnostics are emitted. The sidecar
+`corpus_manifest.json` stores accepted/rejected game summaries, final scores, VP deltas, replay counts, and
+record-level phase timing aggregates. The standard `training_manifest.json` is built from accepted records only.
 
 Manifest fields:
 - `manifest_version`
