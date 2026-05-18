@@ -921,6 +921,11 @@ def _shooting_target_candidates(
 ) -> list[dict[str, object]]:
     if game is None or unit is None:
         return []
+    game_map = getattr(game, "map", None)
+    map_generation = int(getattr(game_map, "state_generation", 0) or 0) if game_map is not None else 0
+    unit_id = str(get_entity_id(unit) or "").strip()
+    if not unit_id:
+        return []
     targets = _shooting_enemy_units(game, unit)
     forced_target_id = str(force_target_unit_id or "").strip()
     if forced_target_id:
@@ -953,12 +958,17 @@ def _shooting_target_candidates(
             ):
                 if profile is None:
                     continue
+                is_targetless = _profile_is_targetless(profile)
                 entry: dict[str, object] = {
+                    "unit_id": unit_id,
                     "model_id": model_id,
                     "wargear_id": wargear_id,
+                    "weapon_instance_id": wargear_id,
                     "profile_name": str(profile_name or ""),
+                    "is_plasma_warhead": bool(is_targetless),
+                    "map_state_generation": map_generation,
                 }
-                if _profile_is_targetless(profile):
+                if is_targetless:
                     entry["targetless"] = True
                     candidates.append(entry)
                     continue
@@ -973,6 +983,10 @@ def _shooting_target_candidates(
                 if not target_ids:
                     continue
                 entry["target_unit_ids"] = target_ids
+                entry["candidate_tags"] = {
+                    "target_count": len(target_ids),
+                    "forced_target": bool(forced_target_id),
+                }
                 candidates.append(entry)
     candidates.sort(
         key=lambda entry: (
@@ -1455,6 +1469,8 @@ def queue_declare_shots_request(
         force_target_unit_id=str((context or {}).get("force_target_unit_id", "") or ""),
     )
     if target_candidates:
+        game_map = getattr(game, "map", None)
+        request.context.setdefault("shooting_target_generation", int(getattr(game_map, "state_generation", 0) or 0))
         request.context.setdefault("shooting_target_candidates", target_candidates)
         allowed_target_ids = sorted(
             {

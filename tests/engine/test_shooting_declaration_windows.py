@@ -13,6 +13,7 @@ from warhammer40k_ai.units.unit import Unit
 class _MapStub:
     def __init__(self, enemies=None) -> None:
         self.units = list(enemies or [])
+        self.state_generation = 3
 
     def get_enemy_units(self, _unit):
         return list(self.units)
@@ -124,12 +125,18 @@ def test_declare_shots_request_exposes_eligible_targets_by_model_weapon_profile(
 
     assert request is queued[0]
     assert request.context["allowed_target_unit_ids"] == ["target-legal"]
+    assert request.context["shooting_target_generation"] == 3
     assert request.context["shooting_target_candidates"] == [
         {
+            "unit_id": "shooter",
             "model_id": "model-1",
             "wargear_id": "weapon-1",
+            "weapon_instance_id": "weapon-1",
             "profile_name": "default",
+            "is_plasma_warhead": False,
+            "map_state_generation": 3,
             "target_unit_ids": ["target-legal"],
+            "candidate_tags": {"target_count": 1, "forced_target": False},
         }
     ]
 
@@ -183,6 +190,71 @@ def test_declare_shots_rejects_target_outside_candidate_context() -> None:
     errors = list(_validate_declare_shots(game, request, result) or [])
 
     assert errors == ["Declaration target is not an eligible shooting target."]
+
+
+def test_declare_shots_stale_candidate_context_falls_back_to_full_validation() -> None:
+    profile = _profile()
+    wargear = _wargear("weapon-1", profile)
+    model = _model("model-1", wargear)
+    legal_target = _unit("target-legal", None)
+    stale_target = _unit("target-stale", None)
+    shooter = _unit("shooter", None, model=model, legal_target=legal_target)
+    p1, p2, _army1, _army2 = _players_with_units(shooter, legal_target, stale_target)
+    game = _game([p1, p2], [shooter, model, wargear, legal_target, stale_target], enemies=[legal_target, stale_target])
+    game.map.state_generation = 11
+    calls = {"validate": 0}
+
+    def _validate(_profile, target, _models, _game_map, **_kwargs):
+        calls["validate"] += 1
+        return {
+            "valid": target is legal_target,
+            "reason": "No models in range or line of sight",
+        }
+
+    shooter._validate_shooting_declaration = _validate
+    option = DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": "shooter"})
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        player_id=p1.id,
+        options=[option],
+        context={
+            "unit_id": "shooter",
+            "allowed_model_ids": ["model-1"],
+            "allowed_wargear_ids": ["weapon-1"],
+            "shooting_target_generation": 10,
+            "shooting_target_candidates": [
+                {
+                    "unit_id": "shooter",
+                    "model_id": "model-1",
+                    "wargear_id": "weapon-1",
+                    "profile_name": "default",
+                    "map_state_generation": 10,
+                    "target_unit_ids": ["target-stale"],
+                }
+            ],
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p1.id,
+        option_id=option.option_id,
+        payload={
+            "declarations": [
+                {
+                    "wargear_id": "weapon-1",
+                    "profile_name": "default",
+                    "model_ids": ["model-1"],
+                    "target_unit_id": "target-stale",
+                }
+            ]
+        },
+    )
+
+    errors = list(_validate_declare_shots(game, request, result) or [])
+
+    assert errors == ["No models in range or line of sight"]
+    assert calls["validate"] == 1
 
 
 def test_selected_target_reactions_resolve_before_ranged_attacks() -> None:

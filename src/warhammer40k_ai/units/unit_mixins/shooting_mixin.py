@@ -1286,7 +1286,17 @@ class ShootingMixin:
                 pass
 
             # Check range and line of sight (use origin unit for Linked Fire/Infernal Puppeteer if provided)
-            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
+            if linked_fire_origin_unit is not None:
+                can_shoot = self._can_model_shoot_weapon_at_target(
+                    model,
+                    weapon_profile,
+                    target_unit,
+                    game_map,
+                    origin_unit=linked_fire_origin_unit,
+                )
+            else:
+                can_shoot = self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map)
+            if can_shoot:
                 models_in_range.append(model)
 
         if not models_in_range:

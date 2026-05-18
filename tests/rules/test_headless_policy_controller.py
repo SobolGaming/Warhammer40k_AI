@@ -1013,6 +1013,7 @@ def test_headless_policy_controller_auto_builds_declare_shots_payload_for_confir
             self.is_embarked = False
             self.embarked_in = None
             self.models = [_Model()] if unit_id == "unit:shooter" else []
+            self.validate_calls = 0
 
         def get_attached_unit_root(self):
             return self
@@ -1027,11 +1028,13 @@ def test_headless_policy_controller_auto_builds_declare_shots_payload_for_confir
             return False
 
         def _validate_shooting_declaration(self, _profile, target_unit, models, _game_map):
+            self.validate_calls += 1
             return {"valid": bool(target_unit is not None and models)}
 
     class _Map:
         def __init__(self, target) -> None:
             self._target = target
+            self.state_generation = 4
 
         def get_enemy_units(self, _unit):
             return [self._target]
@@ -1075,7 +1078,25 @@ def test_headless_policy_controller_auto_builds_declare_shots_payload_for_confir
         "Declare shots",
         player_id="p1",
         options=options,
-        context={"unit_id": "unit:shooter"},
+        context={
+            "unit_id": "unit:shooter",
+            "allowed_model_ids": ["model:shooter"],
+            "allowed_wargear_ids": ["wargear:rifle"],
+            "allowed_target_unit_ids": ["unit:target"],
+            "shooting_target_generation": 4,
+            "shooting_target_candidates": [
+                {
+                    "unit_id": "unit:shooter",
+                    "model_id": "model:shooter",
+                    "wargear_id": "wargear:rifle",
+                    "weapon_instance_id": "wargear:rifle",
+                    "profile_name": "standard",
+                    "target_unit_ids": ["unit:target"],
+                    "is_plasma_warhead": False,
+                    "map_state_generation": 4,
+                }
+            ],
+        },
         candidates=[
             CandidateAction(
                 action_id="shoot:confirm",
@@ -1109,6 +1130,7 @@ def test_headless_policy_controller_auto_builds_declare_shots_payload_for_confir
     assert metadata["candidate_action_id"] == "shoot:confirm"
     assert metadata["candidate_kind"] == "confirm"
     assert metadata["resolution_strategy"] == "ranked_candidate"
+    assert game.shooter.validate_calls == 0
 
 
 def test_headless_policy_controller_ignores_shooting_unit_without_legal_declarations() -> None:

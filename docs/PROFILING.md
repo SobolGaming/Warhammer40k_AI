@@ -1,6 +1,6 @@
 # Profiling
 
-Launch-time profiling is opt-in and writes diagnostic artifacts without changing gameplay state, RNG, DecisionRecords, or replay behavior. Budgeted solvers use deterministic work-unit budgets for gameplay fallback decisions, so profiler overhead can increase wall-clock telemetry but must not reduce solver work or alter the selected trajectory.
+Launch-time profiling is opt-in and writes diagnostic artifacts without changing gameplay state, RNG, DecisionRecords, or replay behavior. Budgeted solvers use deterministic work-unit budgets for gameplay fallback decisions, and headless reaction windows do not expire from wall-clock timers, so profiler overhead can increase wall-clock telemetry but must not reduce solver work or alter the selected trajectory.
 
 ## UI Runner
 
