@@ -83,6 +83,10 @@ Runtime materialization then routes those choices through:
 - `Unit.apply_wargear_options_strict(...)`
 - `unit.validate_wargear_selection()`
 
+If a selected option resolves to a datasheet Wargear ability instead of a weapon
+profile, the assigned model ability still counts as equipped wargear for active
+rule checks.
+
 So optional wargear changes are validated against the actual datasheet option
 rules instead of a search-only approximation.
 

@@ -426,6 +426,12 @@ def add_materialized_unit_to_army(
                 logger.info("  - %s (Ability Wargear)", ability.name)
 
     unit.apply_daemonic_allegiance_selection()
+    refresh_common_modifiers = getattr(unit, "_refresh_bearer_unit_common_modifiers", None)
+    if callable(refresh_common_modifiers):
+        refresh_common_modifiers()
+    refresh_keyword_flags = getattr(unit, "_refresh_bearer_keyword_flags", None)
+    if callable(refresh_keyword_flags):
+        refresh_keyword_flags()
     unit.validate_wargear_selection()
     _set_build_entry_id(unit, build_entry_id)
     army.add_unit(unit)

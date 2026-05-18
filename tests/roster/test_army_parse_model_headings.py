@@ -435,3 +435,44 @@ Deathwatch Kill Team (190 points)
         or "not found in" in record.getMessage()
         or "Datasheet not found" in record.getMessage()
     ]
+
+
+def test_army_parser_keeps_wargear_ability_equipped_for_runtime_rules() -> None:
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+
+    roster = """WE Daemonkin (90 Points)
+
+World Eaters
+Khorne Daemonkin
+Strike Force (90 Points)
+
+BATTLELINE
+
+Bloodletters (90 Points)
+  \u2022 1x Bloodreaper
+     \u25e6 1x Hellblade
+  \u2022 9x Bloodletter
+     \u25e6 1x Daemonic Icon
+     \u25e6 9x Hellblade
+     \u25e6 1x Instrument of Chaos
+
+Exported with App Version: v1.36.1 (1), Data Version: v640
+"""
+    army = parse_army_list_text(
+        roster,
+        WahaHelper(data_dir="wahapedia_data"),
+        list_name="world_eaters_instrument_wargear",
+    )
+
+    [bloodletters] = army.units
+    assert bloodletters._has_wargear_named("Instrument of Chaos") is True
+
+    charge_mods = list((getattr(bloodletters, "special_rules", {}) or {}).get("charge_roll_modifiers", []) or [])
+    assert any(
+        isinstance(mod, dict)
+        and mod.get("value") == 1
+        and mod.get("source") == "Instrument of Chaos"
+        for mod in charge_mods
+    )
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    assert game.get_charge_roll_modifiers(bloodletters) == [(1, "Instrument of Chaos")]

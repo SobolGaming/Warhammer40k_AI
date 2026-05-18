@@ -2181,6 +2181,18 @@ class ActionsMovementMixin:
                         return True
             except Exception:
                 pass
+            abilities = getattr(model, "abilities", {}) or {}
+            if hasattr(abilities, "values"):
+                ability_values = list(abilities.values())
+            elif isinstance(abilities, (list, tuple, set)):
+                ability_values = list(abilities)
+            else:
+                ability_values = []
+            for ability in ability_values:
+                if ability is None or getattr(ability, "type", None) != "Wargear":
+                    continue
+                if Unit._norm_wargear_name(getattr(ability, "name", "")) == want:
+                    return True
             try:
                 for ow in list(getattr(model, "optional_wargear", []) or []):
                     if Unit._norm_wargear_name(str(ow or "")) == want:
