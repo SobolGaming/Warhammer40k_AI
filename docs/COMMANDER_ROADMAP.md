@@ -476,8 +476,6 @@ Implemented behavior:
 - full `general_plan`, `deployment_plan`, and `battle_round_plan` payloads
   remain audit/debug-only; normal decision context stays slim.
 
-## Remaining Roadmap
-
 ### PR 13 - Performance Guardrails And Cache Hardening
 
 Add bounded top-K planning budgets, context payload size checks, cache-key
@@ -500,3 +498,15 @@ Implemented behavior:
   `performance_guardrails` metadata instead of full-plan payloads in normal
   decision context.
 - plan build and repair audit events include their configured budget values.
+
+## Remaining Roadmap
+
+### PR 14 - Strategic Intent Compiler
+
+Formalize a side-effect-free compiler that translates `GeneralPlan` intent into
+deployment, pre-battle, and battle-round order bundles before those bundles are
+materialized into existing DeploymentPlan and BattleRoundPlan local slices.
+
+Implementation plan:
+
+- [docs/implementation/strategic_intent_compiler_pr14_plan.md](implementation/strategic_intent_compiler_pr14_plan.md)
