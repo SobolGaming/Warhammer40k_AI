@@ -377,14 +377,32 @@ Implemented behavior:
 - deployment legality, candidate generation, masks, and validation are
   unchanged.
 
-## Remaining Roadmap
-
 ### PR 9 - Shooting Executes Commander Fire Assignments And General Resource Policy
 
-Make `DECLARE_SHOTS` try commander preferred fire assignments first while
-honoring existing legal target/profile validation. Consume General
-limited-resource policy for one-shot weapons, once-per-battle offensive effects,
-and CP/stratagem reserves.
+Make `DECLARE_SHOTS` prefer commander fire assignments while keeping current
+legal target/profile validation authoritative.
+
+Implemented behavior:
+
+- unit-scoped request context now exposes slim shooting execution slices:
+  `preferred_target_unit_ids`, `preferred_declarations` when present,
+  `target_fire_plan_summary`, `general_limited_resource_policy`, and
+  `general_cp_policy`.
+- full `BattleRoundPlan` and `GeneralPlan` payloads remain audit/debug-only.
+- headless shooting declaration synthesis tries valid
+  `preferred_declarations` first when the cached legal target context is
+  current.
+- if no preferred declaration is legal, legal commander primary/backup targets
+  are prioritized before the existing local profile/target ranking.
+- stale or illegal commander targets fall back to the existing legal target
+  candidate path.
+- reserved one-shot / once-per-battle shooting profiles are preserved unless
+  General policy authorizes them through availability, explicit target
+  reservation, or target priority threshold.
+- no declaration bypasses the existing legal target candidate context or
+  profile validation fallback.
+
+## Remaining Roadmap
 
 ### PR 10 - Charge/Fight Consume Commander Assignments
 

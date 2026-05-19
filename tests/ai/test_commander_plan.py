@@ -557,6 +557,33 @@ def test_commander_context_attaches_to_unit_scoped_decision() -> None:
     assert request.context["commander_fight_assignment"]["unit_id"] == unit.id
 
 
+def test_shooting_commander_context_attaches_preferred_targets_and_general_resource_slice() -> None:
+    shooting_unit = _Unit(
+        "unit:shooter",
+        wargear=[
+            _Wargear(
+                "ranged",
+                _Profile(range_inches=24, attacks=2, skill=3, strength=6, damage=2),
+            )
+        ],
+    )
+    target = _Unit("target:shoot", wounds=8, position=(15.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([shooting_unit], [target])
+    request = _yes_no_request(player.id, shooting_unit.id)
+
+    game.request_decision(request)
+
+    assert request.context["commander_fire_assignment"]["primary_target_unit_id"] == "target:shoot"
+    assert request.context["preferred_target_unit_ids"] == ["target:shoot"]
+    assert request.context["target_fire_plan_summary"]["target_unit_id"] == "target:shoot"
+    assert "general_plan" not in request.context
+    assert sorted(
+        policy["resource_kind"]
+        for policy in request.context["general_limited_resource_policy"]
+    ) == ["cp_pool", "stratagem"]
+    assert request.context["general_cp_policy"]["reserve_for_interrupt_or_overwatch"] == 1
+
+
 def test_disembark_decision_context_receives_commander_disembark_slice() -> None:
     passenger = _Unit("unit:passenger", keywords=["INFANTRY"])
     transport = _Unit("unit:transport", keywords=["TRANSPORT"])

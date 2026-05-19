@@ -39,8 +39,15 @@ decision.
   - `commander_embark_assignment` for planned embark decisions
   - `commander_disembark_assignment` for planned stay/disembark decisions
   - `commander_fire_assignment`
+  - `preferred_target_unit_ids` for unit-scoped shooting decisions
+  - `preferred_declarations` when the commander has prebuilt declaration
+    hints
+  - `target_fire_plan_summary` for the unit's primary fire target
   - `commander_charge_assignment`
   - `commander_fight_assignment`
+  - `general_limited_resource_policy` for resources relevant to the unit plus
+    global CP/stratagem reserves
+  - `general_cp_policy`
 - The full `battle_round_plan` payload is attached only for audit/debug
   contexts, either when `request.context["include_full_battle_round_plan"]` is
   true or when `game.attach_full_battle_round_plan_context` is true.
@@ -250,6 +257,38 @@ validation, or alter PathWitness requirements. If commander intent is stale,
 impossible, or unsupported by candidate metadata, existing local semantic
 movement scoring remains the fallback.
 
+## Shooting Consumption Baseline
+
+Headless `DECLARE_SHOTS` synthesis now consumes commander fire intent as an
+execution hint, not a legality source.
+
+For unit-scoped shooting decisions, the context can include:
+
+- `commander_fire_assignment`
+- `preferred_target_unit_ids`
+- `preferred_declarations`
+- `target_fire_plan_summary`
+- `general_limited_resource_policy`
+- `general_cp_policy`
+
+The declaration builder follows this order:
+
+1. Try `preferred_declarations` only if each model/profile/target tuple is
+   present in the current legal `shooting_target_candidates` context.
+2. If no preferred declaration is currently legal, prioritize commander
+   primary and backup targets when choosing targets from legal cached target
+   rows.
+3. If the commander target is stale, dead, out of range, or absent from legal
+   target rows, fall back to the existing local target/profile ranking and
+   validation path.
+4. Preserve General-reserved one-shot / once-per-battle shooting profiles
+   unless policy marks them available/authorized, reserves them for the current
+   target, or the target fire plan meets the policy authorization threshold.
+
+All shooting legality still comes from existing legal target candidate
+generation and profile validation. The commander and General only influence
+which legal declaration is tried first.
+
 ## Current Baseline
 
 The first implementation is deliberately conservative:
@@ -270,8 +309,10 @@ The first implementation is deliberately conservative:
 - movement rankers can now score legal candidates against commander intent, but
   legality and mutation remain owned by the existing engine validators.
 - General policy is linked by `general_plan_id`; movement rankers consume only
-  local commander transport slices derived from General transport doctrine.
+  local commander transport slices derived from General transport doctrine, and
+  shooting declaration synthesis consumes slim General limited-resource policy
+  without attaching the full General plan.
 
 This establishes the stable data contract for later work where movement can
-score LoS/range/trigger-band enablement, shooting can try preferred
-declarations first, and charge/fight can execute or repair precommitted intent.
+score LoS/range/trigger-band enablement, shooting can execute preferred legal
+declarations, and charge/fight can execute or repair precommitted intent.

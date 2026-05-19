@@ -1672,6 +1672,268 @@ class HeadlessPolicyDecisionController(DecisionController):
         ]
 
     @staticmethod
+    def _preferred_shooting_target_ids(ctx: dict[str, Any]) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+
+        def add(value: object) -> None:
+            text = str(value or "").strip()
+            if text and text not in seen:
+                seen.add(text)
+                ordered.append(text)
+
+        for target_id in list(ctx.get("preferred_target_unit_ids", []) or []):
+            add(target_id)
+        fire_assignment = ctx.get("commander_fire_assignment")
+        if isinstance(fire_assignment, dict):
+            add(fire_assignment.get("primary_target_unit_id"))
+            for target_id in list(fire_assignment.get("backup_target_unit_ids", []) or []):
+                add(target_id)
+        return ordered
+
+    @classmethod
+    def _preferred_shooting_target_score(cls, ctx: dict[str, Any], target_id: str) -> float:
+        preferred = cls._preferred_shooting_target_ids(ctx)
+        if not preferred:
+            return 0.0
+        try:
+            index = preferred.index(str(target_id or "").strip())
+        except ValueError:
+            return 0.0
+        return float(len(preferred) - index)
+
+    @classmethod
+    def _prioritize_preferred_shooting_targets(
+        cls,
+        ctx: dict[str, Any],
+        targets: list[object],
+    ) -> list[object]:
+        preferred = cls._preferred_shooting_target_ids(ctx)
+        if not preferred:
+            return list(targets or [])
+        preferred_index = {target_id: index for index, target_id in enumerate(preferred)}
+        return sorted(
+            list(targets or []),
+            key=lambda target: (
+                preferred_index.get(str(maybe_entity_id(target) or ""), len(preferred_index)),
+                str(maybe_entity_id(target) or ""),
+            ),
+        )
+
+    @staticmethod
+    def _limited_resource_text(wargear: object, profile: object, profile_name: str) -> str:
+        parts = [
+            str(maybe_entity_id(wargear) or ""),
+            str(getattr(wargear, "name", "") or ""),
+            str(maybe_entity_id(profile) or ""),
+            str(getattr(profile, "name", "") or ""),
+            str(profile_name or ""),
+        ]
+        for attr_name in ("keywords", "abilities", "special_rules", "metadata"):
+            value = getattr(profile, attr_name, None)
+            if isinstance(value, dict):
+                parts.extend(str(item) for pair in value.items() for item in pair)
+            elif isinstance(value, (list, tuple, set)):
+                parts.extend(str(item) for item in value)
+            elif value is not None:
+                parts.append(str(value))
+        return " ".join(parts).lower()
+
+    @classmethod
+    def _profile_matches_limited_resource_policy(
+        cls,
+        policy: dict[str, Any],
+        wargear: object,
+        profile: object,
+        profile_name: str,
+    ) -> bool:
+        resource_kind = str(policy.get("resource_kind", "") or "").strip().lower()
+        if resource_kind not in {"one_shot_weapon", "once_per_battle_ability"}:
+            return False
+        text = cls._limited_resource_text(wargear, profile, profile_name)
+        if resource_kind == "one_shot_weapon":
+            return any(token in text for token in ("hunter-killer", "one-shot", "one shot", "single use"))
+        return any(token in text for token in ("once per battle", "once-per-battle", "once per game", "once-per-game"))
+
+    @staticmethod
+    def _target_fire_plan_priority(ctx: dict[str, Any], target_id: str) -> float:
+        summary = ctx.get("target_fire_plan_summary")
+        if not isinstance(summary, dict):
+            return 0.0
+        summary_target_id = str(summary.get("target_unit_id", "") or "").strip()
+        if summary_target_id and summary_target_id != str(target_id or "").strip():
+            return 0.0
+        metadata = summary.get("metadata", {})
+        priority = metadata.get("priority", 0.0) if isinstance(metadata, dict) else 0.0
+        values = [
+            summary.get("threat_score", 0.0),
+            summary.get("desired_kill_probability", 0.0),
+            priority,
+        ]
+        scores: list[float] = []
+        for value in values:
+            try:
+                scores.append(float(value or 0.0))
+            except (TypeError, ValueError):
+                scores.append(0.0)
+        return max(scores) if scores else 0.0
+
+    @classmethod
+    def _limited_resource_policy_allows_declaration(
+        cls,
+        ctx: dict[str, Any],
+        unit_id: str,
+        wargear: object,
+        profile: object,
+        profile_name: str,
+        target_id: str,
+    ) -> bool:
+        relevant_policies = [
+            dict(policy)
+            for policy in list(ctx.get("general_limited_resource_policy", []) or [])
+            if isinstance(policy, dict)
+            and str(policy.get("owner_unit_id", "") or "").strip() in {"", unit_id}
+            and cls._profile_matches_limited_resource_policy(policy, wargear, profile, profile_name)
+        ]
+        if not relevant_policies:
+            return True
+        target_priority = cls._target_fire_plan_priority(ctx, target_id)
+        for policy in relevant_policies:
+            status = str(policy.get("status", "") or "").strip().lower()
+            if status in {"available", "authorized"}:
+                return True
+            if status in {"spent", "forbidden"}:
+                return False
+            if status == "reserved":
+                reserved_target_id = str(policy.get("reserved_for_target_unit_id", "") or "").strip()
+                if reserved_target_id and reserved_target_id == str(target_id or "").strip():
+                    return True
+                try:
+                    threshold = float(policy.get("authorization_threshold", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    threshold = 0.0
+                if threshold > 0.0 and target_priority >= threshold:
+                    return True
+        return False
+
+    @classmethod
+    def _row_matches_preferred_declaration(
+        cls,
+        row: dict[str, Any],
+        *,
+        unit_id: str,
+        model_id: str,
+        wargear_id: str,
+        profile_name: str,
+        target_id: str,
+        allowed_model_ids: set[str],
+        allowed_wargear_ids: set[str],
+    ) -> bool:
+        row_unit_id = str(row.get("unit_id", "") or "").strip()
+        if row_unit_id and row_unit_id != unit_id:
+            return False
+        if str(row.get("model_id", "") or "").strip() != model_id:
+            return False
+        if str(row.get("wargear_id", "") or "").strip() != wargear_id:
+            return False
+        if str(row.get("profile_name", "") or "").strip() != profile_name:
+            return False
+        if allowed_model_ids and model_id not in allowed_model_ids:
+            return False
+        if allowed_wargear_ids and wargear_id not in allowed_wargear_ids:
+            return False
+        if not target_id:
+            return bool(row.get("targetless", False)) or bool(row.get("is_plasma_warhead", False))
+        target_ids = {
+            str(value or "").strip()
+            for value in list(row.get("target_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        return target_id in target_ids
+
+    @classmethod
+    def _preferred_declarations_from_context(
+        cls,
+        *,
+        ctx: dict[str, Any],
+        candidate_rows: list[dict[str, Any]],
+        unit_id: str,
+        models_by_id: dict[str, object],
+        model_wargear_ids: dict[str, set[str]],
+        wargear_by_id: dict[str, object],
+        allowed_model_ids: set[str],
+        allowed_wargear_ids: set[str],
+        max_declarations: int,
+    ) -> list[dict[str, object]]:
+        preferred = [
+            dict(declaration)
+            for declaration in list(ctx.get("preferred_declarations", []) or [])
+            if isinstance(declaration, dict)
+        ]
+        if not preferred:
+            return []
+        legal_declarations: list[dict[str, object]] = []
+        for declaration in preferred:
+            wargear_id = str(declaration.get("wargear_id", "") or "").strip()
+            profile_name = str(declaration.get("profile_name", "") or "").strip()
+            target_id = str(declaration.get("target_unit_id", "") or "").strip()
+            model_ids = [
+                str(model_id or "").strip()
+                for model_id in list(declaration.get("model_ids", []) or [])
+                if str(model_id or "").strip()
+            ]
+            if not wargear_id or not profile_name or not model_ids:
+                continue
+            wargear = wargear_by_id.get(wargear_id)
+            if wargear is None:
+                continue
+            profile = dict(getattr(wargear, "profiles", {}) or {}).get(profile_name)
+            if profile is None:
+                continue
+            if not cls._limited_resource_policy_allows_declaration(
+                ctx,
+                unit_id,
+                wargear,
+                profile,
+                profile_name,
+                target_id,
+            ):
+                continue
+            valid_model_ids: list[str] = []
+            for model_id in model_ids:
+                if model_id not in models_by_id:
+                    continue
+                if wargear_id not in model_wargear_ids.get(model_id, set()):
+                    continue
+                if not any(
+                    cls._row_matches_preferred_declaration(
+                        row,
+                        unit_id=unit_id,
+                        model_id=model_id,
+                        wargear_id=wargear_id,
+                        profile_name=profile_name,
+                        target_id=target_id,
+                        allowed_model_ids=allowed_model_ids,
+                        allowed_wargear_ids=allowed_wargear_ids,
+                    )
+                    for row in candidate_rows
+                ):
+                    continue
+                valid_model_ids.append(model_id)
+            if not valid_model_ids:
+                continue
+            legal = {
+                key: value
+                for key, value in declaration.items()
+                if key not in {"model_ids", "action_id"}
+            }
+            legal["model_ids"] = sorted(set(valid_model_ids))
+            legal_declarations.append(legal)
+            if max_declarations > 0 and len(legal_declarations) >= max_declarations:
+                break
+        return legal_declarations
+
+    @staticmethod
     def _shooting_target_context_is_current(game: object | None, ctx: dict[str, Any]) -> bool:
         if not list(ctx.get("shooting_target_candidates", []) or []):
             return False
@@ -1734,7 +1996,21 @@ class HeadlessPolicyDecisionController(DecisionController):
                 carried.add(wargear_id)
             model_wargear_ids[model_id] = carried
 
-        best_by_model_wargear: dict[tuple[str, str], tuple[tuple[float, float, float, float, str, str], dict[str, object]]] = {}
+        preferred_declarations = cls._preferred_declarations_from_context(
+            ctx=ctx,
+            candidate_rows=candidate_rows,
+            unit_id=unit_id,
+            models_by_id=models_by_id,
+            model_wargear_ids=model_wargear_ids,
+            wargear_by_id=wargear_by_id,
+            allowed_model_ids=allowed_model_ids,
+            allowed_wargear_ids=allowed_wargear_ids,
+            max_declarations=max_declarations,
+        )
+        if preferred_declarations:
+            return preferred_declarations
+
+        best_by_model_wargear: dict[tuple[str, str], tuple[tuple[float, float, float, float, float, str, str], dict[str, object]]] = {}
         for row in candidate_rows:
             if bool(row.get("targetless", False)) or bool(row.get("is_plasma_warhead", False)):
                 continue
@@ -1769,13 +2045,23 @@ class HeadlessPolicyDecisionController(DecisionController):
                 continue
 
             best_target_id = ""
-            best_key: tuple[float, float, float, float, str, str] | None = None
+            best_key: tuple[float, float, float, float, float, str, str] | None = None
             for target_id in sorted(set(target_ids)):
                 target_unit = cls._resolve_unit(game, target_id)
                 if target_unit is None:
                     continue
+                if not cls._limited_resource_policy_allows_declaration(
+                    ctx,
+                    unit_id,
+                    wargear,
+                    profile,
+                    profile_name,
+                    target_id,
+                ):
+                    continue
                 accuracy_key = cls._profile_accuracy_key(profile, target_unit)
                 key = (
+                    cls._preferred_shooting_target_score(ctx, target_id),
                     accuracy_key[0],
                     accuracy_key[1],
                     accuracy_key[2],
@@ -1955,12 +2241,24 @@ class HeadlessPolicyDecisionController(DecisionController):
                     profile_key = (str(maybe_entity_id(profile) or id(profile)), str(profile_name or ""))
                     ranked_targets = target_rank_cache.get(profile_key)
                     if ranked_targets is None:
-                        ranked_targets = cls._ranked_shooting_targets_for_profile(profile, targets)
+                        ranked_targets = cls._prioritize_preferred_shooting_targets(
+                            ctx,
+                            cls._ranked_shooting_targets_for_profile(profile, targets),
+                        )
                         target_rank_cache[profile_key] = ranked_targets
                     probe_targets = ranked_targets[:target_probe_limit] if target_probe_limit > 0 else ranked_targets
                     for target in probe_targets:
                         target_id = str(maybe_entity_id(target) or "")
                         if not target_id:
+                            continue
+                        if not cls._limited_resource_policy_allows_declaration(
+                            ctx,
+                            unit_id,
+                            wargear,
+                            profile,
+                            str(profile_name or ""),
+                            target_id,
+                        ):
                             continue
                         if max_validation_attempts > 0 and validation_attempts >= max_validation_attempts:
                             result = declarations

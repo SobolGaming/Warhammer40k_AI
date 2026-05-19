@@ -27,6 +27,208 @@ def _round_base(x: float, y: float, *, radius: float = 1.0):
     )
 
 
+def _shooting_game_with_profile(*, wargear_name: str = "Rifle", profile_name: str = "main"):
+    target_a = _alive_unit("target-a")
+    target_a.toughness = 10
+    target_b = _alive_unit("target-b")
+    target_b.toughness = 3
+    profile = SimpleNamespace(
+        _id=f"profile:{profile_name}",
+        name=profile_name,
+        skill=3,
+        strength=4,
+        get_damage_potential=lambda _target: 1.0,
+    )
+    wargear = SimpleNamespace(
+        _id="wargear",
+        name=wargear_name,
+        is_ranged=lambda: True,
+        profiles={profile_name: profile},
+    )
+    model = SimpleNamespace(_id="model", is_alive=True, wargear=[wargear], model_base=SimpleNamespace(x=0, y=0, z=0, facing=0))
+    unit = _alive_unit("unit")
+    unit.models = [model]
+    game_map = SimpleNamespace(state_generation=1, get_enemy_units=lambda _unit: [target_a, target_b])
+
+    def resolve(unit_id: str):
+        return {
+            "unit": unit,
+            "target-a": target_a,
+            "target-b": target_b,
+        }.get(unit_id)
+
+    game = SimpleNamespace(
+        map=game_map,
+        turn=1,
+        phase=SimpleNamespace(name="SHOOTING_PHASE"),
+        _headless_policy_controller_attached=True,
+        _resolve_unit_by_id=resolve,
+    )
+    return game, unit, profile_name
+
+
+def _target_candidate_row(target_ids: list[str], *, profile_name: str = "main") -> dict[str, object]:
+    return {
+        "unit_id": "unit",
+        "model_id": "model",
+        "wargear_id": "wargear",
+        "profile_name": profile_name,
+        "target_unit_ids": list(target_ids),
+    }
+
+
+def test_default_shooting_declarations_prefer_commander_primary_target_from_legal_candidates():
+    game, _unit, profile_name = _shooting_game_with_profile()
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "unit_id": "unit",
+            "shooting_target_generation": 1,
+            "shooting_target_candidates": [_target_candidate_row(["target-a", "target-b"], profile_name=profile_name)],
+            "preferred_target_unit_ids": ["target-a", "target-b"],
+            "commander_fire_assignment": {
+                "unit_id": "unit",
+                "primary_target_unit_id": "target-a",
+                "backup_target_unit_ids": ["target-b"],
+            },
+        },
+    )
+
+    declarations = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        request,
+        {"unit_id": "unit", "max_declarations": 1},
+    )
+
+    assert declarations[0]["target_unit_id"] == "target-a"
+
+
+def test_default_shooting_declarations_fall_back_when_commander_target_is_stale():
+    game, _unit, profile_name = _shooting_game_with_profile()
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "unit_id": "unit",
+            "shooting_target_generation": 1,
+            "shooting_target_candidates": [_target_candidate_row(["target-b"], profile_name=profile_name)],
+            "preferred_target_unit_ids": ["target-a"],
+            "commander_fire_assignment": {
+                "unit_id": "unit",
+                "primary_target_unit_id": "target-a",
+                "backup_target_unit_ids": ["target-b"],
+            },
+        },
+    )
+
+    declarations = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        request,
+        {"unit_id": "unit", "max_declarations": 1},
+    )
+
+    assert declarations[0]["target_unit_id"] == "target-b"
+
+
+def test_default_shooting_declarations_try_valid_preferred_declarations_first():
+    game, _unit, profile_name = _shooting_game_with_profile()
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "unit_id": "unit",
+            "shooting_target_generation": 1,
+            "shooting_target_candidates": [_target_candidate_row(["target-a", "target-b"], profile_name=profile_name)],
+            "preferred_target_unit_ids": ["target-b"],
+            "preferred_declarations": [
+                {
+                    "wargear_id": "wargear",
+                    "profile_name": profile_name,
+                    "target_unit_id": "target-a",
+                    "model_ids": ["model"],
+                }
+            ],
+        },
+    )
+
+    declarations = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        request,
+        {"unit_id": "unit", "max_declarations": 1},
+    )
+
+    assert declarations == [
+        {
+            "wargear_id": "wargear",
+            "profile_name": profile_name,
+            "target_unit_id": "target-a",
+            "model_ids": ["model"],
+        }
+    ]
+
+
+def test_general_resource_policy_reserves_one_shot_profiles_until_threshold_target():
+    game, _unit, profile_name = _shooting_game_with_profile(
+        wargear_name="Hunter-killer missile",
+        profile_name="hunter-killer",
+    )
+    base_context = {
+        "phase_name": "SHOOTING_PHASE",
+        "unit_id": "unit",
+        "shooting_target_generation": 1,
+        "shooting_target_candidates": [_target_candidate_row(["target-a"], profile_name=profile_name)],
+        "general_limited_resource_policy": [
+            {
+                "resource_id": "unit:one_shot_weapon",
+                "resource_kind": "one_shot_weapon",
+                "status": "reserved",
+                "owner_unit_id": "unit",
+                "authorization_threshold": 0.8,
+            }
+        ],
+    }
+    reserved_request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        context={
+            **base_context,
+            "target_fire_plan_summary": {
+                "target_unit_id": "target-a",
+                "threat_score": 0.3,
+            },
+        },
+    )
+    authorized_request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        context={
+            **base_context,
+            "target_fire_plan_summary": {
+                "target_unit_id": "target-a",
+                "threat_score": 0.9,
+            },
+        },
+    )
+
+    reserved = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        reserved_request,
+        {"unit_id": "unit", "max_declarations": 1},
+    )
+    authorized = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        authorized_request,
+        {"unit_id": "unit", "max_declarations": 1},
+    )
+
+    assert reserved == []
+    assert authorized[0]["target_unit_id"] == "target-a"
+
+
 def test_default_shooting_declarations_reuse_validation_until_map_generation_changes():
     target = _alive_unit("target")
     profile = SimpleNamespace(_id="profile", name="Main", skill=3, get_damage_potential=lambda _target: 1.0)

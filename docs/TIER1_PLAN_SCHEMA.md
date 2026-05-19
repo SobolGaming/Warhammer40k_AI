@@ -22,6 +22,10 @@ Context keys:
 - `commander_dirty_flags`
 - `commander_replan_scope`
 - `last_commander_phase_report`
+- `preferred_target_unit_ids`, `preferred_declarations`, and
+  `target_fire_plan_summary` for unit-scoped shooting decisions when present
+- `general_limited_resource_policy` and `general_cp_policy` for unit-scoped
+  decisions that need slim General resource context
 
 Audit/debug-only context keys:
 - `general_plan`
@@ -106,6 +110,10 @@ Runtime use:
   projection slices. Next-unit deployment selection receives only decision-local
   task/tempo slices for the candidate units, not the full deployment plan.
 - A cached `BattleRoundPlan` is built from the Tier-1 plan plus the Tier-2 task bundle. Eligible requests receive `battle_round_plan_id`; unit-scoped requests receive the relevant local commander slices.
+- Unit-scoped shooting requests can also receive preferred commander target
+  order, preferred declaration hints, the primary target fire-plan summary, and
+  slim General limited-resource policy. These fields are execution hints only;
+  existing candidate generation and validation remain authoritative.
 - The full `deployment_plan` dict is attached only when `request.context["include_full_deployment_plan"]` or `game.attach_full_deployment_plan_context` enables audit/debug payloads.
 - The full `battle_round_plan` dict is attached only when `request.context["include_full_battle_round_plan"]` or `game.attach_full_battle_round_plan_context` enables audit/debug payloads.
 - Incoming full `deployment_plan`, `battle_round_plan`, and `general_plan`

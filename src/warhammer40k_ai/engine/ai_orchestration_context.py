@@ -28,6 +28,18 @@ _VALID_COMPUTE_TIERS = {"P0", "P1", "P2"}
 _DEFAULT_COMPUTE_TIER = "P1"
 
 
+def _ordered_unique_strings(values: list[object] | tuple[object, ...] | set[object]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ordered
+
+
 def _normalize_compute_tier(value: object) -> str:
     tier = str(value or "").strip().upper()
     if tier in _VALID_COMPUTE_TIERS:
@@ -52,6 +64,17 @@ def _terrain_state_summary(game: object) -> dict[str, Any]:
         "terrain_count": int(len(terrain_features)),
         "terrain_ids": terrain_ids,
     }
+
+
+def _limited_resource_policy_context(general_plan: object, unit_id: str) -> list[dict[str, Any]]:
+    policies: list[dict[str, Any]] = []
+    for policy in dict(getattr(general_plan, "limited_resource_policy", {}) or {}).values():
+        owner_unit_id = str(getattr(policy, "owner_unit_id", "") or "").strip()
+        resource_kind = str(getattr(policy, "resource_kind", "") or "").strip()
+        if owner_unit_id == unit_id or resource_kind in {"cp_pool", "stratagem"}:
+            to_dict = getattr(policy, "to_dict", None)
+            policies.append(to_dict() if callable(to_dict) else dict(policy))
+    return sorted(policies, key=lambda item: str(dict(item).get("resource_id", "")))
 
 
 def _should_attach_full_battle_round_plan(game: object, context: dict[str, Any]) -> bool:
@@ -217,6 +240,12 @@ def attach_ai_orchestration_context(
         updated["cp_reserve_policy"] = dict(tier2_bundle.cp_reserve_policy or {})
 
     unit_id = str(updated.get("unit_id", "") or "")
+    if general_plan is not None and unit_id:
+        limited_resource_policy = _limited_resource_policy_context(general_plan, unit_id)
+        if limited_resource_policy and "general_limited_resource_policy" not in updated:
+            updated["general_limited_resource_policy"] = limited_resource_policy
+        if "general_cp_policy" not in updated:
+            updated["general_cp_policy"] = dict(getattr(general_plan, "cp_policy", {}) or {})
     task = tier2_bundle.tasks_by_unit_id.get(unit_id) if unit_id else None
     task_compute_tier = None
     if task is not None:
@@ -250,8 +279,33 @@ def attach_ai_orchestration_context(
             ):
                 updated["commander_disembark_assignment"] = transport_assignment_data
         fire_assignment = dict(getattr(battle_round_plan.shooting_plan, "unit_fire_assignments", {}) or {}).get(unit_id)
-        if fire_assignment is not None and "commander_fire_assignment" not in updated:
-            updated["commander_fire_assignment"] = fire_assignment.to_dict()
+        if fire_assignment is not None:
+            fire_assignment_data = fire_assignment.to_dict()
+            if "commander_fire_assignment" not in updated:
+                updated["commander_fire_assignment"] = fire_assignment_data
+            preferred_target_ids = _ordered_unique_strings(
+                [
+                    fire_assignment_data.get("primary_target_unit_id", ""),
+                    *list(fire_assignment_data.get("backup_target_unit_ids", []) or []),
+                ]
+            )
+            if preferred_target_ids and "preferred_target_unit_ids" not in updated:
+                updated["preferred_target_unit_ids"] = preferred_target_ids
+            preferred_declarations = [
+                dict(declaration)
+                for declaration in list(fire_assignment_data.get("preferred_declarations", []) or [])
+                if isinstance(declaration, dict)
+            ]
+            if preferred_declarations and "preferred_declarations" not in updated:
+                updated["preferred_declarations"] = preferred_declarations
+            primary_target_id = str(fire_assignment_data.get("primary_target_unit_id", "") or "")
+            target_fire_plan = None
+            if primary_target_id:
+                target_fire_plan = dict(
+                    getattr(battle_round_plan.shooting_plan, "target_fire_plans", {}) or {}
+                ).get(primary_target_id)
+            if target_fire_plan is not None and "target_fire_plan_summary" not in updated:
+                updated["target_fire_plan_summary"] = target_fire_plan.to_dict()
         charge_assignments = dict(
             getattr(battle_round_plan.charge_plan, "unit_charge_assignments", {}) or {}
         )
