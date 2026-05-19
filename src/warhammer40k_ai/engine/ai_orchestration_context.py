@@ -169,6 +169,23 @@ def attach_ai_orchestration_context(
         movement_task = dict(getattr(battle_round_plan.movement_plan, "unit_positioning_tasks", {}) or {}).get(unit_id)
         if movement_task is not None and "commander_movement_task" not in updated:
             updated["commander_movement_task"] = movement_task.to_dict()
+        transport_assignment = dict(
+            getattr(battle_round_plan.movement_plan, "transport_assignments", {}) or {}
+        ).get(unit_id)
+        if transport_assignment is not None and "commander_transport_assignment" not in updated:
+            transport_assignment_data = transport_assignment.to_dict()
+            updated["commander_transport_assignment"] = transport_assignment_data
+            transport_intent = str(transport_assignment_data.get("intent", "") or "")
+            if (
+                transport_intent == "embark_after_action"
+                and "commander_embark_assignment" not in updated
+            ):
+                updated["commander_embark_assignment"] = transport_assignment_data
+            if (
+                transport_intent in {"stay_embarked", "disembark_this_round"}
+                and "commander_disembark_assignment" not in updated
+            ):
+                updated["commander_disembark_assignment"] = transport_assignment_data
         fire_assignment = dict(getattr(battle_round_plan.shooting_plan, "unit_fire_assignments", {}) or {}).get(unit_id)
         if fire_assignment is not None and "commander_fire_assignment" not in updated:
             updated["commander_fire_assignment"] = fire_assignment.to_dict()

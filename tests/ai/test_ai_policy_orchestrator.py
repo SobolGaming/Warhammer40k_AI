@@ -208,6 +208,41 @@ def test_general_plan_context_does_not_change_local_movement_ranking() -> None:
     assert orchestrator.choose_action(with_general).action_id == "b"
 
 
+def test_transport_commander_context_does_not_change_local_movement_ranking() -> None:
+    base_candidates = [
+        CandidateAction("a", params={}, metadata={"projected_score_delta_next_window": 0.0}),
+        CandidateAction("b", params={}, metadata={"projected_score_delta_next_window": 2.0}),
+    ]
+    orchestrator = AIPolicyOrchestrator(
+        components={COMPONENT_MOVEMENT_RANKER: default_ai_component_rankers()[COMPONENT_MOVEMENT_RANKER]}
+    )
+    baseline = _request(
+        kinds.DECISION_EMBARK,
+        candidates=base_candidates,
+        context={"unit_id": "unit:rider"},
+    )
+    with_transport_intent = _request(
+        kinds.DECISION_EMBARK,
+        candidates=base_candidates,
+        context={
+            "unit_id": "unit:rider",
+            "commander_transport_assignment": {
+                "unit_id": "unit:rider",
+                "transport_unit_id": "unit:transport",
+                "intent": "embark_after_action",
+            },
+            "commander_embark_assignment": {
+                "unit_id": "unit:rider",
+                "transport_unit_id": "unit:transport",
+                "intent": "embark_after_action",
+            },
+        },
+    )
+
+    assert orchestrator.choose_action(baseline).action_id == "b"
+    assert orchestrator.choose_action(with_transport_intent).action_id == "b"
+
+
 def test_policy_bundle_resolves_policy_orchestration_component_names(tmp_path: Path) -> None:
     bundle_id = "policy_bundle:policy_orchestration_heuristic_v1"
     manifest_store = ArtifactManifestStore(tmp_path / "models")

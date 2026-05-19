@@ -189,8 +189,6 @@ Acceptance criteria:
   decision choices.
 - tests cover cache identity, context slimming, and deterministic serialization.
 
-## Remaining
-
 ### PR 6B - Commander Transport Intent
 
 Add explicit transport doctrine/execution slices before deeper movement
@@ -219,6 +217,24 @@ Acceptance criteria:
 - unit-scoped decision context stays slim and local.
 - tests cover embarked passenger, transport delivery, and missing/stale
   transport intent cases.
+
+Implemented behavior:
+
+- General `TransportDoctrine` records planned riders, current passengers,
+  delivery round, preservation posture, staging region, and post-delivery role.
+- `BattleRoundPlan.movement_plan.transport_assignments` converts doctrine into
+  unit-local execution hints.
+- embarked passengers receive `stay_embarked` before the delivery round and
+  `disembark_this_round` at or after the delivery round.
+- planned unembarked riders receive `embark_after_action`.
+- transports receive `deliver_to_staging_region` or
+  `transport_screen_after_delivery`.
+- `Game.request_decision(...)` attaches `commander_transport_assignment`,
+  `commander_embark_assignment`, and `commander_disembark_assignment` as slim
+  local slices.
+- rankers do not consume these transport slices yet.
+
+## Remaining
 
 ### PR 6C - Movement Ranker Consumes Commander Transport Intent
 

@@ -155,7 +155,7 @@ flowchart TD
   I --> J["get_or_create_battle_round_plan(player_id) builds cross-phase commander context linked to general_plan_id"]
   J --> K["Game.request_decision injects turn_plan, general_plan_id, battle_round_plan_id, dirty flags, score_window_state, opportunity_catalog, and cp_reserve_policy"]
   K --> L{"Decision has unit_id?"}
-  L -->|"Yes"| M["Inject tier2_task, movement_intent, unit_battle_task, commander phase assignments, and compute_tier"]
+  L -->|"Yes"| M["Inject tier2_task, movement_intent, unit_battle_task, commander phase assignments, transport assignment slices, and compute_tier"]
   L -->|"No"| N["Use global strategic context only"]
   M --> O["Candidate generators and semantic metadata consume the strategic context"]
   N --> O

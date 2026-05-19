@@ -31,6 +31,9 @@ decision.
   - `last_commander_phase_report` when one exists
   - `unit_battle_task` for unit-scoped decisions
   - `commander_movement_task`
+  - `commander_transport_assignment`
+  - `commander_embark_assignment` for planned embark decisions
+  - `commander_disembark_assignment` for planned stay/disembark decisions
   - `commander_fire_assignment`
   - `commander_charge_assignment`
   - `commander_fight_assignment`
@@ -102,10 +105,26 @@ candidates, change masks, validate attacks, or mutate state.
 Phase subplans carry late-bound execution hints:
 
 - `MovementPhasePlan.unit_positioning_tasks`
+- `MovementPhasePlan.transport_assignments`
 - `ShootingPhasePlan.target_fire_plans`
 - `ShootingPhasePlan.unit_fire_assignments`
 - `ChargePhasePlan.unit_charge_assignments`
 - `FightPhasePlan.unit_fight_assignments`
+
+`TransportAssignment` is the movement-phase bridge from General transport
+doctrine to battle-round execution. It can describe:
+
+- `stay_embarked` for passengers protected before the delivery round.
+- `disembark_this_round` for passengers at or after the doctrine delivery
+  round.
+- `embark_after_action` for planned riders that are not currently embarked.
+- `deliver_to_staging_region` for transports moving passengers to a staging
+  region.
+- `transport_screen_after_delivery` for empty transports whose doctrine says
+  they should become a screen or objective piece.
+
+These assignments are local context only. They do not alter transport legality,
+embark/disembark masks, or movement candidate generation.
 
 ## Dirty Flags
 

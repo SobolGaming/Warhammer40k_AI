@@ -117,6 +117,8 @@ class TransportDoctrine:
     protected_until_round: int | None = None
     passenger_unit_ids: list[str] = field(default_factory=list)
     destination_region_ids: list[str] = field(default_factory=list)
+    preserve_passengers: bool = True
+    post_delivery_role: str = "screen_objective"
     priority: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -126,6 +128,8 @@ class TransportDoctrine:
             "doctrine": str(self.doctrine),
             "passenger_unit_ids": _sorted_strings(self.passenger_unit_ids),
             "destination_region_ids": _sorted_strings(self.destination_region_ids),
+            "preserve_passengers": bool(self.preserve_passengers),
+            "post_delivery_role": str(self.post_delivery_role),
             "priority": float(self.priority),
             "metadata": _sorted_metadata(self.metadata),
         }
@@ -316,26 +320,94 @@ def _resource_policy_for_unit(unit: object) -> list[LimitedResourcePolicy]:
     return policies
 
 
+def _is_transport_unit(unit: object) -> bool:
+    keywords = _unit_keywords(unit)
+    transport_capacity = getattr(unit, "transport_capacity", 0)
+    try:
+        capacity_value = int(transport_capacity or 0)
+    except (TypeError, ValueError):
+        capacity_value = 0
+    return bool(getattr(unit, "is_transport", False)) or "TRANSPORT" in keywords or capacity_value > 0
+
+
+def _current_transport_passenger_ids(transport: object, units: list[object]) -> list[str]:
+    passenger_ids: list[str] = []
+    for passenger in list(getattr(transport, "transport_passengers", []) or []):
+        passenger_id = _entity_id(passenger)
+        if passenger_id:
+            passenger_ids.append(passenger_id)
+    for unit in list(units or []):
+        if getattr(unit, "embarked_in", None) is not transport:
+            continue
+        passenger_id = _entity_id(unit)
+        if passenger_id:
+            passenger_ids.append(passenger_id)
+    return _sorted_strings(passenger_ids)
+
+
+def _can_transport_unit(transport: object, passenger: object) -> bool:
+    can_transport = getattr(transport, "can_transport", None)
+    if not callable(can_transport):
+        return False
+    try:
+        return bool(can_transport(passenger))
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _candidate_transport_passenger_ids(
+    transport: object,
+    units: list[object],
+    assigned_unit_ids: set[str],
+) -> list[str]:
+    passenger_ids: list[str] = []
+    for unit in sorted(list(units or []), key=lambda candidate: _entity_id(candidate)):
+        unit_id = _entity_id(unit)
+        if not unit_id or unit is transport or unit_id in assigned_unit_ids:
+            continue
+        if _is_transport_unit(unit):
+            continue
+        if getattr(unit, "embarked_in", None) is not None:
+            continue
+        if _can_transport_unit(transport, unit):
+            passenger_ids.append(unit_id)
+            break
+    return _sorted_strings(passenger_ids)
+
+
 def _transport_policy_for_units(units: list[object]) -> dict[str, TransportDoctrine]:
     policies: dict[str, TransportDoctrine] = {}
-    for unit in list(units or []):
+    assigned_passenger_ids: set[str] = set()
+    transports = [
+        unit
+        for unit in list(units or [])
+        if unit is not None and _entity_id(unit) and _is_transport_unit(unit)
+    ]
+    for unit in sorted(transports, key=lambda candidate: _entity_id(candidate)):
         unit_id = _entity_id(unit)
         if not unit_id:
             continue
-        keywords = _unit_keywords(unit)
-        transport_capacity = getattr(unit, "transport_capacity", None)
-        is_transport = "TRANSPORT" in keywords or transport_capacity is not None
-        if not is_transport:
-            continue
+        current_passenger_ids = _current_transport_passenger_ids(unit, list(units or []))
+        passenger_ids = current_passenger_ids
+        if not passenger_ids:
+            passenger_ids = _candidate_transport_passenger_ids(unit, list(units or []), assigned_passenger_ids)
+        assigned_passenger_ids.update(passenger_ids)
+        doctrine = "preserve_and_deliver" if passenger_ids else "screen_or_reposition"
         policies[unit_id] = TransportDoctrine(
             transport_unit_id=unit_id,
-            doctrine="preserve_and_deliver",
+            doctrine=doctrine,
             desired_round=2,
             protected_until_round=2,
-            passenger_unit_ids=[],
+            passenger_unit_ids=passenger_ids,
             destination_region_ids=["midboard_stage"],
-            priority=0.55,
-            metadata={"source": "general_scaffold_transport_doctrine"},
+            preserve_passengers=bool(passenger_ids),
+            post_delivery_role="screen_objective",
+            priority=0.7 if passenger_ids else 0.4,
+            metadata={
+                "source": "general_scaffold_transport_doctrine",
+                "current_passenger_unit_ids": current_passenger_ids,
+                "planned_passenger_unit_ids": passenger_ids,
+            },
         )
     return policies
 

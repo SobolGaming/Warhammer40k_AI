@@ -49,6 +49,12 @@ MOVEMENT_ACTION_NORMAL_MOVE = "normal_move"
 MOVEMENT_ACTION_ADVANCE = "advance"
 MOVEMENT_ACTION_FALL_BACK = "fall_back"
 
+TRANSPORT_INTENT_STAY_EMBARKED = "stay_embarked"
+TRANSPORT_INTENT_DISEMBARK_THIS_ROUND = "disembark_this_round"
+TRANSPORT_INTENT_EMBARK_AFTER_ACTION = "embark_after_action"
+TRANSPORT_INTENT_DELIVER_TO_STAGING_REGION = "deliver_to_staging_region"
+TRANSPORT_INTENT_SCREEN_AFTER_DELIVERY = "transport_screen_after_delivery"
+
 COMMANDER_ANALYSIS_MAX_TARGETS = 6
 COMMANDER_ANALYSIS_MAX_UNITS = 24
 COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT = 4
@@ -561,6 +567,40 @@ class UnitPositioningTask:
 
 
 @dataclass(frozen=True)
+class TransportAssignment:
+    unit_id: str
+    transport_unit_id: str | None = None
+    intent: str = ""
+    desired_round: int | None = None
+    desired_phase: str = "MOVEMENT_PHASE"
+    destination_region_ids: list[str] = field(default_factory=list)
+    protected_until_round: int | None = None
+    disembark_trigger: str = ""
+    embark_trigger: str = ""
+    priority: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "unit_id": str(self.unit_id),
+            "intent": str(self.intent),
+            "desired_phase": str(self.desired_phase),
+            "destination_region_ids": _sorted_strings(self.destination_region_ids),
+            "disembark_trigger": str(self.disembark_trigger),
+            "embark_trigger": str(self.embark_trigger),
+            "priority": float(self.priority),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+        if self.transport_unit_id is not None:
+            data["transport_unit_id"] = str(self.transport_unit_id)
+        if self.desired_round is not None:
+            data["desired_round"] = int(self.desired_round)
+        if self.protected_until_round is not None:
+            data["protected_until_round"] = int(self.protected_until_round)
+        return data
+
+
+@dataclass(frozen=True)
 class TargetFirePlan:
     target_unit_id: str
     threat_score: float
@@ -673,13 +713,18 @@ class FightTargetAssignment:
 @dataclass(frozen=True)
 class MovementPhasePlan:
     unit_positioning_tasks: dict[str, UnitPositioningTask] = field(default_factory=dict)
+    transport_assignments: dict[str, TransportAssignment] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "unit_positioning_tasks": {
                 str(unit_id): task.to_dict()
                 for unit_id, task in sorted(self.unit_positioning_tasks.items(), key=lambda item: str(item[0]))
-            }
+            },
+            "transport_assignments": {
+                str(unit_id): assignment.to_dict()
+                for unit_id, assignment in sorted(self.transport_assignments.items(), key=lambda item: str(item[0]))
+            },
         }
 
 
@@ -1543,12 +1588,119 @@ def _unit_battle_task(
     )
 
 
+def _policy_value(policy: object, key: str, default: Any = None) -> Any:
+    if isinstance(policy, dict):
+        return policy.get(key, default)
+    return getattr(policy, key, default)
+
+
+def _policy_metadata(policy: object) -> dict[str, Any]:
+    metadata = _policy_value(policy, "metadata", {})
+    if isinstance(metadata, dict):
+        return dict(metadata)
+    return {}
+
+
+def _policy_int(policy: object, key: str) -> int | None:
+    value = _policy_value(policy, key, None)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_transport_assignments(
+    *,
+    general_transport_policy: dict[str, Any] | None,
+    battle_round: int,
+) -> dict[str, TransportAssignment]:
+    assignments: dict[str, TransportAssignment] = {}
+    for transport_id, policy in sorted(dict(general_transport_policy or {}).items(), key=lambda item: str(item[0])):
+        tid = str(_policy_value(policy, "transport_unit_id", transport_id) or transport_id or "")
+        if not tid:
+            continue
+        metadata = _policy_metadata(policy)
+        passenger_ids = _sorted_strings(_policy_value(policy, "passenger_unit_ids", []))
+        current_passenger_ids = set(_sorted_strings(metadata.get("current_passenger_unit_ids", [])))
+        desired_round = _policy_int(policy, "desired_round")
+        protected_until_round = _policy_int(policy, "protected_until_round")
+        destination_region_ids = _sorted_strings(_policy_value(policy, "destination_region_ids", []))
+        priority = _floatish(_policy_value(policy, "priority", 0.0), 0.0)
+        preserve_passengers = bool(_policy_value(policy, "preserve_passengers", False))
+        post_delivery_role = str(_policy_value(policy, "post_delivery_role", "") or "").strip()
+        doctrine = str(_policy_value(policy, "doctrine", "") or "").strip()
+
+        for passenger_id in passenger_ids:
+            is_current_passenger = passenger_id in current_passenger_ids
+            deliver_now = bool(
+                is_current_passenger
+                and desired_round is not None
+                and int(battle_round) >= int(desired_round)
+            )
+            intent = (
+                TRANSPORT_INTENT_DISEMBARK_THIS_ROUND
+                if deliver_now
+                else TRANSPORT_INTENT_STAY_EMBARKED
+                if is_current_passenger
+                else TRANSPORT_INTENT_EMBARK_AFTER_ACTION
+            )
+            assignments[passenger_id] = TransportAssignment(
+                unit_id=passenger_id,
+                transport_unit_id=tid,
+                intent=intent,
+                desired_round=desired_round,
+                desired_phase="MOVEMENT_PHASE",
+                destination_region_ids=destination_region_ids,
+                protected_until_round=protected_until_round,
+                disembark_trigger="delivery_round" if is_current_passenger else "",
+                embark_trigger="after_unit_action" if not is_current_passenger else "",
+                priority=priority,
+                metadata={
+                    "assignment_kind": "passenger",
+                    "doctrine": doctrine,
+                    "general_post_delivery_role": post_delivery_role,
+                    "preserve_passenger": bool(preserve_passengers),
+                    "source": "general_transport_doctrine",
+                },
+            )
+
+        transport_intent = (
+            TRANSPORT_INTENT_DELIVER_TO_STAGING_REGION
+            if passenger_ids
+            else TRANSPORT_INTENT_SCREEN_AFTER_DELIVERY
+        )
+        assignments[tid] = TransportAssignment(
+            unit_id=tid,
+            transport_unit_id=tid,
+            intent=transport_intent,
+            desired_round=desired_round,
+            desired_phase="MOVEMENT_PHASE",
+            destination_region_ids=destination_region_ids,
+            protected_until_round=protected_until_round,
+            disembark_trigger="delivery_round" if passenger_ids else "",
+            embark_trigger="assigned_passenger_action" if passenger_ids and not current_passenger_ids else "",
+            priority=priority,
+            metadata={
+                "assignment_kind": "transport",
+                "doctrine": doctrine,
+                "planned_passenger_unit_ids": passenger_ids,
+                "current_passenger_unit_ids": _sorted_strings(current_passenger_ids),
+                "post_delivery_role": post_delivery_role,
+                "source": "general_transport_doctrine",
+            },
+        )
+    return assignments
+
+
 def build_battle_round_plan(
     game: object,
     tier1_plan: Tier1Plan,
     tier2_bundle: Tier2TaskBundle,
     *,
     general_plan_id: str | None = None,
+    general_transport_policy: dict[str, Any] | None = None,
 ) -> BattleRoundPlan:
     player = _resolve_player(game, tier1_plan.player_id)
     if player is None:
@@ -1610,6 +1762,10 @@ def build_battle_round_plan(
     fire_assignments: dict[str, UnitFireAssignment] = {}
     charge_assignments: dict[str, ChargeTargetAssignment] = {}
     fight_assignments: dict[str, FightTargetAssignment] = {}
+    transport_assignments = _build_transport_assignments(
+        general_transport_policy=general_transport_policy,
+        battle_round=int(tier1_plan.battle_round),
+    )
 
     for unit_id, task in sorted(tier2_bundle.tasks_by_unit_id.items(), key=lambda item: str(item[0])):
         uid = str(unit_id)
@@ -1755,7 +1911,10 @@ def build_battle_round_plan(
         strategic_posture=posture,
         priority_targets=priority_targets,
         unit_tasks=unit_tasks,
-        movement_plan=MovementPhasePlan(unit_positioning_tasks=positioning_tasks),
+        movement_plan=MovementPhasePlan(
+            unit_positioning_tasks=positioning_tasks,
+            transport_assignments=transport_assignments,
+        ),
         shooting_plan=ShootingPhasePlan(
             target_fire_plans=target_fire_plans,
             unit_fire_assignments=fire_assignments,
@@ -1773,6 +1932,7 @@ def build_battle_round_plan(
             "general_plan_id": str(general_plan_id or ""),
             "tier1_plan_id": tier1_plan.plan_id,
             "tier2_plan_id": tier2_bundle.plan_id,
+            "general_transport_policy_count": int(len(dict(general_transport_policy or {}))),
             "analysis_snapshot": analysis_snapshot.to_dict(),
         },
     )

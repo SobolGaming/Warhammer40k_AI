@@ -198,6 +198,7 @@ class GameRuleEventService(GameServiceBase):
             tier1_plan,
             tier2_bundle,
             general_plan_id=general_plan.plan_id,
+            general_transport_policy=general_plan.transport_policy,
         )
         self._battle_round_plans[key] = plan
         return plan
@@ -230,6 +231,7 @@ class GameRuleEventService(GameServiceBase):
             tier1_plan,
             tier2_bundle,
             general_plan_id=general_plan.plan_id,
+            general_transport_policy=general_plan.transport_policy,
         )
 
     def get_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:

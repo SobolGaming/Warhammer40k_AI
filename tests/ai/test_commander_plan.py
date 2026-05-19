@@ -3,7 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CONFIRM_YES_NO,
+    DECISION_DISEMBARK,
+    DECISION_EMBARK,
+)
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player
@@ -115,6 +119,15 @@ class _Unit:
         self.alive = True
         self.keywords = list(keywords or [])
         self.faction_keywords = []
+        self.is_transport = "TRANSPORT" in {str(keyword).upper() for keyword in self.keywords}
+        self.transport_capacity = 10 if self.is_transport else 0
+        self.transport_passengers = []
+        self.embarked_in = None
+        self.reserve_status = "deployed"
+        self.round_state = SimpleNamespace(
+            embarked_this_round=False,
+            disembarked_this_round=False,
+        )
         self.models = [
             _Model(
                 f"{unit_id}:model",
@@ -137,6 +150,13 @@ class _Unit:
 
     def is_alive(self) -> bool:
         return bool(self.alive)
+
+    def can_transport(self, passenger_unit) -> bool:
+        return bool(
+            self.is_transport
+            and passenger_unit is not self
+            and not getattr(passenger_unit, "is_transport", False)
+        )
 
 
 class _Army:
@@ -222,6 +242,75 @@ def test_general_plan_is_cached_serializable_and_has_limited_resource_ledger() -
     assert data["resource_ledger"]["resource_count"] >= 2
     assert data["cp_policy"]["reserve_for_interrupt_or_overwatch"] == 1
     assert data["reserve_policy"]["late_game_scoring_preservation"] is True
+
+
+def test_general_transport_doctrine_records_current_passengers() -> None:
+    passenger = _Unit("unit:passenger", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.transport_passengers = [passenger]
+    game, player, _opponent = _build_custom_game([transport, passenger], [])
+
+    doctrine = game.get_or_create_general_plan(player.id).to_dict()["transport_policy"]["unit:transport"]
+
+    assert doctrine["doctrine"] == "preserve_and_deliver"
+    assert doctrine["passenger_unit_ids"] == ["unit:passenger"]
+    assert doctrine["preserve_passengers"] is True
+    assert doctrine["post_delivery_role"] == "screen_objective"
+    assert doctrine["metadata"]["current_passenger_unit_ids"] == ["unit:passenger"]
+
+
+def test_commander_transport_plan_keeps_passenger_embarked_before_delivery_round() -> None:
+    passenger = _Unit("unit:passenger", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.transport_passengers = [passenger]
+    game, player, _opponent = _build_custom_game([transport, passenger], [])
+    game.turn = 1
+
+    movement_plan = game.get_or_create_battle_round_plan(player.id).to_dict()["movement_plan"]
+    passenger_assignment = movement_plan["transport_assignments"]["unit:passenger"]
+    transport_assignment = movement_plan["transport_assignments"]["unit:transport"]
+
+    assert passenger_assignment["intent"] == "stay_embarked"
+    assert passenger_assignment["transport_unit_id"] == "unit:transport"
+    assert passenger_assignment["desired_round"] == 2
+    assert transport_assignment["intent"] == "deliver_to_staging_region"
+    assert transport_assignment["destination_region_ids"] == ["midboard_stage"]
+
+
+def test_commander_transport_plan_disembarks_passenger_on_delivery_round() -> None:
+    passenger = _Unit("unit:passenger", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.transport_passengers = [passenger]
+    game, player, _opponent = _build_custom_game([transport, passenger], [])
+    game.turn = 2
+
+    assignment = game.get_or_create_battle_round_plan(player.id).to_dict()["movement_plan"]["transport_assignments"][
+        "unit:passenger"
+    ]
+
+    assert assignment["intent"] == "disembark_this_round"
+    assert assignment["disembark_trigger"] == "delivery_round"
+
+
+def test_commander_transport_plan_assigns_embark_after_action_for_planned_rider() -> None:
+    rider = _Unit("unit:rider", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    game, player, _opponent = _build_custom_game([transport, rider], [])
+
+    movement_plan = game.get_or_create_battle_round_plan(player.id).to_dict()["movement_plan"]
+    rider_assignment = movement_plan["transport_assignments"]["unit:rider"]
+    transport_assignment = movement_plan["transport_assignments"]["unit:transport"]
+
+    assert rider_assignment["intent"] == "embark_after_action"
+    assert rider_assignment["transport_unit_id"] == "unit:transport"
+    assert rider_assignment["embark_trigger"] == "after_unit_action"
+    assert transport_assignment["intent"] == "deliver_to_staging_region"
 
 
 def test_commander_analysis_snapshot_is_deterministic_and_bounded() -> None:
@@ -466,6 +555,77 @@ def test_commander_context_attaches_to_unit_scoped_decision() -> None:
     assert request.context["commander_fire_assignment"]["unit_id"] == unit.id
     assert request.context["commander_charge_assignment"]["unit_id"] == unit.id
     assert request.context["commander_fight_assignment"]["unit_id"] == unit.id
+
+
+def test_disembark_decision_context_receives_commander_disembark_slice() -> None:
+    passenger = _Unit("unit:passenger", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.transport_passengers = [passenger]
+    game, player, _opponent = _build_custom_game([transport, passenger], [])
+    request = DecisionRequest.create(
+        DECISION_DISEMBARK,
+        "Disembark?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Remain embarked", payload={"unit_id": passenger.id, "skip": True}),
+            DecisionOption.create(
+                "Disembark",
+                payload={"unit_id": passenger.id, "transport_id": transport.id},
+            ),
+        ],
+        context={"unit_id": passenger.id, "transport_id": transport.id},
+    )
+
+    game.request_decision(request)
+
+    assert request.context["commander_transport_assignment"]["unit_id"] == passenger.id
+    assert request.context["commander_disembark_assignment"]["intent"] == "stay_embarked"
+    assert "commander_embark_assignment" not in request.context
+    assert "battle_round_plan" not in request.context
+    assert "general_plan" not in request.context
+
+
+def test_embark_decision_context_receives_commander_embark_slice() -> None:
+    rider = _Unit("unit:rider", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    game, player, _opponent = _build_custom_game([transport, rider], [])
+    request = DecisionRequest.create(
+        DECISION_EMBARK,
+        "Embark?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Do not embark", payload={"unit_id": rider.id, "skip": True}),
+            DecisionOption.create(
+                "Embark",
+                payload={"unit_id": rider.id, "transport_id": transport.id},
+            ),
+        ],
+        context={"unit_id": rider.id, "transport_ids": [transport.id]},
+    )
+
+    game.request_decision(request)
+
+    assert request.context["commander_transport_assignment"]["unit_id"] == rider.id
+    assert request.context["commander_embark_assignment"]["intent"] == "embark_after_action"
+    assert request.context["commander_embark_assignment"]["transport_unit_id"] == transport.id
+    assert "commander_disembark_assignment" not in request.context
+
+
+def test_transport_unit_context_receives_delivery_assignment() -> None:
+    passenger = _Unit("unit:passenger", keywords=["INFANTRY"])
+    transport = _Unit("unit:transport", keywords=["TRANSPORT"])
+    passenger.embarked_in = transport
+    passenger.reserve_status = "embarked"
+    transport.transport_passengers = [passenger]
+    game, player, _opponent = _build_custom_game([transport, passenger], [])
+    request = _yes_no_request(player.id, transport.id)
+
+    game.request_decision(request)
+
+    assert request.context["commander_transport_assignment"]["unit_id"] == transport.id
+    assert request.context["commander_transport_assignment"]["intent"] == "deliver_to_staging_region"
 
 
 def test_preexisting_full_battle_round_plan_is_stripped_without_audit_payload() -> None:

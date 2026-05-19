@@ -65,14 +65,21 @@ when to commit scarce resources.
 
 ## Transport Doctrine
 
-`TransportDoctrine` is a high-level General policy for transport units. PR6A
-creates doctrine entries for units that are identifiable as transports, but
-does not attach unit-local commander transport assignments yet. That is planned
-for PR6B.
+`TransportDoctrine` is a high-level General policy for transport units. It owns:
+
+- which units are planned passengers for each transport.
+- whether current passengers should be preserved before delivery.
+- the desired delivery round.
+- the transport staging destination.
+- the post-delivery role, such as screening or objective work.
+
+The battle-round commander consumes this doctrine and emits local
+`TransportAssignment` slices. The General doctrine itself is still metadata; it
+does not make embark/disembark legal, force choices, or alter ranker scores.
 
 ## Non-Behavioral Boundary
 
-The General layer is a policy ledger and audit context only in PR6A. It must not:
+The General layer is a policy ledger and audit context. It must not:
 
 - create legal candidates.
 - alter masks.
