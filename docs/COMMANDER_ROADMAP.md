@@ -402,8 +402,6 @@ Implemented behavior:
 - no declaration bypasses the existing legal target candidate context or
   profile validation fallback.
 
-## Remaining Roadmap
-
 ### PR 10 - Charge/Fight Consume Commander Assignments
 
 Make Charge and Fight rankers consume commander assignments as scoring hints
@@ -458,6 +456,27 @@ Implemented behavior:
 
 Add structured audit events and counters for General, Deployment, and
 BattleRound commander plan build/repair/use/fallback behavior.
+
+Implemented behavior:
+
+- `Game.record_orchestration_audit_event(...)` records compact, serializable
+  orchestration events with deterministic sequence numbers.
+- `Game.get_orchestration_audit_events(...)` and
+  `Game.get_orchestration_audit_counters()` expose bounded audit history and
+  event-kind counters for tests, debugging, and future telemetry exporters.
+- General, Deployment, and BattleRound plan build events record plan ids and
+  compact counts rather than full plan payloads.
+- Deployment and Commander dirty/repair checkpoints record dirty reasons,
+  repair scopes, and pre/post dirty-flag summaries.
+- Commander phase reports are mirrored into audit events with phase status and
+  recommended replan scope.
+- `Game.request_decision(...)` records which slim orchestration slices were
+  attached to the decision context and whether any full audit/debug plan
+  payloads were explicitly attached.
+- full `general_plan`, `deployment_plan`, and `battle_round_plan` payloads
+  remain audit/debug-only; normal decision context stays slim.
+
+## Remaining Roadmap
 
 ### PR 13 - Performance Guardrails And Cache Hardening
 

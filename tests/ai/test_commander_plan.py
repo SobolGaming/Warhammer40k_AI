@@ -227,6 +227,31 @@ def test_battle_round_plan_is_cached_and_serializable() -> None:
     assert data["metadata"]["general_plan_id"] == game.get_or_create_general_plan(player.id).plan_id
 
 
+def test_orchestration_audit_events_record_plan_builds_and_context_attachment() -> None:
+    game, player, unit = _build_game()
+
+    general_plan = game.get_or_create_general_plan(player.id)
+    deployment_plan = game.get_or_create_deployment_plan(player.id)
+    battle_round_plan = game.get_or_create_battle_round_plan(player.id)
+    request = _yes_no_request(player.id, unit.id)
+    game.request_decision(request)
+
+    counters = game.get_orchestration_audit_counters()
+    assert counters["general_plan_built"] == 1
+    assert counters["deployment_plan_built"] == 1
+    assert counters["commander_plan_built"] == 1
+    assert counters["orchestration_context_attached"] == 1
+
+    events = game.get_orchestration_audit_events()
+    assert [event["sequence"] for event in events] == sorted(event["sequence"] for event in events)
+    assert any(event["plan_id"] == general_plan.plan_id for event in events)
+    assert any(event["plan_id"] == deployment_plan.plan_id for event in events)
+    assert any(event["plan_id"] == battle_round_plan.plan_id for event in events)
+    context_event = game.get_orchestration_audit_events(event_kind="orchestration_context_attached")[-1]
+    assert context_event["metadata"]["full_battle_round_plan_attached"] is False
+    assert "commander_fire_assignment" in context_event["metadata"]["attached_keys"]
+
+
 def test_general_plan_is_cached_serializable_and_has_limited_resource_ledger() -> None:
     game, player, _unit = _build_game()
 
@@ -862,6 +887,7 @@ def test_commander_dirty_flags_are_reported_and_attached_to_context() -> None:
     assert flags.shooting_plan_dirty is True
     assert flags.charge_plan_dirty is True
     assert flags.recommended_replan_scope() == "shooting_only"
+    assert game.get_orchestration_audit_counters()["commander_plan_dirty_marked"] == 1
 
     request = _yes_no_request(player.id, unit.id)
     game.request_decision(request)
@@ -916,6 +942,7 @@ def test_shooting_phase_start_repairs_movement_variance_for_shooting_only() -> N
     assert flags.shooting_plan_dirty is False
     assert flags.charge_plan_dirty is True
     assert flags.recommended_replan_scope() == "charge_only"
+    assert game.get_orchestration_audit_counters()["commander_plan_repaired"] == 1
 
 
 def test_charge_and_fight_phase_repairs_consume_failed_charge_variance() -> None:
@@ -1005,3 +1032,4 @@ def test_phase_report_records_repair_scope_and_pre_post_dirty_flags() -> None:
     assert repair["pre_dirty_flags"]["shooting_plan_dirty"] is True
     assert repair["post_dirty_flags"]["shooting_plan_dirty"] is False
     assert report["metadata"]["dirty_flags"]["charge_plan_dirty"] is True
+    assert game.get_orchestration_audit_counters()["commander_phase_report"] == 1

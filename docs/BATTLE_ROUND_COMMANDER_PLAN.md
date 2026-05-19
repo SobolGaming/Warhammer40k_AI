@@ -23,9 +23,13 @@ decision.
   setup/deployment commander plan that owns uncertainty-aware initial posture.
 - `Game.get_commander_dirty_flags(player_id)` returns current repair pressure.
 - `Game.mark_commander_dirty(...)` records event-driven repair pressure.
-- `Game.clear_commander_dirty_flags(player_id)` resets repair pressure after a
-  future repair implementation consumes it.
+- `Game.clear_commander_dirty_flags(player_id, consumed_scope=...)` resets or
+  downgrades repair pressure after the matching checkpoint consumes it.
 - `Game.get_commander_phase_reports(player_id)` returns recent phase summaries.
+- `Game.record_orchestration_audit_event(...)` records compact General,
+  Deployment, Commander, and decision-context audit events.
+- `Game.get_orchestration_audit_events(...)` returns the bounded audit history.
+- `Game.get_orchestration_audit_counters()` returns event-kind counters.
 - Command phase start prebuilds the plan for the active player.
 - `Game.request_decision(...)` attaches by default:
   - `general_plan_id`
@@ -71,6 +75,41 @@ decision.
 - A caller-provided `deployment_plan` payload is stripped unless deployment
   audit/debug opt-in is active.
 - Dice, allocation, and `n/a` decisions still skip strategic context.
+
+## Orchestration Audit Events
+
+Orchestration audit events are compact telemetry records for plan lifecycle and
+context attachment. Each event contains:
+
+- `sequence`
+- `event_kind`
+- `battle_round`
+- `player_id`
+- `plan_id`
+- compact serializable `metadata`
+
+The in-memory event history is bounded to the latest 256 events, while counters
+remain cumulative per event kind. This is separate from `DecisionRecord`
+telemetry: audit events explain which orchestration plans, dirty flags, repair
+scopes, and context slices were available around a decision; DecisionRecords
+remain the authoritative replay/audit artifact for the decision itself.
+
+Current event kinds include:
+
+- `general_plan_built`
+- `deployment_plan_built`
+- `deployment_plan_dirty_marked`
+- `deployment_plan_repaired`
+- `commander_plan_built`
+- `commander_plan_dirty_marked`
+- `commander_plan_repaired`
+- `commander_phase_report`
+- `orchestration_context_attached`
+
+The `orchestration_context_attached` event records attached slim context keys
+and whether full General, Deployment, or BattleRound plan payloads were
+explicitly attached through audit/debug opt-in. Normal decision context keeps
+only ids and local slices.
 
 ## Plan Shape
 
@@ -180,8 +219,8 @@ embark/disembark masks, or movement candidate generation.
 ## Dirty Flags
 
 Dirty flags are serializable, cumulative repair hints. Event subscribers set
-them; local rankers may inspect them; the current implementation does not
-automatically rebuild plans.
+them; local rankers may inspect them; phase-start repair checkpoints consume or
+downgrade the matching scope deterministically.
 
 Fields:
 

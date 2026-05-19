@@ -458,6 +458,7 @@ def test_enemy_deployment_event_dirties_remaining_own_drops() -> None:
     assert flags.remaining_drops_dirty is True
     assert flags.enemy_information_dirty is True
     assert flags.recommended_replan_scope() == "remaining_drops"
+    assert game.get_orchestration_audit_counters()["deployment_plan_dirty_marked"] == 1
 
 
 def test_enemy_scout_deployment_event_records_tempo_variance() -> None:
@@ -493,6 +494,9 @@ def test_repair_deployment_plan_consumes_dirty_flags() -> None:
     assert report["scope"] == "remaining_drops"
     assert after.repair_count == before.repair_count + 1
     assert game.get_deployment_dirty_flags(player.id).any_dirty() is False
+    assert game.get_orchestration_audit_counters()["deployment_plan_repaired"] == 1
+    repair_event = game.get_orchestration_audit_events(event_kind="deployment_plan_repaired")[-1]
+    assert repair_event["metadata"]["scope"] == "remaining_drops"
 
 
 def test_non_deployment_decision_does_not_attach_deployment_plan() -> None:

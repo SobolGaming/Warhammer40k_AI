@@ -154,6 +154,52 @@ class GameRuleEventService(GameServiceBase):
     def _deployment_plan_key(self, player_id: str) -> str:
         return str(player_id or "")
 
+    def record_orchestration_audit_event(
+        self,
+        event_kind: str,
+        *,
+        player_id: str = "",
+        plan_id: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        kind = str(event_kind or "").strip()
+        if not kind:
+            raise ValueError("Orchestration audit event requires event_kind.")
+        if not hasattr(self, "_orchestration_audit_events") or not isinstance(self._orchestration_audit_events, list):
+            self._orchestration_audit_events = []
+        if not hasattr(self, "_orchestration_audit_counters") or not isinstance(self._orchestration_audit_counters, dict):
+            self._orchestration_audit_counters = {}
+        sequence = int(getattr(self, "_orchestration_audit_sequence", 0) or 0) + 1
+        self._orchestration_audit_sequence = sequence
+        event = {
+            "sequence": int(sequence),
+            "event_kind": kind,
+            "battle_round": int(self._current_battle_round()),
+            "player_id": str(player_id or ""),
+            "plan_id": str(plan_id or ""),
+            "metadata": dict(metadata or {}),
+        }
+        self._orchestration_audit_events.append(event)
+        self._orchestration_audit_events = self._orchestration_audit_events[-256:]
+        self._orchestration_audit_counters[kind] = int(self._orchestration_audit_counters.get(kind, 0) or 0) + 1
+        return dict(event)
+
+    def get_orchestration_audit_events(self, *, event_kind: str | None = None) -> list[dict[str, Any]]:
+        events = [dict(event) for event in list(getattr(self, "_orchestration_audit_events", []) or [])]
+        if event_kind is None:
+            return events
+        wanted = str(event_kind or "")
+        return [event for event in events if str(event.get("event_kind", "") or "") == wanted]
+
+    def get_orchestration_audit_counters(self) -> dict[str, int]:
+        return {
+            str(kind): int(count)
+            for kind, count in sorted(
+                dict(getattr(self, "_orchestration_audit_counters", {}) or {}).items(),
+                key=lambda item: str(item[0]),
+            )
+        }
+
     def get_or_create_tier1_plan(self, player_id: str) -> Tier1Plan:
         pid = str(player_id or "")
         if not pid:
@@ -195,6 +241,15 @@ class GameRuleEventService(GameServiceBase):
             return existing
         plan = build_general_plan(self, pid)
         self._general_plans[key] = plan
+        self.record_orchestration_audit_event(
+            "general_plan_built",
+            player_id=pid,
+            plan_id=str(plan.plan_id),
+            metadata={
+                "limited_resource_policy_count": int(len(plan.limited_resource_policy)),
+                "transport_policy_count": int(len(plan.transport_policy)),
+            },
+        )
         return plan
 
     def get_or_create_deployment_plan(self, player_id: str) -> DeploymentPlan:
@@ -215,6 +270,16 @@ class GameRuleEventService(GameServiceBase):
             general_transport_policy=general_plan.transport_policy,
         )
         self._deployment_plans[key] = plan
+        self.record_orchestration_audit_event(
+            "deployment_plan_built",
+            player_id=pid,
+            plan_id=str(plan.plan_id),
+            metadata={
+                "unit_task_count": int(len(plan.unit_tasks)),
+                "transport_task_count": int(len(plan.transport_tasks)),
+                "tempo_capability_count": int(len(plan.tempo_capabilities)),
+            },
+        )
         return plan
 
     def _build_fresh_deployment_plan(self, player_id: str) -> DeploymentPlan:
@@ -267,6 +332,15 @@ class GameRuleEventService(GameServiceBase):
             severity=severity,
         )
         self._deployment_dirty_flags[self._deployment_plan_key(pid)] = flags
+        self.record_orchestration_audit_event(
+            "deployment_plan_dirty_marked",
+            player_id=pid,
+            metadata={
+                "reason": str(reason or ""),
+                "severity": float(severity or 0.0),
+                "dirty_flags": flags.to_dict(),
+            },
+        )
         return flags
 
     def clear_deployment_dirty_flags(
@@ -314,7 +388,7 @@ class GameRuleEventService(GameServiceBase):
             self._deployment_plans = {}
         self._deployment_plans[self._deployment_plan_key(pid)] = repaired_plan
         post_flags = self.clear_deployment_dirty_flags(pid, consumed_scope=repair_scope)
-        return {
+        report = {
             "repaired": True,
             "scope": repair_scope,
             "phase_name": str(phase_name),
@@ -323,6 +397,13 @@ class GameRuleEventService(GameServiceBase):
             "pre_dirty_flags": pre_flags.to_dict(),
             "post_dirty_flags": post_flags.to_dict(),
         }
+        self.record_orchestration_audit_event(
+            "deployment_plan_repaired",
+            player_id=pid,
+            plan_id=str(repaired_plan.plan_id),
+            metadata=report,
+        )
+        return report
 
     def build_deployment_phase_report(
         self,
@@ -364,6 +445,16 @@ class GameRuleEventService(GameServiceBase):
             general_transport_policy=general_plan.transport_policy,
         )
         self._battle_round_plans[key] = plan
+        self.record_orchestration_audit_event(
+            "commander_plan_built",
+            player_id=pid,
+            plan_id=str(plan.plan_id),
+            metadata={
+                "unit_task_count": int(len(plan.unit_tasks)),
+                "target_priority_count": int(len(plan.priority_targets)),
+                "general_plan_id": str(general_plan.plan_id),
+            },
+        )
         return plan
 
     def _build_fresh_battle_round_plan(
@@ -441,6 +532,15 @@ class GameRuleEventService(GameServiceBase):
             severity=severity,
         )
         self._commander_dirty_flags[self._tier1_plan_key(pid)] = flags
+        self.record_orchestration_audit_event(
+            "commander_plan_dirty_marked",
+            player_id=pid,
+            metadata={
+                "reason": str(reason or ""),
+                "severity": float(severity or 0.0),
+                "dirty_flags": flags.to_dict(),
+            },
+        )
         return flags
 
     def clear_commander_dirty_flags(
@@ -501,6 +601,12 @@ class GameRuleEventService(GameServiceBase):
             "pre_dirty_flags": pre_flags.to_dict(),
             "post_dirty_flags": post_flags.to_dict(),
         }
+        self.record_orchestration_audit_event(
+            "commander_plan_repaired",
+            player_id=pid,
+            plan_id=str(repaired_plan.plan_id),
+            metadata=repair_report,
+        )
         if not hasattr(self, "_commander_last_repair_reports") or not isinstance(
             self._commander_last_repair_reports,
             dict,
@@ -517,6 +623,16 @@ class GameRuleEventService(GameServiceBase):
         reports = list(self._commander_phase_reports.get(key, []) or [])
         reports.append(report)
         self._commander_phase_reports[key] = reports[-32:]
+        self.record_orchestration_audit_event(
+            "commander_phase_report",
+            player_id=player_id,
+            plan_id=str(report.plan_id),
+            metadata={
+                "phase_name": str(report.phase_name),
+                "status": str(report.status),
+                "recommended_replan_scope": str(report.recommended_replan_scope),
+            },
+        )
 
     def get_commander_phase_reports(self, player_id: str) -> list[PhaseExecutionReport]:
         pid = str(player_id or "")

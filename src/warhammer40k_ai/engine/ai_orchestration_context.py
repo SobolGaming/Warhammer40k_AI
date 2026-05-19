@@ -410,6 +410,56 @@ def attach_ai_orchestration_context(
                 if unit_key in fight_assignments
             }
 
+    record_audit_event = getattr(game, "record_orchestration_audit_event", None)
+    if callable(record_audit_event):
+        attached_keys = sorted(
+            key
+            for key in (
+                "general_plan_id",
+                "deployment_plan_id",
+                "battle_round_plan_id",
+                "unit_battle_task",
+                "unit_deployment_task",
+                "commander_movement_task",
+                "commander_transport_assignment",
+                "commander_embark_assignment",
+                "commander_disembark_assignment",
+                "commander_fire_assignment",
+                "commander_charge_assignment",
+                "commander_fight_assignment",
+                "deployment_tempo_capability",
+                "scout_projection",
+                "infiltrate_projection",
+                "preferred_target_unit_ids",
+                "preferred_declarations",
+                "target_fire_plan_summary",
+                "general_limited_resource_policy",
+                "general_cp_policy",
+                "commander_candidate_charge_assignments",
+                "commander_candidate_fight_assignments",
+            )
+            if key in updated
+        )
+        plan_id = str(
+            updated.get("battle_round_plan_id")
+            or updated.get("deployment_plan_id")
+            or updated.get("general_plan_id")
+            or ""
+        )
+        record_audit_event(
+            "orchestration_context_attached",
+            player_id=player_id,
+            plan_id=plan_id,
+            metadata={
+                "decision_type": str(getattr(request, "decision_type", "") or ""),
+                "component_name": requested_component,
+                "attached_keys": attached_keys,
+                "full_general_plan_attached": "general_plan" in updated,
+                "full_deployment_plan_attached": "deployment_plan" in updated,
+                "full_battle_round_plan_attached": "battle_round_plan" in updated,
+            },
+        )
+
     updated["compute_tier"] = _normalize_compute_tier(
         task_compute_tier if task_compute_tier is not None else updated.get("compute_tier")
     )
