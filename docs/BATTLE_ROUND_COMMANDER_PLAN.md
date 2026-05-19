@@ -217,12 +217,22 @@ Semantic normalization adds commander fields to movement candidates:
 - `commander_intentional_shooting_ineligible`
 - `commander_future_phase_ev`
 - `commander_plan_stale_penalty`
+- `commander_transport_alignment`
+- `commander_transport_intent_satisfied`
+- `commander_transport_match_satisfied`
+- `commander_transport_destination_satisfied`
+- `commander_embark_intent_satisfied`
+- `commander_disembark_intent_satisfied`
+- `commander_transport_action_violation`
+- `commander_transport_plan_stale_penalty`
 
 The movement ranker weights these fields to prefer legal candidates that match
 the unit's current commander task. This can penalize Advance for shooting-first
 units, reward intentional Advance staging for melee-first units, reward
-candidate-provided LoS/range-band satisfaction, and reduce commander influence
-when movement/phase/full-round repair pressure says the plan is stale.
+candidate-provided LoS/range-band satisfaction, prefer matching embark and
+disembark choices, prefer transport delivery moves toward commander staging
+regions, and reduce commander influence when movement/phase/full-round repair
+pressure says the plan is stale.
 
 This does not generate new movement candidates, mask forbidden actions, bypass
 validation, or alter PathWitness requirements. If commander intent is stale,
@@ -248,8 +258,8 @@ The first implementation is deliberately conservative:
   repair scope and pre/post dirty state when a repair ran.
 - movement rankers can now score legal candidates against commander intent, but
   legality and mutation remain owned by the existing engine validators.
-- General policy is linked by `general_plan_id` and remains scaffold-only; no
-  ranker consumes limited-resource or transport doctrine yet.
+- General policy is linked by `general_plan_id`; movement rankers consume only
+  local commander transport slices derived from General transport doctrine.
 
 This establishes the stable data contract for later work where movement can
 score LoS/range/trigger-band enablement, shooting can try preferred

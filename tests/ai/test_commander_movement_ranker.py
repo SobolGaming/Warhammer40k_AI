@@ -3,7 +3,12 @@ from __future__ import annotations
 from warhammer40k_ai.engine.ai_component_rankers import default_ai_component_rankers, legal_candidates
 from warhammer40k_ai.engine.ai_policy_orchestrator import COMPONENT_MOVEMENT_RANKER
 from warhammer40k_ai.engine.candidate_semantics import ensure_candidate_semantic_metadata
-from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_DISEMBARK,
+    DECISION_EMBARK,
+    DECISION_MOVE_UNIT,
+    DECISION_SELECT_MOVEMENT_ACTION,
+)
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 
 
@@ -35,10 +40,48 @@ def _movement_request(
     )
 
 
+def _transport_request(
+    decision_type: str,
+    *,
+    context: dict,
+    candidates: list[CandidateAction],
+    mask: list[bool] | None = None,
+) -> DecisionRequest:
+    return DecisionRequest.create(
+        decision_type,
+        "Choose transport action",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Skip", payload={"action": "skip"}),
+            DecisionOption.create("Transport", payload={"action": "confirm"}),
+        ],
+        candidates=candidates,
+        mask=mask or [True] * len(candidates),
+        context={
+            "phase_name": "MOVEMENT_PHASE",
+            "phase_step": "MOVE_UNITS",
+            **dict(context or {}),
+        },
+    )
+
+
 def _candidate(action_id: str, *, action_type: str, metadata: dict | None = None) -> CandidateAction:
     return CandidateAction(
         action_id=action_id,
         params={"action_type": action_type},
+        metadata=dict(metadata or {}),
+    )
+
+
+def _transport_candidate(
+    action_id: str,
+    *,
+    params: dict,
+    metadata: dict | None = None,
+) -> CandidateAction:
+    return CandidateAction(
+        action_id=action_id,
+        params=dict(params or {}),
         metadata=dict(metadata or {}),
     )
 
@@ -283,3 +326,223 @@ def test_unsatisfied_commander_intent_still_falls_back_to_local_movement_score()
 
     assert _movement_ranker().choose_action_id(request) == "high_local"
     assert by_id["low_local"]["commander_task_alignment"] == by_id["high_local"]["commander_task_alignment"]
+
+
+def test_disembark_intent_prefers_matching_transport_and_destination() -> None:
+    request = _normalize(
+        _transport_request(
+            DECISION_DISEMBARK,
+            context={
+                "unit_id": "unit:passenger",
+                "commander_transport_assignment": {
+                    "unit_id": "unit:passenger",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "disembark_this_round",
+                    "destination_region_ids": ["midboard_stage"],
+                },
+                "commander_disembark_assignment": {
+                    "unit_id": "unit:passenger",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "disembark_this_round",
+                    "destination_region_ids": ["midboard_stage"],
+                },
+            },
+            candidates=[
+                _transport_candidate(
+                    "remain",
+                    params={"action": "skip", "transport_id": None},
+                    metadata={"projected_score_delta_next_window": 0.2},
+                ),
+                _transport_candidate(
+                    "disembark",
+                    params={"action": "disembark", "transport_id": "unit:transport"},
+                    metadata={"destination_region_ids": ["midboard_stage"]},
+                ),
+            ],
+        )
+    )
+
+    by_id = {candidate.action_id: dict(candidate.metadata or {}) for candidate in request.candidates}
+
+    assert _movement_ranker().choose_action_id(request) == "disembark"
+    assert by_id["disembark"]["commander_disembark_intent_satisfied"] == 1.0
+    assert by_id["disembark"]["commander_transport_destination_satisfied"] == 1.0
+    assert by_id["remain"]["commander_transport_action_violation"] == 1.0
+
+
+def test_embark_intent_prefers_matching_transport() -> None:
+    request = _normalize(
+        _transport_request(
+            DECISION_EMBARK,
+            context={
+                "unit_id": "unit:rider",
+                "commander_transport_assignment": {
+                    "unit_id": "unit:rider",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "embark_after_action",
+                },
+                "commander_embark_assignment": {
+                    "unit_id": "unit:rider",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "embark_after_action",
+                },
+            },
+            candidates=[
+                _transport_candidate("skip", params={"action": "skip", "transport_id": None}),
+                _transport_candidate(
+                    "embark",
+                    params={"action": "embark", "transport_id": "unit:transport"},
+                ),
+            ],
+        )
+    )
+
+    by_id = {candidate.action_id: dict(candidate.metadata or {}) for candidate in request.candidates}
+
+    assert _movement_ranker().choose_action_id(request) == "embark"
+    assert by_id["embark"]["commander_embark_intent_satisfied"] == 1.0
+    assert by_id["embark"]["commander_transport_match_satisfied"] == 1.0
+    assert by_id["skip"]["commander_transport_action_violation"] == 1.0
+
+
+def test_transport_delivery_intent_prefers_staging_region_candidate() -> None:
+    request = _normalize(
+        _transport_request(
+            DECISION_MOVE_UNIT,
+            context={
+                "unit_id": "unit:transport",
+                "movement_type": "normal",
+                "commander_transport_assignment": {
+                    "unit_id": "unit:transport",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "deliver_to_staging_region",
+                    "destination_region_ids": ["midboard_stage"],
+                },
+            },
+            candidates=[
+                _transport_candidate(
+                    "wrong_region",
+                    params={"movement_type": "normal"},
+                    metadata={"destination_region_ids": ["home_screen"]},
+                ),
+                _transport_candidate(
+                    "staging",
+                    params={"movement_type": "normal"},
+                    metadata={"destination_region_ids": ["midboard_stage"]},
+                ),
+            ],
+        )
+    )
+
+    by_id = {candidate.action_id: dict(candidate.metadata or {}) for candidate in request.candidates}
+
+    assert _movement_ranker().choose_action_id(request) == "staging"
+    assert by_id["staging"]["commander_transport_destination_satisfied"] == 1.0
+    assert by_id["staging"]["commander_transport_alignment"] > by_id["wrong_region"]["commander_transport_alignment"]
+
+
+def test_transport_intent_falls_back_when_candidate_metadata_is_unsupported() -> None:
+    request = _normalize(
+        _transport_request(
+            DECISION_MOVE_UNIT,
+            context={
+                "unit_id": "unit:transport",
+                "movement_type": "normal",
+                "commander_transport_assignment": {
+                    "unit_id": "unit:transport",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "deliver_to_staging_region",
+                    "destination_region_ids": ["midboard_stage"],
+                },
+            },
+            candidates=[
+                _transport_candidate(
+                    "low_local",
+                    params={"movement_type": "normal"},
+                    metadata={"projected_score_delta_next_window": 0.1},
+                ),
+                _transport_candidate(
+                    "high_local",
+                    params={"movement_type": "normal"},
+                    metadata={"projected_score_delta_next_window": 2.0},
+                ),
+            ],
+        )
+    )
+
+    by_id = {candidate.action_id: dict(candidate.metadata or {}) for candidate in request.candidates}
+
+    assert _movement_ranker().choose_action_id(request) == "high_local"
+    assert by_id["low_local"]["commander_transport_destination_satisfied"] == 0.0
+    assert by_id["low_local"]["commander_transport_alignment"] == by_id["high_local"]["commander_transport_alignment"]
+
+
+def test_stale_transport_intent_reduces_alignment_so_local_score_can_win() -> None:
+    request = _normalize(
+        _transport_request(
+            DECISION_MOVE_UNIT,
+            context={
+                "unit_id": "unit:transport",
+                "movement_type": "normal",
+                "commander_replan_scope": "movement_only",
+                "commander_dirty_flags": {"movement_plan_dirty": True},
+                "commander_transport_assignment": {
+                    "unit_id": "unit:transport",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "deliver_to_staging_region",
+                    "destination_region_ids": ["midboard_stage"],
+                },
+            },
+            candidates=[
+                _transport_candidate(
+                    "staging",
+                    params={"movement_type": "normal"},
+                    metadata={"destination_region_ids": ["midboard_stage"]},
+                ),
+                _transport_candidate(
+                    "high_local",
+                    params={"movement_type": "normal"},
+                    metadata={
+                        "destination_region_ids": ["home_screen"],
+                        "projected_score_delta_next_window": 2.0,
+                    },
+                ),
+            ],
+        )
+    )
+
+    by_id = {candidate.action_id: dict(candidate.metadata or {}) for candidate in request.candidates}
+
+    assert _movement_ranker().choose_action_id(request) == "high_local"
+    assert by_id["staging"]["commander_transport_destination_satisfied"] == 1.0
+    assert by_id["staging"]["commander_transport_plan_stale_penalty"] == 1.0
+
+
+def test_masked_matching_transport_candidate_remains_unavailable() -> None:
+    request = _normalize(
+        _transport_request(
+            DECISION_EMBARK,
+            context={
+                "unit_id": "unit:rider",
+                "commander_transport_assignment": {
+                    "unit_id": "unit:rider",
+                    "transport_unit_id": "unit:transport",
+                    "intent": "embark_after_action",
+                },
+            },
+            candidates=[
+                _transport_candidate(
+                    "embark",
+                    params={"action": "embark", "transport_id": "unit:transport"},
+                ),
+                _transport_candidate(
+                    "fallback",
+                    params={"action": "embark", "transport_id": "unit:other_transport"},
+                ),
+            ],
+            mask=[False, True],
+        )
+    )
+
+    assert _movement_ranker().choose_action_id(request) == "fallback"
+    assert [candidate.action_id for candidate in legal_candidates(request)] == ["fallback"]

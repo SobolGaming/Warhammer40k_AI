@@ -234,8 +234,6 @@ Implemented behavior:
   local slices.
 - rankers do not consume these transport slices yet.
 
-## Remaining
-
 ### PR 6C - Movement Ranker Consumes Commander Transport Intent
 
 Extend the completed PR5 movement ranker consumption to transport-specific
@@ -259,6 +257,25 @@ Acceptance criteria:
 - local fallback still wins if commander transport intent is illegal, stale, or
   unsupported by candidate metadata.
 - legality remains owned by existing validators.
+
+Implemented behavior:
+
+- `EMBARK` and `DISEMBARK` now use movement semantic normalization so transport
+  intent can be scored by the movement ranker.
+- semantic movement metadata now includes commander transport alignment,
+  transport match, destination match, embark/disembark intent satisfaction,
+  transport action violation, and stale transport-plan penalty.
+- the movement ranker weights these fields after normal movement semantics and
+  PR5 commander movement fields.
+- embark intent prefers legal candidates for the assigned transport.
+- disembark intent prefers legal candidates for the assigned transport and
+  matching destination metadata when present.
+- transport delivery intent prefers legal movement candidates whose metadata
+  matches the commander staging region.
+- masked candidates remain unavailable, and unsupported/stale transport metadata
+  falls back to existing local semantic movement scoring.
+
+## Remaining
 
 ### PR 7 - Shooting Executes Commander Fire Assignments And General Resource Policy
 

@@ -11,6 +11,8 @@ from .decision_kinds import (
     DECISION_DECLARE_CHARGE,
     DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_DECLARE_SHOTS,
+    DECISION_DISEMBARK,
+    DECISION_EMBARK,
     DECISION_MOVE_UNIT,
     DECISION_PICK_OBJECTIVE,
     DECISION_PICK_POINT,
@@ -42,6 +44,8 @@ _MOVEMENT_DECISION_TYPES = frozenset(
     (
         DECISION_MOVE_UNIT,
         DECISION_SELECT_MOVEMENT_ACTION,
+        DECISION_EMBARK,
+        DECISION_DISEMBARK,
     )
 )
 
@@ -277,6 +281,108 @@ def _candidate_movement_action(params: Mapping[str, Any], metadata: Mapping[str,
     return ""
 
 
+def _normalized_transport_action(value: object) -> str:
+    action = str(value or "").strip().lower()
+    aliases = {
+        "none": "skip",
+        "noop": "skip",
+        "pass": "skip",
+        "remain_embarked": "skip",
+        "stay_embarked": "skip",
+        "do_not_embark": "skip",
+        "move": "move",
+        "normal_move": "move",
+        "deliver": "move",
+        "reposition": "move",
+        "screen": "move",
+        "embark": "embark",
+        "embark_after_action": "embark",
+        "disembark": "disembark",
+        "disembark_this_round": "disembark",
+    }
+    return aliases.get(action, action)
+
+
+def _candidate_transport_action(
+    *,
+    decision_type: str,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> str:
+    for source in (params, metadata):
+        for key in ("action", "action_type", "choice", "intent", "candidate_kind"):
+            action = _normalized_transport_action(source.get(key))
+            if action:
+                return action
+    if bool(params.get("skip", False)) or bool(params.get("skipped", False)):
+        return "skip"
+    dtype = str(decision_type or "").strip().upper()
+    transport_id = _candidate_transport_id(params, metadata)
+    if dtype == DECISION_EMBARK and transport_id:
+        return "embark"
+    if dtype == DECISION_DISEMBARK:
+        return "disembark" if transport_id else "skip"
+    if _dictish(context.get("commander_transport_assignment")) and _is_non_noop_candidate(dict(params), metadata):
+        return _candidate_movement_action(params, metadata) or "move"
+    return ""
+
+
+def _candidate_transport_id(params: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
+    for source in (params, metadata):
+        for key in (
+            "transport_id",
+            "transport_unit_id",
+            "target_transport_unit_id",
+            "planned_transport_unit_id",
+        ):
+            if key not in source:
+                continue
+            value = source.get(key)
+            if value is not None and str(value):
+                return str(value)
+    return ""
+
+
+def _candidate_region_ids(params: Mapping[str, Any], metadata: Mapping[str, Any]) -> set[str] | None:
+    region_ids: set[str] = set()
+    saw_region_metadata = False
+    for source in (metadata, params):
+        for key in (
+            "destination_region_ids",
+            "target_region_ids",
+            "region_ids",
+            "commander_destination_region_ids",
+        ):
+            if key in source:
+                saw_region_metadata = True
+                region_ids.update(_string_set(source.get(key)))
+        for key in ("destination_region_id", "target_region_id", "region_id"):
+            if key in source:
+                saw_region_metadata = True
+                region_ids.update(_string_set(source.get(key)))
+    if not saw_region_metadata:
+        return None
+    return {region_id for region_id in region_ids if region_id}
+
+
+def _candidate_satisfies_destination(
+    *,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    destination_region_ids: list[str],
+) -> bool | None:
+    if not destination_region_ids:
+        return None
+    explicit = metadata.get("commander_transport_destination_satisfied")
+    if explicit is not None:
+        return bool(explicit)
+    candidate_regions = _candidate_region_ids(params, metadata)
+    if candidate_regions is None:
+        return None
+    return bool(set(destination_region_ids).intersection(candidate_regions))
+
+
 def _visible_unit_ids(params: Mapping[str, Any], metadata: Mapping[str, Any]) -> set[str] | None:
     for source in (metadata, params):
         for key in (
@@ -390,8 +496,134 @@ def _commander_plan_stale(context: Mapping[str, Any]) -> bool:
     )
 
 
+def _transport_assignment_for_context(context: Mapping[str, Any]) -> dict[str, Any]:
+    transport_assignment = _dictish(context.get("commander_transport_assignment"))
+    if transport_assignment:
+        return transport_assignment
+    embark_assignment = _dictish(context.get("commander_embark_assignment"))
+    if embark_assignment:
+        return embark_assignment
+    return _dictish(context.get("commander_disembark_assignment"))
+
+
+def _commander_transport_metadata(
+    *,
+    decision_type: str,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    assignment = _transport_assignment_for_context(context)
+    if not assignment:
+        return {}
+
+    intent = str(assignment.get("intent", "") or "").strip().lower()
+    assigned_transport_id = str(assignment.get("transport_unit_id", "") or "").strip()
+    assigned_unit_id = str(assignment.get("unit_id", "") or "").strip()
+    context_unit_id = str(context.get("unit_id", "") or "").strip()
+    destination_region_ids = [
+        str(value)
+        for value in list(assignment.get("destination_region_ids", []) or [])
+        if str(value)
+    ]
+
+    action = _candidate_transport_action(
+        decision_type=decision_type,
+        params=params,
+        metadata=metadata,
+        context=context,
+    )
+    candidate_transport_id = _candidate_transport_id(params, metadata)
+    transport_match: bool | None = None
+    if assigned_transport_id and candidate_transport_id:
+        transport_match = candidate_transport_id == assigned_transport_id
+    elif assigned_transport_id and context_unit_id and assigned_unit_id == assigned_transport_id == context_unit_id:
+        transport_match = True
+
+    destination_satisfied = _candidate_satisfies_destination(
+        params=params,
+        metadata=metadata,
+        destination_region_ids=destination_region_ids,
+    )
+
+    alignment = 0.0
+    intent_satisfied = False
+    action_violation = 0.0
+    if intent == "embark_after_action":
+        if action == "embark" and transport_match is not False:
+            intent_satisfied = True
+            alignment += 0.9
+        elif action == "skip":
+            action_violation = 1.0
+            alignment -= 0.55
+        elif action:
+            alignment -= 0.2
+    elif intent == "disembark_this_round":
+        if action == "disembark" and transport_match is not False:
+            intent_satisfied = True
+            alignment += 0.9
+        elif action == "skip":
+            action_violation = 1.0
+            alignment -= 0.55
+        elif action:
+            alignment -= 0.2
+    elif intent == "stay_embarked":
+        if action == "skip":
+            intent_satisfied = True
+            alignment += 0.65
+        elif action == "disembark":
+            action_violation = 1.0
+            alignment -= 0.55
+    elif intent == "deliver_to_staging_region":
+        if action and action != "skip":
+            alignment += 0.25
+            if destination_satisfied is not None:
+                intent_satisfied = bool(destination_satisfied)
+        elif action == "skip":
+            action_violation = 1.0
+            alignment -= 0.35
+    elif intent == "transport_screen_after_delivery":
+        if action and action != "skip":
+            alignment += 0.2
+            if destination_satisfied is not None:
+                intent_satisfied = bool(destination_satisfied)
+        elif action == "skip":
+            alignment -= 0.2
+
+    if transport_match is True:
+        alignment += 0.25
+    elif transport_match is False:
+        action_violation = 1.0
+        alignment -= 0.6
+
+    if destination_satisfied is True:
+        alignment += 0.55
+    elif destination_satisfied is False:
+        alignment -= 0.25
+
+    stale = _commander_plan_stale(context)
+    if stale:
+        alignment *= 0.25
+
+    return {
+        "commander_transport_alignment": _round6(_clamp(alignment, low=-2.0, high=2.0)),
+        "commander_transport_intent_satisfied": 1.0 if intent_satisfied else 0.0,
+        "commander_transport_match_satisfied": 1.0 if transport_match is True else 0.0,
+        "commander_transport_destination_satisfied": 1.0 if destination_satisfied is True else 0.0,
+        "commander_embark_intent_satisfied": 1.0 if intent == "embark_after_action" and intent_satisfied else 0.0,
+        "commander_disembark_intent_satisfied": (
+            1.0
+            if intent in {"stay_embarked", "disembark_this_round"} and intent_satisfied
+            else 0.0
+        ),
+        "commander_transport_action_violation": _round6(action_violation),
+        "commander_transport_plan_stale_penalty": 1.0 if stale else 0.0,
+    }
+
+
 def _commander_movement_metadata(
     *,
+    decision_type: str,
     params: Mapping[str, Any],
     metadata: Mapping[str, Any],
     context: Mapping[str, Any],
@@ -400,8 +632,14 @@ def _commander_movement_metadata(
     unit_task = _dictish(context.get("unit_battle_task"))
     fire_assignment = _dictish(context.get("commander_fire_assignment"))
     charge_assignment = _dictish(context.get("commander_charge_assignment"))
+    transport_metadata = _commander_transport_metadata(
+        decision_type=decision_type,
+        params=params,
+        metadata=metadata,
+        context=context,
+    )
     if not any((movement_task, unit_task, fire_assignment, charge_assignment)):
-        return {}
+        return transport_metadata
 
     action = _candidate_movement_action(params, metadata)
     desired_action = _normalized_movement_action(movement_task.get("desired_action"))
@@ -489,7 +727,7 @@ def _commander_movement_metadata(
     if stale:
         alignment *= 0.25
 
-    return {
+    commander_metadata = {
         "commander_task_alignment": _round6(_clamp(alignment, low=-2.0, high=2.0)),
         "commander_action_violation": _round6(action_violation),
         "commander_required_los_satisfied": 1.0 if los_satisfied is True else 0.0,
@@ -499,6 +737,8 @@ def _commander_movement_metadata(
         "commander_future_phase_ev": _round6(future_phase_ev),
         "commander_plan_stale_penalty": 1.0 if stale else 0.0,
     }
+    commander_metadata.update(transport_metadata)
+    return commander_metadata
 
 
 def _text_blob(*sources: Mapping[str, Any]) -> str:
@@ -1279,6 +1519,7 @@ def normalize_candidate_semantic_metadata(
     if projection_kind == "movement":
         metadata_data.update(
             _commander_movement_metadata(
+                decision_type=str(decision_type or ""),
                 params=dict(params or {}),
                 metadata=metadata_data,
                 context=context_data,

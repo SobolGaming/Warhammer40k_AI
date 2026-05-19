@@ -56,6 +56,14 @@ Move candidate metadata includes:
   - `commander_intentional_shooting_ineligible`
   - `commander_future_phase_ev`
   - `commander_plan_stale_penalty`
+  - `commander_transport_alignment`
+  - `commander_transport_intent_satisfied`
+  - `commander_transport_match_satisfied`
+  - `commander_transport_destination_satisfied`
+  - `commander_embark_intent_satisfied`
+  - `commander_disembark_intent_satisfied`
+  - `commander_transport_action_violation`
+  - `commander_transport_plan_stale_penalty`
 - provenance fields:
   - `rules_provenance_refs`
 - `path_witness_ref` for non-noop move candidates
