@@ -7,6 +7,8 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.ml.training_corpus import (
+    _army_labels_from_paths,
+    _runtime_scoreboard,
     build_corpus_manifest,
     validate_self_play_corpus_batch,
 )
@@ -111,6 +113,23 @@ def test_validate_self_play_corpus_batch_rejects_mask_candidate_mismatch() -> No
 
     assert validation.accepted_game_count == 0
     assert any(reason.startswith("decision_record_validation_errors:") for reason in validation.games[0].reasons)
+
+
+def test_runtime_scoreboard_uses_player_army_labels_when_json_keys_are_sorted() -> None:
+    player1 = Player("Player 1")
+    player2 = Player("Player 2")
+    player1.score = 10
+    player2.score = 59
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player1, player2])
+    player1_label, player2_label = _army_labels_from_paths(
+        "army_lists/DGI_Adeptus_Custodes_10202.txt",
+        "army_lists/DGI_Adepta_Sororitas_10280.txt",
+    )
+
+    assert _runtime_scoreboard(game, player1_label=player1_label, player2_label=player2_label) == {
+        "DGI_Adeptus_Custodes_10202": 10,
+        "DGI_Adepta_Sororitas_10280": 59,
+    }
 
 
 def test_build_corpus_manifest_aggregates_accepted_game_phase_timings(tmp_path: Path) -> None:

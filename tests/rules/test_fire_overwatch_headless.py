@@ -194,6 +194,76 @@ def test_apply_select_overwatch_uses_fire_overwatch_stratagem() -> None:
     ]
 
 
+def test_validate_select_overwatch_rejects_stale_once_used_choice() -> None:
+    manager = SimpleNamespace(
+        can_use=lambda *_args, **_kwargs: False,
+        _dequeue_reaction_by_name_and_context=lambda *_args, **_kwargs: None,
+    )
+    shooter = SimpleNamespace(id="unit:shooter", name="Shooter")
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy")
+    player = SimpleNamespace(id="player:overwatch", stratagems=manager)
+    game = SimpleNamespace(players=[player], entity_registry=None)
+    request = _fire_overwatch_request(player_id=player.id, enemy_unit_id=enemy.id, shooter_unit_id=shooter.id)
+    choice = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("unit_id", "") or "") == shooter.id
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=choice.option_id,
+        payload={},
+    )
+
+    player_lookup = {player.id: player}
+    unit_lookup = {shooter.id: shooter, enemy.id: enemy}
+    game.entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: player_lookup.get(entity_id) if kind == "player" else unit_lookup.get(entity_id)
+    )
+
+    assert _validate_select_overwatch(game, request, result) == (
+        "Fire Overwatch is no longer legal for the selected unit.",
+    )
+
+
+def test_apply_select_overwatch_purges_other_same_phase_overwatch_requests() -> None:
+    manager = SimpleNamespace(
+        use=lambda *_args, **_kwargs: True,
+        _dequeue_reaction_by_name_and_context=lambda *_args, **_kwargs: None,
+    )
+    shooter = SimpleNamespace(id="unit:shooter", name="Shooter")
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy")
+    player = SimpleNamespace(id="player:overwatch", stratagems=manager)
+    queue = DecisionQueue()
+    game = SimpleNamespace(players=[player], entity_registry=None, decision_queue=queue)
+    request = _fire_overwatch_request(player_id=player.id, enemy_unit_id=enemy.id, shooter_unit_id=shooter.id)
+    stale = _fire_overwatch_request(player_id=player.id, enemy_unit_id=enemy.id, shooter_unit_id=shooter.id)
+    queue.add(request)
+    queue.add(stale)
+    choice = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("unit_id", "") or "") == shooter.id
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=choice.option_id,
+        payload={},
+    )
+
+    player_lookup = {player.id: player}
+    unit_lookup = {shooter.id: shooter, enemy.id: enemy}
+    game.entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: player_lookup.get(entity_id) if kind == "player" else unit_lookup.get(entity_id)
+    )
+
+    assert _apply_select_overwatch(game, request, result) is shooter
+    assert queue.get(request.decision_id) is request
+    assert queue.get(stale.decision_id) is None
+
+
 def test_maybe_queue_overwatch_filters_units_without_legal_out_of_phase_shots() -> None:
     valid_shooter = SimpleNamespace(
         id="unit:valid",

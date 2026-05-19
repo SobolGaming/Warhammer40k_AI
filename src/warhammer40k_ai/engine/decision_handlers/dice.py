@@ -125,38 +125,16 @@ def _validate_select_reroll(game: object, request: DecisionRequest, result: Deci
             return ("Perfectly Adapted re-roll not available for this roll.",)
     # Command reroll validation (CP and phase usage)
     if bool(action.get("is_command", False)) or bool(action.get("consume_cp", False)):
+        from ..roll_utils import command_reroll_status
+
         player = resolve_player(game, getattr(result, "player_id", None))
         if player is None:
             return ("Command reroll requires a player.",)
-        mgr_strat = getattr(player, "stratagems", None)
-        strat = None
-        try:
-            if mgr_strat is not None:
-                strat = mgr_strat.get_by_name("COMMAND RE-ROLL")
-        except Exception:
-            strat = None
-        if strat is None:
-            return ("Command Re-roll stratagem not available.",)
-        try:
-            phase_name = getattr(game, "_current_phase_label", lambda: "")()
-        except Exception:
-            phase_name = ""
         unit = resolve_unit(game, state.spec.get("unit_id"))
-        ctx = {"phase_name": phase_name}
-        if unit is not None:
-            ctx["unit"] = unit
-            ctx["target_unit"] = unit
-        is_active_turn = False
-        try:
-            is_active_turn = bool(getattr(game, "get_current_player", lambda: None)() is player)
-        except Exception:
-            is_active_turn = False
-        try:
-            availability = mgr_strat._evaluate_availability(strat, ctx, is_active_turn=is_active_turn)
-        except Exception:
-            availability = {"available": False, "reason": "Unavailable"}
-        if not availability.get("available", False):
-            return (str(availability.get("reason") or "Command Re-roll unavailable"),)
+        roll_type = str(state.spec.get("roll_type", "") or "")
+        status = command_reroll_status(game, player, roll_type=roll_type, unit=unit)
+        if not bool(status.get("available", False)):
+            return (str(status.get("reason") or "Command Re-roll unavailable"),)
     return ()
 
 
@@ -203,9 +181,15 @@ def _apply_select_reroll(game: object, request: DecisionRequest, result: Decisio
                 if callable(apply_cp)
                 else {"cost": int(getattr(strat, "cp_cost", 1) or 1)}
             )
+            if bool((cp_info or {}).get("denied", False)):
+                reason = str((cp_info or {}).get("reason") or "Command Re-roll CP cost denied.")
+                raise RuntimeError(reason)
             cp_cost = int((cp_info or {}).get("cost", getattr(strat, "cp_cost", 1) or 1) or 0)
             if not player.spend_command_points(cp_cost, reason=f"Stratagem: {strat.name}", source="stratagem"):
-                raise RuntimeError("Command Re-roll CP spend failed.")
+                current_cp = int(getattr(player, "command_points", 0) or 0)
+                raise RuntimeError(
+                    f"Command Re-roll CP spend failed: requires {cp_cost}, has {current_cp}."
+                )
             try:
                 mgr_strat._used_stratagems_this_phase.add((strat.name or "").strip().upper())
                 record_use = getattr(mgr_strat, "_record_command_reroll_use", None)

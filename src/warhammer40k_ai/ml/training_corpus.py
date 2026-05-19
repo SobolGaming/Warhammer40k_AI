@@ -38,16 +38,42 @@ def _json_dump(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
-def _scoreboard_values(scoreboard: dict[str, Any]) -> list[int]:
-    return [_safe_int(value) for value in scoreboard.values()]
+def _army_label_from_path(path: str) -> str:
+    path_text = str(path or "").strip()
+    if not path_text:
+        return "unknown_army"
+    parsed = Path(path_text)
+    return parsed.stem or parsed.name or path_text
 
 
-def _runtime_player_scores(game: object) -> list[int]:
-    scores: list[int] = []
-    for player in list(getattr(game, "players", []) or []):
+def _army_labels_from_paths(player1_army: str, player2_army: str) -> tuple[str, str]:
+    player1_label = _army_label_from_path(player1_army)
+    player2_label = _army_label_from_path(player2_army)
+    if player1_label != player2_label:
+        return player1_label, player2_label
+
+    def _with_parent(path: str, label: str, fallback_prefix: str) -> str:
+        parent_name = Path(str(path or "")).parent.name
+        if parent_name:
+            return f"{parent_name}:{label}"
+        return f"{fallback_prefix}:{label}"
+
+    player1_disambiguated = _with_parent(player1_army, player1_label, "player1")
+    player2_disambiguated = _with_parent(player2_army, player2_label, "player2")
+    if player1_disambiguated == player2_disambiguated:
+        return f"player1:{player1_label}", f"player2:{player2_label}"
+    return player1_disambiguated, player2_disambiguated
+
+
+def _runtime_scoreboard(game: object, *, player1_label: str, player2_label: str) -> dict[str, int]:
+    players = list(getattr(game, "players", []) or [])
+    labels = [str(player1_label or "player1"), str(player2_label or "player2")]
+    scores: dict[str, int] = {}
+    for index, player in enumerate(players):
         getter = getattr(player, "get_score", None)
         value = getter() if callable(getter) else getattr(player, "score", 0)
-        scores.append(_safe_int(value))
+        label = labels[index] if index < len(labels) else f"player{index + 1}"
+        scores[str(label)] = _safe_int(value)
     return scores
 
 
@@ -213,23 +239,30 @@ def _validate_replay(
     replay_path: Path,
     expected_scoreboard: dict[str, int],
     expected_record_count: int,
+    player1_army: str = "",
+    player2_army: str = "",
 ) -> tuple[list[str], int, int, int]:
     reasons: list[str] = []
     if not replay_path.is_file():
         return ([f"missing_replay:{replay_path}"], 0, 0, 0)
 
     reader = ReplayStoreReader(replay_path)
-    replay_decisions = int(reader.decision_count())
+    replay_decision_idx = int(reader.decision_count())
+    replay_decisions = int(reader.decision_row_count())
     replay_keyframes = int(reader.keyframe_count())
     replay_events = _event_count(replay_path)
     if replay_decisions != int(expected_record_count):
         reasons.append(f"replay_decision_count_mismatch:{replay_decisions}!={expected_record_count}")
 
-    replayed_game = reader.reconstruct_game_at_decision(replay_decisions, strict=True)
-    expected_scores = _scoreboard_values(expected_scoreboard)
-    replay_scores = _runtime_player_scores(replayed_game)
-    if expected_scores and replay_scores != expected_scores:
-        reasons.append(f"replay_score_mismatch:{replay_scores}!={expected_scores}")
+    replayed_game = reader.reconstruct_game_at_decision(replay_decision_idx, strict=True)
+    player1_label, player2_label = _army_labels_from_paths(player1_army, player2_army)
+    replay_scoreboard = _runtime_scoreboard(
+        replayed_game,
+        player1_label=player1_label,
+        player2_label=player2_label,
+    )
+    if expected_scoreboard and replay_scoreboard != expected_scoreboard:
+        reasons.append(f"replay_score_mismatch:{replay_scoreboard}!={expected_scoreboard}")
     return reasons, replay_decisions, replay_events, replay_keyframes
 
 
@@ -287,6 +320,8 @@ def validate_self_play_corpus_batch(
                         for key, value in dict(result.get("scoreboard", {}) or {}).items()
                     },
                     expected_record_count=len(game_records),
+                    player1_army=player1_army,
+                    player2_army=player2_army,
                 )
                 reasons.extend(replay_reasons)
             except (OSError, sqlite3.Error, RuntimeError, ValueError, KeyError, TypeError) as exc:

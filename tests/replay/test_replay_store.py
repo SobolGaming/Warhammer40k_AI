@@ -64,6 +64,27 @@ def _queue_confirmation(game: Game, player: Player) -> DecisionRequest:
     return request
 
 
+def test_reader_decision_row_count_distinguishes_autoincrement_gaps(tmp_path):
+    replay_path = tmp_path / "replay.sqlite3"
+    with sqlite3.connect(replay_path) as conn:
+        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)")
+        conn.execute(
+            """
+            CREATE TABLE decision_steps (
+                decision_idx INTEGER PRIMARY KEY AUTOINCREMENT,
+                decision_id TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+        conn.execute("INSERT INTO decision_steps(decision_idx, decision_id) VALUES(1, 'a')")
+        conn.execute("INSERT INTO decision_steps(decision_idx, decision_id) VALUES(3, 'b')")
+
+    reader = ReplayStoreReader(replay_path)
+
+    assert reader.decision_count() == 3
+    assert reader.decision_row_count() == 2
+
+
 def _resolve_option(game: Game, request: DecisionRequest, *, option_index: int) -> None:
     result = DecisionResult(
         decision_id=request.decision_id,
@@ -837,6 +858,65 @@ def test_enable_decision_replay_recording_is_idempotent(tmp_path) -> None:
 
     reader = ReplayStoreReader(replay_path)
     assert reader.decision_count() == 1
+
+
+def test_replay_recording_backfills_accepted_settled_decision(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "settled_backfill.replay.sqlite3"
+    enable_decision_replay_recording(game, replay_path=replay_path, session_id="session-settled-backfill")
+
+    request = _queue_confirmation(game, player)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={"choice": True},
+    )
+    game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value={"choice": True},
+    )
+
+    game.event_system.publish(
+        "decision_settled",
+        request=request,
+        result=result,
+        game=game,
+        accepted=True,
+    )
+
+    reader = ReplayStoreReader(replay_path)
+    assert reader.decision_count() == 1
+    assert reader.get_decision_record(1)["decision_id"] == request.decision_id
+
+
+def test_decision_record_append_reserves_replay_step(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "append_reserves_step.replay.sqlite3"
+    enable_decision_replay_recording(game, replay_path=replay_path, session_id="session-append-reserve")
+
+    request = _queue_confirmation(game, player)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={"choice": True},
+    )
+    game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value={"choice": True},
+    )
+
+    reader = ReplayStoreReader(replay_path)
+    assert reader.decision_count() == 1
+    assert reader.get_decision_record(1)["decision_id"] == request.decision_id
+    assert reader.get_request_payload(1)["decision_id"] == request.decision_id
 
 
 def test_request_payload_for_runtime_remaps_unit_and_model_ids() -> None:

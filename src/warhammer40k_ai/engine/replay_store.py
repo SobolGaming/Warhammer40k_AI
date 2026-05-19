@@ -73,6 +73,42 @@ def _unpack_json(blob: bytes) -> Any:
     return json.loads(zlib.decompress(blob).decode("utf-8"))
 
 
+def _request_payload_from_decision_record(record: dict[str, Any]) -> dict[str, Any]:
+    candidates = [dict(item or {}) for item in list(record.get("candidates", []) or [])]
+    options = []
+    for index, candidate in enumerate(candidates):
+        action_id = str(candidate.get("action_id", "") or "")
+        metadata = dict(candidate.get("metadata", {}) or {})
+        label = str(metadata.get("label", "") or action_id or f"Option {index + 1}")
+        payload = dict(candidate.get("params", {}) or {})
+        if action_id:
+            payload.setdefault("action_id", action_id)
+        options.append(
+            {
+                "option_id": action_id or f"option-{index}",
+                "label": label,
+                "payload": payload,
+            }
+        )
+    context = dict(record.get("request_context", {}) or {})
+    prompt = str(context.get("message", "") or context.get("roll_type", "") or record.get("decision_type", "") or "")
+    immediate_deltas = dict(dict(record.get("outcome", {}) or {}).get("immediate_deltas", {}) or {})
+    actor_player_id = immediate_deltas.get("actor_player_id", None)
+    return {
+        "decision_id": str(record.get("decision_id", "") or ""),
+        "player_id": actor_player_id or None,
+        "decision_type": str(record.get("decision_type", "") or ""),
+        "prompt": prompt,
+        "options": options,
+        "context": context,
+        "candidates": candidates,
+        "mask": list(record.get("mask", []) or []),
+        "mask_reasons": list(record.get("mask_reasons", []) or []),
+        "created_at": 0.0,
+        "timeout_seconds": None,
+    }
+
+
 def _player_controller_kind(game: Game, player_id: str | None) -> str:
     pid = str(player_id or "")
     if not pid:
@@ -367,6 +403,95 @@ class ReplayStoreRecorder:
                 (int(event_end_id), int(event_end_id), str(decision_id)),
             )
 
+    def has_decision_step(self, decision_id: str) -> bool:
+        if not decision_id:
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM decision_steps WHERE decision_id = ? LIMIT 1",
+                (str(decision_id),),
+            ).fetchone()
+        return row is not None
+
+    def record_decision_record(self, game: Game, record: dict[str, Any]) -> int:
+        if game is None:
+            raise ValueError("Game is required for replay recording.")
+        if not isinstance(record, dict):
+            raise ValueError("Decision record is required for replay recording.")
+        decision_id = str(record.get("decision_id", "") or "")
+        if not decision_id:
+            return 0
+        immediate_deltas = dict(dict(record.get("outcome", {}) or {}).get("immediate_deltas", {}) or {})
+        actor_player_id = str(immediate_deltas.get("actor_player_id", "") or "")
+        controller_kind = _player_controller_kind(game, actor_player_id)
+        request_payload = _request_payload_from_decision_record(record)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO decision_steps(
+                    decision_id,
+                    turn_id,
+                    phase,
+                    actor_player_id,
+                    controller_kind,
+                    decision_type,
+                    chosen_option_id,
+                    chosen_action_id,
+                    valid,
+                    wall_clock_ms,
+                    time_budget_ms,
+                    event_start_id,
+                    event_end_id,
+                    request_blob,
+                    decision_record_blob
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                ON CONFLICT(decision_id) DO UPDATE SET
+                    decision_record_blob = excluded.decision_record_blob,
+                    chosen_action_id = CASE
+                        WHEN excluded.chosen_action_id != '' THEN excluded.chosen_action_id
+                        ELSE decision_steps.chosen_action_id
+                    END,
+                    valid = excluded.valid,
+                    wall_clock_ms = CASE
+                        WHEN excluded.wall_clock_ms > decision_steps.wall_clock_ms THEN excluded.wall_clock_ms
+                        ELSE decision_steps.wall_clock_ms
+                    END,
+                    time_budget_ms = COALESCE(decision_steps.time_budget_ms, excluded.time_budget_ms),
+                    request_blob = CASE
+                        WHEN decision_steps.request_blob IS NULL AND excluded.request_blob IS NOT NULL
+                            THEN excluded.request_blob
+                        ELSE decision_steps.request_blob
+                    END
+                """,
+                (
+                    decision_id,
+                    int(record.get("turn_id", 0) or 0),
+                    str(record.get("phase", "") or ""),
+                    actor_player_id,
+                    controller_kind,
+                    str(record.get("decision_type", "") or ""),
+                    "",
+                    str(record.get("chosen_action_id", "") or ""),
+                    1 if bool(record.get("valid", True)) else 0,
+                    int(record.get("wall_clock_ms", 0) or 0),
+                    (
+                        int(record.get("time_budget_ms", 0) or 0)
+                        if record.get("time_budget_ms", None) is not None
+                        else None
+                    ),
+                    _pack_json(request_payload),
+                    _pack_json(record),
+                ),
+            )
+            row = conn.execute(
+                "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
+                (decision_id,),
+            ).fetchone()
+        decision_idx = int(row["decision_idx"] or 0) if row is not None else 0
+        self.last_decision_idx = max(self.last_decision_idx, decision_idx)
+        return decision_idx
+
     def flush_runtime_tail(self, game: Game, *, write_keyframe: bool = False) -> None:
         if game is None:
             return
@@ -461,8 +586,7 @@ class ReplayStoreRecorder:
                         ELSE decision_steps.event_end_id
                     END,
                     request_blob = CASE
-                        WHEN decision_steps.request_blob IS NULL AND excluded.request_blob IS NOT NULL
-                            THEN excluded.request_blob
+                        WHEN excluded.request_blob IS NOT NULL THEN excluded.request_blob
                         ELSE decision_steps.request_blob
                     END,
                     decision_record_blob = CASE
@@ -571,6 +695,11 @@ class ReplayStoreRecorder:
             row = conn.execute("SELECT MAX(decision_idx) AS c FROM decision_steps").fetchone()
         return int(row["c"] or 0) if row is not None else 0
 
+    def decision_row_count(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS c FROM decision_steps").fetchone()
+        return int(row["c"] or 0) if row is not None else 0
+
     def keyframe_count(self) -> int:
         with self._connect() as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM keyframes").fetchone()
@@ -616,6 +745,11 @@ class ReplayStoreReader:
     def decision_count(self) -> int:
         with self._connect() as conn:
             row = conn.execute("SELECT MAX(decision_idx) AS c FROM decision_steps").fetchone()
+        return int(row["c"] or 0) if row is not None else 0
+
+    def decision_row_count(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS c FROM decision_steps").fetchone()
         return int(row["c"] or 0) if row is not None else 0
 
     def keyframe_count(self) -> int:
@@ -1705,6 +1839,7 @@ def enable_decision_replay_recording(
     def _on_decision_settled(
         *,
         request: DecisionRequest | None = None,
+        result: DecisionResult | None = None,
         game: Game | None = None,
         accepted: bool | None = None,
         **_kwargs: Any,
@@ -1714,6 +1849,9 @@ def enable_decision_replay_recording(
         active_game = game if game is not None else getattr(request, "game", None)
         if active_game is None or request is None:
             return
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if result is not None and decision_id and not recorder.has_decision_step(decision_id):
+            recorder.record_resolution(active_game, request, result, defer_keyframe=True)
         recorder.finalize_resolution(active_game, request)
 
     event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_resolved", _on_decision_resolved)

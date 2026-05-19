@@ -1,8 +1,10 @@
 import types
 
+from warhammer40k_ai.engine.snapshot import _apply_unit_state, _serialize_unit
 from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.entity_registry import EntityRegistry
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
@@ -69,6 +71,67 @@ def test_apply_and_clear_firing_deck_virtual_wargear_injects_into_transport_mode
 
     transport.apply_firing_deck_virtual_wargear([selection])
     assert transport.models[0].wargear[0].id == first_virtual_id
+
+
+def test_firing_deck_virtual_wargear_is_snapshot_safe_and_restorable():
+    transport = Unit.__new__(Unit)
+    transport._id = "TRANSPORT_STABLE"
+    transport.models = [_mk_model("Transport")]
+    transport.models[0]._id = "TRANSPORT_STABLE_M0"
+    transport.models[0].wargear = []
+    transport.models_lost = []
+    transport.status_effects = []
+    transport._characteristic_modifiers = {}
+    transport.round_state = None
+    transport.name = "Transport"
+
+    passenger = _mk_model("Passenger")
+    passenger._id = "PASSENGER_STABLE_M0"
+    passenger_wg = Wargear(
+        {
+            "name": "Lasgun",
+            "type": "Ranged",
+            "range": "24",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "3",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    passenger_wg._id = "PASSENGER_STABLE_W0"
+    passenger.wargear = [passenger_wg]
+
+    selection = {
+        "model": passenger,
+        "wargear": passenger_wg,
+        "profile": passenger_wg.profiles["default"],
+        "profile_name": "default",
+    }
+    transport.apply_firing_deck_virtual_wargear([selection])
+    transport._firing_deck_declared_this_phase = True
+    virtual_wargear_id = transport.models[0].wargear[0].id
+
+    payload = _serialize_unit(transport)
+
+    assert "_firing_deck_virtual_wargear" not in payload["state"]
+    assert "_firing_deck_virtual_sources" not in payload["state"]
+    assert payload["state"]["_firing_deck_virtual_selection_refs"][0]["source_model_id"] == passenger.id
+    assert all(item["id"] != virtual_wargear_id for item in payload["models"][0]["wargear"])
+
+    transport.clear_firing_deck_virtual_wargear()
+    registry = EntityRegistry()
+    registry.register(transport, kind="unit")
+    registry.register(transport.models[0], kind="model")
+    registry.register(passenger, kind="model")
+    registry.register(passenger_wg, kind="wargear")
+
+    _apply_unit_state(transport, payload, registry)
+
+    assert transport._firing_deck_declared_this_phase is True
+    assert transport.models[0].wargear[0].id == virtual_wargear_id
+    assert passenger in list(transport._firing_deck_virtual_sources.values())[0]
 
 
 def test_firing_deck_marks_source_models_as_shot_during_execute():

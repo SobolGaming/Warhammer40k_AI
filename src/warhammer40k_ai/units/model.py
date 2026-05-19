@@ -5,6 +5,7 @@ from ..utility.count import Count, CountType
 from ..utility.dice import get_roll
 from ..utility.modifiers import compute_save_roll_modifier
 from ..utility.model_base import Base
+from .invulnerable_save_conditions import resolve_invulnerable_save
 import uuid
 import logging
 import re
@@ -2763,13 +2764,16 @@ class Model:
             save_type = "invulnerable"
         inv_save, inv_save_condition = self.inv_save
         if inv_save:
-            # Check invulnerable save condition (string-based, not callable)
-            condition_met = True
-            if inv_save_condition and inv_save_condition.strip():
-                condition_met = self._check_invulnerable_save_condition(inv_save_condition, atk)
-            
-            if condition_met and inv_save < save_value:
-                save_value = min(save_value, inv_save)
+            effective_inv_save = resolve_invulnerable_save(
+                model_name=self.name,
+                base_invulnerable_save=inv_save,
+                condition=inv_save_condition,
+                attack_instance=atk,
+                weapon_profile=atk.get("weapon_profile"),
+            )
+
+            if effective_inv_save is not None and effective_inv_save < save_value:
+                save_value = min(save_value, effective_inv_save)
                 save_type = "invulnerable"
 
         dice_roll = get_roll("D6")
@@ -2800,6 +2804,18 @@ class Model:
         Returns:
             bool: True if the condition is met and the invulnerable save should apply
         """
+        inv_save, _condition = self.inv_save
+        if not inv_save:
+            return False
+        attack_instance = attack_instance if isinstance(attack_instance, dict) else {}
+        return resolve_invulnerable_save(
+            model_name=self.name,
+            base_invulnerable_save=inv_save,
+            condition=condition,
+            attack_instance=attack_instance,
+            weapon_profile=attack_instance.get("weapon_profile"),
+        ) is not None
+
         if not condition or not condition.strip():
             return True  # No condition means always applies
         

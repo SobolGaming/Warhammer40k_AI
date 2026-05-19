@@ -141,6 +141,7 @@ class KeywordsDetachmentsMixin:
         if not vw:
             self._firing_deck_virtual_wargear = []
             self._firing_deck_virtual_sources = {}
+            self._firing_deck_virtual_selection_refs = []
             self._firing_deck_declared_this_phase = False
             return
         for model in list(getattr(self, "models", []) or []):
@@ -154,6 +155,7 @@ class KeywordsDetachmentsMixin:
                 continue
         self._firing_deck_virtual_wargear = []
         self._firing_deck_virtual_sources = {}
+        self._firing_deck_virtual_selection_refs = []
         self._firing_deck_declared_this_phase = False
 
     def apply_firing_deck_virtual_wargear(self, selections: List[dict]) -> None:
@@ -185,6 +187,8 @@ class KeywordsDetachmentsMixin:
         host = host_models[0]
 
         class _VirtualWargear:
+            is_firing_deck_virtual_wargear = True
+
             def __init__(self, name: str, profile_obj, entity_id: str):
                 self.name = (name or "Firing Deck").replace("\u2019", "'")
                 self._id = str(entity_id or "")
@@ -203,6 +207,7 @@ class KeywordsDetachmentsMixin:
 
         self._firing_deck_virtual_wargear = []
         self._firing_deck_virtual_sources = {}
+        self._firing_deck_virtual_selection_refs = []
 
         # Build one virtual wargear per selected embarked weapon (keeps them as individual entries)
         for s in list(selections or []):
@@ -244,6 +249,15 @@ class KeywordsDetachmentsMixin:
 
             self._firing_deck_virtual_wargear.append(vwg)
             self._firing_deck_virtual_sources[pclone.id] = [src_model]
+            self._firing_deck_virtual_selection_refs.append(
+                {
+                    "source_model_id": str(maybe_entity_id(src_model) or ""),
+                    "source_wargear_id": str(maybe_entity_id(src_wargear) or ""),
+                    "profile_name": profile_name,
+                    "virtual_wargear_id": virtual_wargear_id,
+                    "virtual_profile_id": str(pclone.id),
+                }
+            )
 
     ###########################################################################
     ### DS8 Support Turret (Breacher Team / Strike Team) support

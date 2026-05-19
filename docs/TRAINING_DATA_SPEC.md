@@ -30,9 +30,11 @@ uv run python scripts/collect_training_corpus.py \
 ```
 
 The collector runs deterministic headless self-play with full DecisionRecord/event retention, validates every
-game, and writes only accepted games to `accepted_decision_records.json`. A game is rejected if any record fails
+game, and writes only accepted games to compact `accepted_decision_records.json`. A game is rejected if any record fails
 the DecisionRecord schema or candidate/mask/chosen-action checks, if strict replay reconstruction fails or its
-final scores do not match the self-play report, or if engine diagnostics are emitted. The sidecar
+final army-labelled scores do not match the self-play report, or if engine diagnostics are emitted. Replay
+decision validation compares exported records to persisted replay rows, not SQLite autoincrement upper bounds.
+The sidecar
 `corpus_manifest.json` stores accepted/rejected game summaries, final scores, VP deltas, replay counts, and
 record-level phase timing aggregates. The standard `training_manifest.json` is built from accepted records only.
 

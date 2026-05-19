@@ -2077,6 +2077,58 @@ def test_tool_action_can_use_filters_stale_once_per_phase_stratagem() -> None:
     assert manager.can_use("PRESENTIMENT OF DREAD", phase_name="Command phase") is False
 
 
+def test_tool_action_request_deduplicates_specs_across_items() -> None:
+    stratagem = SimpleNamespace(name="DUPLICATE TOOL", cp_cost=1)
+    manager = StratagemManager.__new__(StratagemManager)
+    manager.game = SimpleNamespace(
+        is_authoritative=True,
+        turn=1,
+        decision_queue=DecisionQueue(),
+    )
+    manager.player = SimpleNamespace(id="player:one")
+    manager._current_phase_name = "Command phase"
+    manager._skipped_tool_action_signatures = set()
+    manager._tool_action_specs_cache = {}
+    manager._grenade_phase_context_cache = {}
+    manager._grenade_geometry_cache = {}
+    manager._player_can_accept_tool_action_decisions = lambda: True
+    manager.get_phase_stratagem_items = lambda: [
+        {"name": "DUPLICATE TOOL", "available": True, "is_reaction": False, "context": {}},
+        {"name": "DUPLICATE TOOL", "available": True, "is_reaction": False, "context": {}},
+    ]
+    manager.get_by_name = lambda _name: stratagem
+    duplicate_payload = {
+        "tool_family": "stratagem",
+        "tool_type": "stratagem",
+        "tool_name": "DUPLICATE TOOL",
+        "resolved_kwargs": {"phase_name": "Command phase"},
+    }
+    duplicate_payload["action_id"] = StratagemManager._tool_action_action_id(
+        "DUPLICATE TOOL",
+        duplicate_payload,
+    )
+    manager._build_tool_action_specs_for_item = lambda _item: [
+        {
+            "label": "DUPLICATE TOOL",
+            "payload": dict(duplicate_payload),
+            "_prevalidated": True,
+        }
+    ]
+    manager._filter_legal_tool_action_specs = lambda specs: list(specs or [])
+    manager._tool_action_empty_specs_are_valid = lambda _item, _stratagem: False
+
+    request = manager._build_tool_action_request(reactions_only=False)
+
+    assert request is not None
+    payloads = [dict(option.payload or {}) for option in list(request.options or [])]
+    non_skip = [payload for payload in payloads if not bool(payload.get("skip", False))]
+    assert len(non_skip) == 1
+
+
+def test_overwatch_alias_is_excluded_from_generic_tool_actions() -> None:
+    assert StratagemManager._tool_action_is_explicitly_supported({"name": "OVERWATCH"}) is True
+
+
 def test_overwatch_queue_skips_expensive_candidate_scan_without_tool_controller() -> None:
     current_player = SimpleNamespace(
         id="player:current",

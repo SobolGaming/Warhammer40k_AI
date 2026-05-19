@@ -197,9 +197,44 @@ def _validate_select_overwatch(game: object, request: DecisionRequest, result: D
     enemy_unit_id = str(request.context.get("enemy_unit_id", "") or payload.get("enemy_unit_id", "") or "")
     if not enemy_unit_id:
         return ("Overwatch selection requires enemy_unit_id.",)
-    if get_unit(game, enemy_unit_id) is None:
+    enemy_unit = get_unit(game, enemy_unit_id)
+    if enemy_unit is None:
         return ("Overwatch enemy unit not found.",)
+    unit = get_unit(game, unit_id)
+    manager = getattr(player, "stratagems", None)
+    can_use = getattr(manager, "can_use", None)
+    if callable(can_use):
+        stratagem_name = str(
+            request.context.get("stratagem_name", "")
+            or payload.get("stratagem_name", "")
+            or "FIRE OVERWATCH"
+        )
+        phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "")
+        if not bool(can_use(stratagem_name, shooter_unit=unit, enemy_unit=enemy_unit, phase_name=phase_name)):
+            return ("Fire Overwatch is no longer legal for the selected unit.",)
     return ()
+
+
+def _purge_stale_fire_overwatch_requests(game: object, *, current_decision_id: str, phase_name: str) -> None:
+    queue = getattr(game, "decision_queue", None)
+    list_fn = getattr(queue, "list", None) if queue is not None else None
+    pop_fn = getattr(queue, "pop", None) if queue is not None else None
+    if not callable(list_fn) or not callable(pop_fn):
+        return
+    phase_key = str(phase_name or "").strip().lower()
+    for pending in list(list_fn() or []):
+        decision_id = str(getattr(pending, "decision_id", "") or "")
+        if not decision_id or decision_id == str(current_decision_id or ""):
+            continue
+        if str(getattr(pending, "decision_type", "") or "") != DECISION_SELECT_OVERWATCH_SHOOTER:
+            continue
+        context = dict(getattr(pending, "context", {}) or {})
+        if str(context.get("ability", "") or "").strip().lower() != "fire_overwatch":
+            continue
+        pending_phase = str(context.get("phase_name", "") or "").strip().lower()
+        if phase_key and pending_phase and pending_phase != phase_key:
+            continue
+        pop_fn(decision_id)
 
 
 def _apply_select_overwatch(game: object, request: DecisionRequest, result: DecisionResult):
@@ -245,6 +280,11 @@ def _apply_select_overwatch(game: object, request: DecisionRequest, result: Deci
     stratagem_name = str(request.context.get("stratagem_name", "") or payload.get("stratagem_name", "") or "FIRE OVERWATCH")
     if not bool(manager.use(stratagem_name, shooter_unit=unit, enemy_unit=enemy_unit, phase_name=phase_name, dequeue=True)):
         raise RuntimeError("Fire Overwatch could not be applied.")
+    _purge_stale_fire_overwatch_requests(
+        game,
+        current_decision_id=str(getattr(request, "decision_id", "") or ""),
+        phase_name=phase_name,
+    )
     return unit
 
 

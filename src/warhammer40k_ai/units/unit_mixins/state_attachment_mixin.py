@@ -2668,10 +2668,15 @@ class StateAttachmentMixin:
 
     @property
     def is_leader(self) -> bool:
-        try:
-            return len(self.can_be_attached_to) > 0
-        except Exception:
+        allowed = getattr(self, "__dict__", {}).get("can_be_attached_to", None)
+        if allowed is None:
             return False
+        if isinstance(allowed, (str, bytes)):
+            return bool(str(allowed).strip())
+        try:
+            return len(allowed) > 0
+        except TypeError:
+            return bool(allowed)
 
     @property
     def is_attached_leader(self) -> bool:
@@ -2691,9 +2696,11 @@ class StateAttachmentMixin:
     def get_attachment_target(self):
         """Return the unit this model is attached/joined to, if any."""
         if self.is_leader:
-            return getattr(self, "attached_to", None)
+            attached_to = getattr(self, "__dict__", {}).get("attached_to", None)
+            return None if attached_to is self else attached_to
         if self.has_joined_support_ability():
-            return getattr(self, "support_joined_to", None)
+            support_joined_to = getattr(self, "__dict__", {}).get("support_joined_to", None)
+            return None if support_joined_to is self else support_joined_to
         return None
 
     def joined_support_allows_embark_while_joined(self) -> bool:
@@ -2709,10 +2716,13 @@ class StateAttachmentMixin:
 
     def get_attached_unit_root(self) -> 'Unit':
         """Return the 'root' unit for this attached unit group (Bodyguard if attached, else self)."""
-        if self.is_leader and getattr(self, "attached_to", None) is not None:
-            return self.attached_to
-        if getattr(self, "support_joined_to", None) is not None:
-            return self.support_joined_to
+        state = getattr(self, "__dict__", {})
+        attached_to = state.get("attached_to", None)
+        if self.is_leader and attached_to is not None and attached_to is not self:
+            return attached_to
+        support_joined_to = state.get("support_joined_to", None)
+        if support_joined_to is not None and support_joined_to is not self:
+            return support_joined_to
         return self
 
     def get_attached_unit_members(self) -> List['Unit']:

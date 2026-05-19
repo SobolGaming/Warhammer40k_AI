@@ -95,6 +95,8 @@ _UNIT_STATE_EXCLUDE = {
     "_shoot_on_death_pending_models",
     "_melee_fight_on_death_pending_models",
     "_melee_fight_on_death_pending_metadata",
+    "_firing_deck_virtual_wargear",
+    "_firing_deck_virtual_sources",
 }
 
 _UNIT_TRANSIENT_REF_CONTEXT_FIELDS = {
@@ -246,6 +248,10 @@ def _sanitize_snapshot_state_value(value: Any) -> Any:
     return value
 
 
+def _is_firing_deck_virtual_wargear(value: Any) -> bool:
+    return bool(getattr(value, "is_firing_deck_virtual_wargear", False))
+
+
 def _add_live_entity_id(live_entity_ids: dict[str, set[str]], kind: str, entity: Any) -> None:
     entity_id = maybe_entity_id(entity)
     if entity_id:
@@ -263,6 +269,8 @@ def _live_entity_ids_for_snapshot(players: list[Player]) -> dict[str, set[str]]:
             for model in list(getattr(unit, "models", []) or []) + list(getattr(unit, "models_lost", []) or []):
                 _add_live_entity_id(live_entity_ids, "model", model)
                 for wargear in list(getattr(model, "wargear", []) or []):
+                    if _is_firing_deck_virtual_wargear(wargear):
+                        continue
                     _add_live_entity_id(live_entity_ids, "wargear", wargear)
     return live_entity_ids
 
@@ -537,7 +545,7 @@ def _serialize_model(model: Model) -> dict:
         "wargear": [
             {"id": get_entity_id(wg), "name": str(getattr(wg, "name", "") or "")}
             for wg in list(getattr(model, "wargear", []) or [])
-            if wg is not None
+            if wg is not None and not _is_firing_deck_virtual_wargear(wg)
         ],
         "once_per_battle_used": sorted(list(getattr(model, "_once_per_battle_used", set()) or set())),
         "once_per_battle_use_count": {
@@ -774,6 +782,7 @@ def _apply_unit_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
         if key in _UNIT_STATE_EXCLUDE:
             continue
         setattr(unit, key, value)
+    _restore_firing_deck_virtual_wargear(unit, registry)
 
     # Snapshot encoding stringifies dict keys. Units store points buckets in
     # `models_cost` with integer keys, so convert numeric string keys back.
@@ -793,6 +802,46 @@ def _apply_unit_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
     for char_name, mods in (data.get("characteristic_modifiers", {}) or {}).items():
         modifiers[char_name] = [deserialize_modifier(m) for m in list(mods or [])]
     unit._characteristic_modifiers = modifiers
+
+
+def _restore_firing_deck_virtual_wargear(unit: Unit, registry: EntityRegistry) -> None:
+    refs = getattr(unit, "_firing_deck_virtual_selection_refs", None)
+    if not isinstance(refs, list) or not refs:
+        return
+    apply_virtual = getattr(unit, "apply_firing_deck_virtual_wargear", None)
+    if not callable(apply_virtual):
+        return
+    declared = bool(getattr(unit, "_firing_deck_declared_this_phase", False))
+    selections: list[dict[str, Any]] = []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        model_id = str(ref.get("source_model_id", "") or "")
+        wargear_id = str(ref.get("source_wargear_id", "") or "")
+        profile_name = str(ref.get("profile_name", "") or "")
+        if not model_id or not wargear_id:
+            continue
+        model = registry.get(model_id, kind="model")
+        wargear = registry.get(wargear_id, kind="wargear")
+        if model is None or wargear is None:
+            continue
+        profiles = dict(getattr(wargear, "profiles", {}) or {})
+        profile = profiles.get(profile_name)
+        if profile is None and len(profiles) == 1:
+            profile_name, profile = next(iter(profiles.items()))
+        if profile is None:
+            continue
+        selections.append(
+            {
+                "model": model,
+                "wargear": wargear,
+                "profile": profile,
+                "profile_name": profile_name,
+            }
+        )
+    if selections:
+        apply_virtual(selections)
+        unit._firing_deck_declared_this_phase = declared
 
 
 def _serialize_objective_point(point: ObjectivePoint) -> dict:

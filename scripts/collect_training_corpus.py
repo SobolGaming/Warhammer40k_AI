@@ -54,7 +54,7 @@ class _JsonArrayWriter:
             raise RuntimeError("JSON writer is not open.")
         if not self._first:
             self._handle.write(",\n")
-        json.dump(dict(value or {}), self._handle, indent=2, sort_keys=True, ensure_ascii=True)
+        json.dump(dict(value or {}), self._handle, separators=(",", ":"), ensure_ascii=True)
         self._first = False
 
     def __exit__(self, exc_type, exc, traceback) -> None:

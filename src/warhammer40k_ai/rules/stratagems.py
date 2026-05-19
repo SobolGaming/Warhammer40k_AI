@@ -3754,6 +3754,7 @@ class StratagemManager(
             "COMMAND RE-ROLL",
             "CORRUPT REALSPACE",
             "FIRE OVERWATCH",
+            "OVERWATCH",
             "NEW ORDERS",
         }
 
@@ -3997,6 +3998,26 @@ class StratagemManager(
         self._ensure_tool_action_runtime_caches()
         copied = tuple(self._copy_tool_action_specs(specs))
         self._bounded_cache_put(self._tool_action_specs_cache, key, copied, limit=16)
+
+    def _deduplicate_tool_action_specs(self, specs: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deduped: List[Dict[str, Any]] = []
+        seen_action_ids: set[str] = set()
+        for spec in list(specs or []):
+            if not isinstance(spec, dict):
+                continue
+            spec_copy = dict(spec)
+            payload = dict(spec_copy.get("payload", {}) or {})
+            label = str(spec_copy.get("label", "") or "Tool action")
+            action_id = str(payload.get("action_id", "") or "").strip()
+            if not action_id:
+                action_id = self._tool_action_action_id(label, payload)
+                payload["action_id"] = action_id
+            if action_id in seen_action_ids:
+                continue
+            seen_action_ids.add(action_id)
+            spec_copy["payload"] = payload
+            deduped.append(spec_copy)
+        return deduped
 
     @staticmethod
     def _canonical_phase_name(phase_value: Any) -> str:
@@ -6297,8 +6318,11 @@ class StratagemManager(
                 if not filtered_specs:
                     continue
                 specs.extend(filtered_specs)
+            specs = self._deduplicate_tool_action_specs(specs)
             if cache_key is not None:
                 self._cache_tool_action_specs(cache_key, specs)
+        else:
+            specs = self._deduplicate_tool_action_specs(specs)
         if not specs:
             return None
 

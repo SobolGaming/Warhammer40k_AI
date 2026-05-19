@@ -15,6 +15,7 @@ from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
 from warhammer40k_ai.utility.entity_ids import get_entity_id, maybe_entity_id
 from warhammer40k_ai.engine.decision_port import get_decision_provider
+from warhammer40k_ai.units.invulnerable_save_conditions import resolve_invulnerable_save
 from dataclasses import dataclass
 
 from typing import TYPE_CHECKING
@@ -26679,13 +26680,17 @@ class WargearProfile:
             pass
 
         if inv_save and not shadow_field_block_invuln:
-            # Check invulnerable save condition (string-based, not callable)
-            condition_met = True
-            if inv_save_condition and inv_save_condition.strip():
-                condition_met = self._check_invulnerable_save_condition(inv_save_condition, attack_instance)
+            effective_inv_save = resolve_invulnerable_save(
+                model_name=getattr(target_model, "name", ""),
+                base_invulnerable_save=inv_save,
+                condition=inv_save_condition,
+                attack_instance=attack_instance,
+                weapon_profile=self,
+                psychic_attack_checker=self._is_psychic_attack,
+            )
 
-            if condition_met and inv_save < save_value:
-                save_value = inv_save
+            if effective_inv_save is not None and effective_inv_save < save_value:
+                save_value = effective_inv_save
                 save_result['save_type'] = 'invulnerable'
                 save_result['final_save'] = save_value
 
@@ -27320,6 +27325,15 @@ class WargearProfile:
         Returns:
             bool: True if the condition is met and the invulnerable save should apply
         """
+        return resolve_invulnerable_save(
+            model_name="",
+            base_invulnerable_save=2,
+            condition=condition,
+            attack_instance=attack_instance,
+            weapon_profile=self,
+            psychic_attack_checker=self._is_psychic_attack,
+        ) is not None
+
         if not condition or not condition.strip():
             return True  # No condition means always applies
 

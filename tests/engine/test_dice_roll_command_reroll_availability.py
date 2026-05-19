@@ -5,8 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from warhammer40k_ai.engine.decisions import DecisionQueue
+from warhammer40k_ai.engine.decisions import DecisionResult
+from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_DICE_REROLL
 from warhammer40k_ai.engine.dice_rolls import DiceRollManager, register_roll_handler
+import warhammer40k_ai.engine.decision_handlers.dice  # noqa: F401
 
 
 class _EventSystemStub:
@@ -42,9 +45,25 @@ class _StratagemManagerStub:
 
 
 class _PlayerStub:
-    def __init__(self, player_id: str, *, available: bool) -> None:
+    def __init__(self, player_id: str, *, available: bool, command_points: int = 1) -> None:
         self.id = str(player_id)
+        self.command_points = int(command_points)
         self.stratagems = _StratagemManagerStub(available=available)
+
+    def preview_stratagem_cp_cost(self, stratagem, *, target_unit=None, enemy_unit=None, assume_optional_discounts=None):
+        return {"base": int(getattr(stratagem, "cp_cost", 1) or 1), "cost": int(getattr(stratagem, "cp_cost", 1) or 1)}
+
+    def apply_stratagem_cp_cost(self, stratagem, *, target_unit=None, enemy_unit=None):
+        return {"base": int(getattr(stratagem, "cp_cost", 1) or 1), "cost": int(getattr(stratagem, "cp_cost", 1) or 1)}
+
+    def spend_command_points(self, amount: int, *, reason: str | None = None, source: str | None = None) -> bool:
+        amount = int(amount or 0)
+        if amount < 0:
+            return False
+        if self.command_points < amount:
+            return False
+        self.command_points -= amount
+        return True
 
 
 class _UnitStub:
@@ -141,6 +160,51 @@ def test_command_reroll_option_hidden_when_unavailable_or_used() -> None:
     recomputed = game_enabled.roll_manager._compute_reroll_options(game_enabled, state_enabled)
     recomputed_ids = [str(opt.get("action_id", "")) for opt in list(recomputed or [])]
     assert "command_reroll" not in recomputed_ids
+
+
+def test_command_reroll_option_hidden_when_cp_cannot_pay_effective_cost() -> None:
+    player = _PlayerStub("p_cp", available=True, command_points=0)
+    unit = _UnitStub("u_cp")
+    game = _GameStub(player=player, unit=unit)
+
+    state = _resolve_roll_state(game, player, unit)
+    action_ids = [str(opt.get("action_id", "")) for opt in list(state.reroll_options or [])]
+
+    assert "command_reroll" not in action_ids
+
+
+def test_command_reroll_validation_rechecks_stale_cp_before_spend() -> None:
+    player = _PlayerStub("p_stale", available=True, command_points=1)
+    unit = _UnitStub("u_stale")
+    game = _GameStub(player=player, unit=unit)
+    state = _resolve_roll_state(game, player, unit)
+    assert any(str(opt.get("action_id", "")) == "command_reroll" for opt in list(state.reroll_options or []))
+    reroll_request = next(
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_SELECT_DICE_REROLL
+    )
+    command_option = next(
+        opt
+        for opt in list(getattr(reroll_request, "options", []) or [])
+        if str(getattr(opt, "payload", {}).get("action_id", "") or "") == "command_reroll"
+    )
+    player.command_points = 0
+
+    result = dispatch_decision(
+        game,
+        reroll_request,
+        DecisionResult(
+            decision_id=reroll_request.decision_id,
+            player_id=player.id,
+            option_id=command_option.option_id,
+            payload={"selected_die_ids": list(command_option.payload.get("eligible_die_ids", []) or [])[:1]},
+        ),
+    )
+
+    assert result.ok is False
+    assert result.errors == ("Insufficient CP for Command Re-roll: requires 1, has 0.",)
+    assert player.command_points == 0
 
 
 def test_command_reroll_request_payload_carries_tool_metadata() -> None:

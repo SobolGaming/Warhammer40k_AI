@@ -677,6 +677,10 @@ class DecisionRecordStore:
                         msg = "; ".join(errors)
                         raise ValueError(f"DecisionRecord schema validation failed after merge: {msg}")
                 self.records[index] = merged
+                recorder = getattr(self.game, "_decision_replay_recorder", None)
+                record_decision_record = getattr(recorder, "record_decision_record", None)
+                if callable(record_decision_record):
+                    record_decision_record(self.game, merged)
                 return merged
         self.records.append(record)
         limit = int(self.max_records or 0)
@@ -684,6 +688,10 @@ class DecisionRecordStore:
         if limit > 0 and overflow > 0:
             del self.records[:overflow]
             self.dropped_records += int(overflow)
+        recorder = getattr(self.game, "_decision_replay_recorder", None)
+        record_decision_record = getattr(recorder, "record_decision_record", None)
+        if callable(record_decision_record):
+            record_decision_record(self.game, record)
         return record
 
     def record_resolution(
