@@ -43,6 +43,33 @@ Each bundle has a deterministic `to_dict()` and carries provenance ids so audits
 can trace decisions back through General, Deployment, Pre-Battle, and
 Commander intent.
 
+## Commander Orders
+
+`CommanderOrderBundle` now carries a richer, audit-friendly order contract:
+
+- `TargetOrder` includes intent, priority, desired kill probability, maximum
+  overkill tolerance, preferred phase, allowed resource kinds, forbidden
+  resource ids, and assigned unit ids.
+- `UnitOrder` includes primary/backup targets, constraint mode, order strength,
+  movement, shooting, charge, fight, and resource-permission suborders.
+- `MovementOrder` can express desired action, LoS requirements, range-band
+  pressure, charge staging, shooting-eligibility preservation, and exposure
+  posture.
+- `ShootingOrder` can express primary/backup targets, expected damage by
+  target, LoS/half-range/stationary requirements, split-fire posture, preferred
+  phase, resource kinds, and overkill tolerance.
+- `ChargeOrder` and `FightOrder` can express primary/backup targets, desired
+  charge probability, intentional skip-shooting posture, and activation
+  priority.
+
+General target doctrine may provide explicit `target_overrides` /
+`target_orders` and `unit_order_overrides` / `unit_orders`. Default compiled
+orders remain hints. Only explicit General unit orders with `constraint_mode`
+`constrain`, `replace`, or `override` can redirect BattleRoundPlan
+materialization, and only when the target exists in the current commander
+analysis matrix. Stale compiled targets fall back to the existing greedy
+assignment output and record rejection status in full plan metadata.
+
 ## Context Rules
 
 Normal decision context stays slim. It may include ids and unit-local slices:
@@ -58,6 +85,10 @@ Normal decision context stays slim. It may include ids and unit-local slices:
 Full `deployment_order_bundle`, `prebattle_order_bundle`, and
 `commander_order_bundle` payloads are audit/debug-only through explicit request
 or game-level opt-in flags.
+
+Unit-local commander slices are kept compact for normal decision context. Full
+compiler constraint diagnostics stay in the audit/full-plan payload rather than
+being attached to every local slice by default.
 
 ## Authority Boundary
 

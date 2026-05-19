@@ -79,6 +79,17 @@ def _limited_resource_policy_context(general_plan: object, unit_id: str) -> list
     return sorted(policies, key=lambda item: str(dict(item).get("resource_id", "")))
 
 
+def _slim_commander_local_slice(data: dict[str, Any]) -> dict[str, Any]:
+    slim = dict(data or {})
+    metadata = dict(slim.get("metadata", {}) or {})
+    metadata.pop("commander_constraint_status", None)
+    if metadata:
+        slim["metadata"] = metadata
+    else:
+        slim.pop("metadata", None)
+    return slim
+
+
 def _should_attach_full_battle_round_plan(game: object, context: dict[str, Any]) -> bool:
     """Return whether to attach the full commander plan payload for audit/debug."""
 
@@ -328,10 +339,10 @@ def attach_ai_orchestration_context(
     if battle_round_plan is not None and unit_id:
         unit_task = dict(getattr(battle_round_plan, "unit_tasks", {}) or {}).get(unit_id)
         if unit_task is not None and "unit_battle_task" not in updated:
-            updated["unit_battle_task"] = unit_task.to_dict()
+            updated["unit_battle_task"] = _slim_commander_local_slice(unit_task.to_dict())
         movement_task = dict(getattr(battle_round_plan.movement_plan, "unit_positioning_tasks", {}) or {}).get(unit_id)
         if movement_task is not None and "commander_movement_task" not in updated:
-            updated["commander_movement_task"] = movement_task.to_dict()
+            updated["commander_movement_task"] = _slim_commander_local_slice(movement_task.to_dict())
         transport_assignment = dict(
             getattr(battle_round_plan.movement_plan, "transport_assignments", {}) or {}
         ).get(unit_id)
@@ -351,7 +362,7 @@ def attach_ai_orchestration_context(
                 updated["commander_disembark_assignment"] = transport_assignment_data
         fire_assignment = dict(getattr(battle_round_plan.shooting_plan, "unit_fire_assignments", {}) or {}).get(unit_id)
         if fire_assignment is not None:
-            fire_assignment_data = fire_assignment.to_dict()
+            fire_assignment_data = _slim_commander_local_slice(fire_assignment.to_dict())
             if "commander_fire_assignment" not in updated:
                 updated["commander_fire_assignment"] = fire_assignment_data
             preferred_target_ids = _ordered_unique_strings(
@@ -382,10 +393,10 @@ def attach_ai_orchestration_context(
         )
         charge_assignment = charge_assignments.get(unit_id)
         if charge_assignment is not None and "commander_charge_assignment" not in updated:
-            updated["commander_charge_assignment"] = charge_assignment.to_dict()
+            updated["commander_charge_assignment"] = _slim_commander_local_slice(charge_assignment.to_dict())
         fight_assignment = dict(getattr(battle_round_plan.fight_plan, "unit_fight_assignments", {}) or {}).get(unit_id)
         if fight_assignment is not None and "commander_fight_assignment" not in updated:
-            updated["commander_fight_assignment"] = fight_assignment.to_dict()
+            updated["commander_fight_assignment"] = _slim_commander_local_slice(fight_assignment.to_dict())
         commander_order_bundle = dict(getattr(battle_round_plan, "metadata", {}) or {}).get("commander_order_bundle")
         if isinstance(commander_order_bundle, dict):
             resource_authorizations = dict(commander_order_bundle.get("resource_authorizations", {}) or {})

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ..utility.entity_ids import get_entity_id
@@ -71,6 +71,21 @@ def _sorted_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
     return {str(key): value for key, value in sorted(dict(metadata or {}).items(), key=lambda item: str(item[0]))}
 
 
+def _sorted_metadata_list(values: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None) -> list[dict[str, Any]]:
+    return [
+        _sorted_metadata(dict(value))
+        for value in sorted(
+            [dict(item) for item in list(values or []) if isinstance(item, dict)],
+            key=lambda item: (
+                str(item.get("target_unit_id", "")),
+                str(item.get("trigger_kind", "")),
+                str(item.get("resource_kind", "")),
+                str(item.get("id", "")),
+            ),
+        )
+    ]
+
+
 def _entity_id(entity: object) -> str:
     return str(get_entity_id(entity) or getattr(entity, "id", "") or getattr(entity, "_id", "") or "")
 
@@ -105,6 +120,11 @@ def _floatish(value: object, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return float(default)
+
+
+def _clamp(value: object, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    numeric = _floatish(value, minimum)
+    return max(float(minimum), min(float(maximum), numeric))
 
 
 def _player_for_id(game: object, player_id: str):
@@ -830,6 +850,10 @@ class TargetOrder:
     intent: str
     priority: float = 0.0
     desired_kill_probability: float = 0.0
+    max_overkill_wounds: float = 1.5
+    preferred_phase: str = "shooting"
+    allowed_resource_kinds: list[str] = field(default_factory=list)
+    forbidden_resource_ids: list[str] = field(default_factory=list)
     assigned_unit_ids: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -839,6 +863,10 @@ class TargetOrder:
             "intent": str(self.intent),
             "priority": float(self.priority),
             "desired_kill_probability": float(self.desired_kill_probability),
+            "max_overkill_wounds": float(self.max_overkill_wounds),
+            "preferred_phase": str(self.preferred_phase),
+            "allowed_resource_kinds": _sorted_strings(self.allowed_resource_kinds),
+            "forbidden_resource_ids": _sorted_strings(self.forbidden_resource_ids),
             "assigned_unit_ids": _sorted_strings(self.assigned_unit_ids),
             "metadata": _sorted_metadata(self.metadata),
         }
@@ -847,17 +875,31 @@ class TargetOrder:
 @dataclass(frozen=True)
 class MovementOrder:
     intent: str = "stage"
+    desired_action: str = ""
     target_region_ids: list[str] = field(default_factory=list)
+    required_los_to_unit_ids: list[str] = field(default_factory=list)
+    desired_range_bands: list[dict[str, Any]] = field(default_factory=list)
+    charge_staging_target_unit_id: str | None = None
+    avoid_becoming_shooting_ineligible: bool = True
+    intentionally_accept_shooting_ineligible: bool = False
     avoid_exposure: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "intent": str(self.intent),
+            "desired_action": str(self.desired_action),
             "target_region_ids": _ordered_unique_strings(self.target_region_ids),
+            "required_los_to_unit_ids": _sorted_strings(self.required_los_to_unit_ids),
+            "desired_range_bands": _sorted_metadata_list(self.desired_range_bands),
+            "avoid_becoming_shooting_ineligible": bool(self.avoid_becoming_shooting_ineligible),
+            "intentionally_accept_shooting_ineligible": bool(self.intentionally_accept_shooting_ineligible),
             "avoid_exposure": bool(self.avoid_exposure),
             "metadata": _sorted_metadata(self.metadata),
         }
+        if self.charge_staging_target_unit_id is not None:
+            data["charge_staging_target_unit_id"] = str(self.charge_staging_target_unit_id)
+        return data
 
 
 @dataclass(frozen=True)
@@ -865,6 +907,14 @@ class ShootingOrder:
     intent: str = "opportunistic"
     primary_target_unit_id: str | None = None
     backup_target_unit_ids: list[str] = field(default_factory=list)
+    expected_damage_by_target: dict[str, float] = field(default_factory=dict)
+    requires_los: bool = False
+    requires_half_range: bool = False
+    requires_stationary: bool = False
+    allows_split_fire: bool = True
+    max_overkill_wounds: float = 1.5
+    preferred_phase: str = "shooting"
+    allowed_resource_kinds: list[str] = field(default_factory=list)
     resource_permissions: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -872,6 +922,20 @@ class ShootingOrder:
         data = {
             "intent": str(self.intent),
             "backup_target_unit_ids": _ordered_unique_strings(self.backup_target_unit_ids),
+            "expected_damage_by_target": {
+                str(target_id): float(value)
+                for target_id, value in sorted(
+                    dict(self.expected_damage_by_target or {}).items(),
+                    key=lambda item: str(item[0]),
+                )
+            },
+            "requires_los": bool(self.requires_los),
+            "requires_half_range": bool(self.requires_half_range),
+            "requires_stationary": bool(self.requires_stationary),
+            "allows_split_fire": bool(self.allows_split_fire),
+            "max_overkill_wounds": float(self.max_overkill_wounds),
+            "preferred_phase": str(self.preferred_phase),
+            "allowed_resource_kinds": _sorted_strings(self.allowed_resource_kinds),
             "resource_permissions": _sorted_strings(self.resource_permissions),
             "metadata": _sorted_metadata(self.metadata),
         }
@@ -884,10 +948,19 @@ class ShootingOrder:
 class ChargeOrder:
     intent: str = "opportunistic"
     primary_target_unit_id: str | None = None
+    backup_target_unit_ids: list[str] = field(default_factory=list)
+    desired_charge_probability: float = 0.0
+    intentionally_skip_shooting: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        data = {"intent": str(self.intent), "metadata": _sorted_metadata(self.metadata)}
+        data = {
+            "intent": str(self.intent),
+            "backup_target_unit_ids": _ordered_unique_strings(self.backup_target_unit_ids),
+            "desired_charge_probability": float(self.desired_charge_probability),
+            "intentionally_skip_shooting": bool(self.intentionally_skip_shooting),
+            "metadata": _sorted_metadata(self.metadata),
+        }
         if self.primary_target_unit_id is not None:
             data["primary_target_unit_id"] = str(self.primary_target_unit_id)
         return data
@@ -897,10 +970,17 @@ class ChargeOrder:
 class FightOrder:
     intent: str = "opportunistic"
     primary_target_unit_id: str | None = None
+    backup_target_unit_ids: list[str] = field(default_factory=list)
+    activation_priority: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        data = {"intent": str(self.intent), "metadata": _sorted_metadata(self.metadata)}
+        data = {
+            "intent": str(self.intent),
+            "backup_target_unit_ids": _ordered_unique_strings(self.backup_target_unit_ids),
+            "activation_priority": float(self.activation_priority),
+            "metadata": _sorted_metadata(self.metadata),
+        }
         if self.primary_target_unit_id is not None:
             data["primary_target_unit_id"] = str(self.primary_target_unit_id)
         return data
@@ -911,6 +991,10 @@ class UnitOrder:
     unit_id: str
     role: str
     preserve: bool = False
+    primary_target_unit_id: str | None = None
+    backup_target_unit_ids: list[str] = field(default_factory=list)
+    constraint_mode: str = "hint"
+    order_strength: float = 0.5
     movement_order: MovementOrder = field(default_factory=MovementOrder)
     shooting_order: ShootingOrder = field(default_factory=ShootingOrder)
     charge_order: ChargeOrder = field(default_factory=ChargeOrder)
@@ -923,12 +1007,16 @@ class UnitOrder:
             "unit_id": str(self.unit_id),
             "role": str(self.role),
             "preserve": bool(self.preserve),
+            "backup_target_unit_ids": _ordered_unique_strings(self.backup_target_unit_ids),
+            "constraint_mode": str(self.constraint_mode),
+            "order_strength": float(self.order_strength),
             "movement_order": self.movement_order.to_dict(),
             "shooting_order": self.shooting_order.to_dict(),
             "charge_order": self.charge_order.to_dict(),
             "fight_order": self.fight_order.to_dict(),
             "resource_permissions": _sorted_strings(self.resource_permissions),
             "metadata": _sorted_metadata(self.metadata),
+            **({"primary_target_unit_id": str(self.primary_target_unit_id)} if self.primary_target_unit_id else {}),
         }
 
 
@@ -1562,9 +1650,67 @@ def _target_order_intent(posture: str, priority: float) -> tuple[str, float]:
     return "avoid_unless_safe", 0.1
 
 
+def _target_preferred_phase(intent: str, directive: RoundCommanderDirective) -> str:
+    if str(intent) in {"kill", "soften"}:
+        return "shooting" if directive.primary_phase_focus != "charge" else "charge"
+    if str(intent) == "delay":
+        return "movement"
+    return "score"
+
+
+def _target_allowed_resource_kinds(intent: str, priority: float, directive: RoundCommanderDirective) -> list[str]:
+    if str(intent) == "kill" and float(priority) >= 0.75 and float(directive.resource_budget) >= 0.5:
+        return ["one_shot_weapon", "once_per_battle_ability", "stratagem"]
+    if str(intent) == "soften" and float(priority) >= 0.65 and float(directive.resource_budget) >= 0.65:
+        return ["stratagem"]
+    return []
+
+
+def _target_max_overkill_wounds(intent: str, priority: float) -> float:
+    if str(intent) == "kill":
+        return 1.5
+    if str(intent) == "soften":
+        return 1.0
+    if float(priority) >= 0.75:
+        return 0.75
+    return 0.5
+
+
+def _target_priority_doctrine(general_plan: object) -> dict[str, Any]:
+    doctrine = getattr(general_plan, "target_priority_doctrine", None)
+    if isinstance(doctrine, dict):
+        return dict(doctrine)
+    return {}
+
+
+def _target_order_overrides(general_plan: object) -> dict[str, dict[str, Any]]:
+    doctrine = _target_priority_doctrine(general_plan)
+    raw = doctrine.get("target_orders", doctrine.get("target_overrides", {}))
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(target_id): dict(value)
+        for target_id, value in sorted(raw.items(), key=lambda item: str(item[0]))
+        if isinstance(value, dict)
+    }
+
+
+def _unit_order_overrides(general_plan: object) -> dict[str, dict[str, Any]]:
+    doctrine = _target_priority_doctrine(general_plan)
+    raw = doctrine.get("unit_orders", doctrine.get("unit_order_overrides", {}))
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(unit_id): dict(value)
+        for unit_id, value in sorted(raw.items(), key=lambda item: str(item[0]))
+        if isinstance(value, dict)
+    }
+
+
 def _analysis_target_orders(
     commander_analysis: object,
     *,
+    general_plan: object,
     directive: RoundCommanderDirective,
     commander_order_bundle_id: str,
 ) -> dict[str, TargetOrder]:
@@ -1584,19 +1730,43 @@ def _analysis_target_orders(
         raw_scores[target_id] = score
     max_score = max(raw_scores.values()) if raw_scores else 1.0
     orders: dict[str, TargetOrder] = {}
+    overrides = _target_order_overrides(general_plan)
     for target_id, score in sorted(raw_scores.items(), key=lambda item: (-float(item[1]), str(item[0]))):
         priority = float(score) / max(1.0, float(max_score))
         intent, kill_prob = _target_order_intent(directive.posture, priority)
+        override = overrides.get(target_id, {})
+        if override:
+            intent = str(override.get("intent", intent) or intent)
+            priority = _clamp(override.get("priority", priority), 0.0, 1.0)
+            kill_prob = _clamp(override.get("desired_kill_probability", kill_prob), 0.0, 1.0)
+        preferred_phase = str(
+            override.get("preferred_phase", "")
+            or _target_preferred_phase(intent, directive)
+        )
+        allowed_resource_kinds = _sorted_strings(
+            override.get(
+                "allowed_resource_kinds",
+                _target_allowed_resource_kinds(intent, priority, directive),
+            )
+        )
         orders[target_id] = TargetOrder(
             target_unit_id=target_id,
             intent=intent,
             priority=priority,
             desired_kill_probability=kill_prob,
+            max_overkill_wounds=_floatish(
+                override.get("max_overkill_wounds", _target_max_overkill_wounds(intent, priority)),
+                _target_max_overkill_wounds(intent, priority),
+            ),
+            preferred_phase=preferred_phase,
+            allowed_resource_kinds=allowed_resource_kinds,
+            forbidden_resource_ids=_sorted_strings(override.get("forbidden_resource_ids", [])),
             metadata={
                 "source": "strategic_intent_compiler",
                 "commander_order_bundle_id": commander_order_bundle_id,
                 "source_directive_id": directive.directive_id,
                 "source_intent_kinds": ["round_posture", "target_priority_doctrine"],
+                "explicit_general_override": bool(override),
             },
         )
     return orders
@@ -1636,10 +1806,13 @@ def _resource_authorizations(
         threshold = _floatish(_policy_value(policy, "authorization_threshold", 0.0), 0.0)
         owner = _policy_value(policy, "owner_unit_id", None)
         reserved_round = _policy_value(policy, "reserved_for_round", None)
+        reserved_target = _policy_value(policy, "reserved_for_target_unit_id", None)
         allowed_targets = [
             target_id
             for target_id, order in target_orders.items()
             if float(order.priority) >= threshold and order.intent in {"kill", "soften"}
+            and (not order.allowed_resource_kinds or kind in set(order.allowed_resource_kinds))
+            and (reserved_target is None or str(reserved_target) == str(target_id))
         ]
         auth_status = status
         if status == "forbidden":
@@ -1693,6 +1866,7 @@ def compile_general_intent_to_commander_orders(
 
     target_orders = _analysis_target_orders(
         commander_analysis,
+        general_plan=general_plan,
         directive=directive,
         commander_order_bundle_id=bundle_id,
     )
@@ -1758,60 +1932,207 @@ def compile_general_intent_to_commander_orders(
     for resource_id, auth in resource_authorizations.items():
         if auth.owner_unit_id and auth.allowed_target_unit_ids:
             auth_by_owner.setdefault(auth.owner_unit_id, []).append(resource_id)
+    unit_overrides = _unit_order_overrides(general_plan)
     deployment_unit_orders = dict(getattr(deployment_orders, "unit_orders", {}) or {})
     scout_orders = dict(getattr(prebattle_orders, "scout_orders", {}) or {})
     infiltrate_orders = dict(getattr(prebattle_orders, "infiltrate_orders", {}) or {})
     for unit_id, task in sorted(tasks.items(), key=lambda item: str(item[0])):
         uid = str(unit_id)
         entries = matrix.get(uid, [])
-        best_target = str(_policy_value(entries[0], "target_unit_id", "") or "") if entries else ""
-        backup_targets = [
-            str(_policy_value(entry, "target_unit_id", "") or "")
-            for entry in entries[1:4]
+        entries_by_target = {
+            str(_policy_value(entry, "target_unit_id", "") or ""): entry
+            for entry in entries
             if str(_policy_value(entry, "target_unit_id", "") or "")
-        ]
-        preserve = uid in preserve_units
+        }
+        override = unit_overrides.get(uid, {})
+        override_shooting = dict(override.get("shooting_order", {}) or {}) if isinstance(override.get("shooting_order"), dict) else {}
+        override_movement = dict(override.get("movement_order", {}) or {}) if isinstance(override.get("movement_order"), dict) else {}
+        override_charge = dict(override.get("charge_order", {}) or {}) if isinstance(override.get("charge_order"), dict) else {}
+        override_fight = dict(override.get("fight_order", {}) or {}) if isinstance(override.get("fight_order"), dict) else {}
+        default_target = str(_policy_value(entries[0], "target_unit_id", "") or "") if entries else ""
+        override_target = str(
+            override.get("primary_target_unit_id", "")
+            or override_shooting.get("primary_target_unit_id", "")
+            or override_charge.get("primary_target_unit_id", "")
+            or override_fight.get("primary_target_unit_id", "")
+            or ""
+        )
+        best_target = override_target or default_target
+        backup_targets = _ordered_unique_strings(
+            list(override.get("backup_target_unit_ids", []) or [])
+            or list(override_shooting.get("backup_target_unit_ids", []) or [])
+            or [
+                str(_policy_value(entry, "target_unit_id", "") or "")
+                for entry in entries[1:4]
+                if str(_policy_value(entry, "target_unit_id", "") or "")
+            ]
+        )
+        expected_damage_by_target = {
+            str(_policy_value(entry, "target_unit_id", "") or ""): _floatish(
+                _policy_value(entry, "expected_shooting_damage", 0.0),
+                0.0,
+            )
+            for entry in entries
+            if str(_policy_value(entry, "target_unit_id", "") or "")
+        }
+        primary_entry = entries_by_target.get(best_target)
+        primary_metadata = dict(_policy_value(primary_entry, "metadata", {}) or {}) if primary_entry is not None else {}
+        target_order = target_orders.get(best_target)
+        preserve = uid in preserve_units or bool(override.get("preserve", False))
         deployment_order = deployment_unit_orders.get(uid)
         scout_order = scout_orders.get(uid)
         infiltrate_order = infiltrate_orders.get(uid)
-        role = "preserve" if preserve else str(getattr(deployment_order, "role", "") or getattr(task, "task_type", "") or "stage")
-        movement_intent = "preserve_hidden" if preserve else "score_or_screen" if scout_order else "maintain_forward_screen" if infiltrate_order else "execute_tier2_task"
-        charge_intent = "hold" if preserve else "planned_charge" if best_target and role in {"counterpunch", "screen"} else "opportunistic"
-        fight_intent = "hold" if preserve else "planned_fight" if charge_intent == "planned_charge" else "opportunistic"
-        shooting_intent = "preserve" if preserve else "planned_focus_fire" if best_target else "opportunistic"
+        role = str(
+            override.get("role", "")
+            or ("preserve" if preserve else "")
+            or getattr(deployment_order, "role", "")
+            or getattr(task, "task_type", "")
+            or "stage"
+        )
+        shooting_intent = str(
+            override_shooting.get("intent", "")
+            or override.get("shooting_intent", "")
+            or ("preserve" if preserve else "planned_focus_fire" if best_target else "opportunistic")
+        )
+        charge_intent = str(
+            override_charge.get("intent", "")
+            or override.get("charge_intent", "")
+            or ("hold" if preserve else "planned_charge" if best_target and role in {"counterpunch", "screen"} else "opportunistic")
+        )
+        fight_intent = str(
+            override_fight.get("intent", "")
+            or override.get("fight_intent", "")
+            or ("hold" if preserve else "planned_fight" if charge_intent == "planned_charge" else "opportunistic")
+        )
+        movement_intent = str(
+            override_movement.get("intent", "")
+            or override.get("movement_intent", "")
+            or ("preserve_hidden" if preserve else "score_or_screen" if scout_order else "maintain_forward_screen" if infiltrate_order else "execute_tier2_task")
+        )
+        requires_half_range = bool(
+            override_shooting.get("requires_half_range", False)
+            or primary_metadata.get("has_half_range_trigger", False)
+            or _floatish(_policy_value(primary_entry, "movement_to_half_range_feasibility", 0.0), 0.0) >= 0.75
+        )
+        requires_stationary = bool(
+            override_shooting.get("requires_stationary", False)
+            or primary_metadata.get("has_heavy_stationary_trigger", False)
+        )
+        requested_range_bands = list(override_movement.get("desired_range_bands", []) or [])
+        if not requested_range_bands and best_target and requires_half_range and primary_metadata.get("max_ranged_range_inches", 0.0):
+            requested_range_bands = [
+                {
+                    "target_unit_id": best_target,
+                    "trigger_kind": "compiled_half_range",
+                    "minimum_inches": 0.0,
+                    "maximum_inches": float(primary_metadata.get("max_ranged_range_inches", 0.0) or 0.0) / 2.0,
+                    "priority": _floatish(_policy_value(primary_entry, "movement_to_half_range_feasibility", 0.0), 0.0),
+                }
+            ]
+        desired_range_bands = _sorted_metadata_list(requested_range_bands)
+        charge_target = str(override_charge.get("primary_target_unit_id", "") or "") or (
+            best_target if charge_intent == "planned_charge" else ""
+        )
+        fight_target = str(override_fight.get("primary_target_unit_id", "") or "") or (
+            best_target if fight_intent == "planned_fight" else ""
+        )
+        constraint_mode = str(override.get("constraint_mode", "hint") or "hint")
+        explicit_override = bool(override)
+        allowed_resource_kinds = list(getattr(target_order, "allowed_resource_kinds", []) or [])
+        if override_shooting.get("allowed_resource_kinds"):
+            allowed_resource_kinds = _sorted_strings(override_shooting.get("allowed_resource_kinds", []))
         permissions = _sorted_strings(auth_by_owner.get(uid, []))
+        source_intent_kinds = [
+            "round_posture",
+            "deployment_doctrine",
+            *(["general_preserve_directive"] if uid in preserve_units else []),
+            *(["explicit_general_unit_order"] if explicit_override else []),
+        ]
         unit_orders[uid] = UnitOrder(
             unit_id=uid,
             role=role,
             preserve=preserve,
+            primary_target_unit_id=best_target or None,
+            backup_target_unit_ids=backup_targets,
+            constraint_mode=constraint_mode,
+            order_strength=_clamp(override.get("order_strength", 1.0 if explicit_override else 0.5), 0.0, 1.0),
             movement_order=MovementOrder(
                 intent=movement_intent,
+                desired_action=str(override_movement.get("desired_action", "") or ""),
                 target_region_ids=list(getattr(deployment_order, "preferred_region_ids", []) or []),
+                required_los_to_unit_ids=_sorted_strings(
+                    override_movement.get("required_los_to_unit_ids", [best_target] if best_target and shooting_intent == "planned_focus_fire" else [])
+                ),
+                desired_range_bands=desired_range_bands,
+                charge_staging_target_unit_id=str(override_movement.get("charge_staging_target_unit_id", "") or "")
+                or (charge_target if charge_intent == "planned_charge" else None),
+                avoid_becoming_shooting_ineligible=bool(
+                    override_movement.get("avoid_becoming_shooting_ineligible", shooting_intent == "planned_focus_fire")
+                ),
+                intentionally_accept_shooting_ineligible=bool(
+                    override_movement.get(
+                        "intentionally_accept_shooting_ineligible",
+                        charge_intent == "planned_charge" and shooting_intent != "planned_focus_fire",
+                    )
+                ),
                 avoid_exposure=bool(preserve or uid in max_exposure_by_unit),
                 metadata={
                     "source": "strategic_intent_compiler",
-                    "source_intent_kinds": ["deployment_doctrine", "round_posture"],
+                    "source_intent_kinds": source_intent_kinds,
                 },
             ),
             shooting_order=ShootingOrder(
                 intent=shooting_intent,
-                primary_target_unit_id=best_target or None,
+                primary_target_unit_id=None if shooting_intent == "preserve" else (best_target or None),
                 backup_target_unit_ids=backup_targets,
+                expected_damage_by_target=expected_damage_by_target,
+                requires_los=bool(override_shooting.get("requires_los", bool(best_target and shooting_intent == "planned_focus_fire"))),
+                requires_half_range=requires_half_range,
+                requires_stationary=requires_stationary,
+                allows_split_fire=bool(override_shooting.get("allows_split_fire", True)),
+                max_overkill_wounds=_floatish(
+                    override_shooting.get(
+                        "max_overkill_wounds",
+                        getattr(target_order, "max_overkill_wounds", 1.5),
+                    ),
+                    1.5,
+                ),
+                preferred_phase=str(
+                    override_shooting.get("preferred_phase", "")
+                    or getattr(target_order, "preferred_phase", "shooting")
+                ),
+                allowed_resource_kinds=allowed_resource_kinds,
                 resource_permissions=permissions,
                 metadata={
                     "source": "strategic_intent_compiler",
-                    "source_intent_kinds": ["target_priority_doctrine", "resource_policy"],
+                    "source_intent_kinds": [
+                        "target_priority_doctrine",
+                        "resource_policy",
+                        *(["explicit_general_unit_order"] if explicit_override else []),
+                    ],
+                    "explicit_general_override": bool(explicit_override),
                 },
             ),
             charge_order=ChargeOrder(
                 intent=charge_intent,
-                primary_target_unit_id=(best_target or None) if charge_intent == "planned_charge" else None,
-                metadata={"source": "strategic_intent_compiler"},
+                primary_target_unit_id=charge_target or None,
+                backup_target_unit_ids=backup_targets,
+                desired_charge_probability=_floatish(_policy_value(primary_entry, "charge_feasibility", 0.0), 0.0),
+                intentionally_skip_shooting=bool(
+                    override_charge.get(
+                        "intentionally_skip_shooting",
+                        charge_intent == "planned_charge" and shooting_intent != "planned_focus_fire",
+                    )
+                ),
+                metadata={"source": "strategic_intent_compiler", "explicit_general_override": bool(explicit_override)},
             ),
             fight_order=FightOrder(
                 intent=fight_intent,
-                primary_target_unit_id=(best_target or None) if fight_intent == "planned_fight" else None,
-                metadata={"source": "strategic_intent_compiler"},
+                primary_target_unit_id=fight_target or None,
+                backup_target_unit_ids=backup_targets,
+                activation_priority=_floatish(_policy_value(primary_entry, "expected_melee_damage", 0.0), 0.0)
+                + _floatish(_policy_value(primary_entry, "charge_feasibility", 0.0), 0.0),
+                metadata={"source": "strategic_intent_compiler", "explicit_general_override": bool(explicit_override)},
             ),
             resource_permissions=permissions,
             metadata={
@@ -1821,13 +2142,26 @@ def compile_general_intent_to_commander_orders(
                 "prebattle_order_bundle_id": str(prebattle_bundle_id or ""),
                 "commander_order_bundle_id": bundle_id,
                 "source_directive_id": directive.directive_id,
-                "source_intent_kinds": [
-                    "round_posture",
-                    "deployment_doctrine",
-                    *(["general_preserve_directive"] if preserve else []),
-                ],
+                "source_intent_kinds": source_intent_kinds,
+                "explicit_general_override": bool(explicit_override),
             },
         )
+
+    assigned_units_by_target: dict[str, list[str]] = {target_id: [] for target_id in target_orders}
+    for unit_id, order in sorted(unit_orders.items(), key=lambda item: str(item[0])):
+        candidate_targets = [
+            str(getattr(order, "primary_target_unit_id", "") or ""),
+            str(getattr(order.shooting_order, "primary_target_unit_id", "") or ""),
+            str(getattr(order.charge_order, "primary_target_unit_id", "") or ""),
+            str(getattr(order.fight_order, "primary_target_unit_id", "") or ""),
+        ]
+        for target_id in _ordered_unique_strings(candidate_targets):
+            if target_id in assigned_units_by_target:
+                assigned_units_by_target[target_id].append(str(unit_id))
+    target_orders = {
+        target_id: replace(order, assigned_unit_ids=_ordered_unique_strings(assigned_units_by_target.get(target_id, [])))
+        for target_id, order in sorted(target_orders.items(), key=lambda item: str(item[0]))
+    }
 
     transport_orders: dict[str, TransportRoundOrder] = {}
     source_transport_orders = dict(getattr(deployment_orders, "transport_orders", {}) or {})

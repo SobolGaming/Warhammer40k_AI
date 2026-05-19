@@ -80,6 +80,18 @@ def _sorted_strings(values: list[object] | tuple[object, ...] | set[object] | No
     return sorted({str(value) for value in list(values or []) if str(value)})
 
 
+def _ordered_unique_strings(values: list[object] | tuple[object, ...] | set[object] | None) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for value in list(values or []):
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ordered.append(text)
+    return ordered
+
+
 def _sorted_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
     return {str(key): value for key, value in sorted(dict(metadata or {}).items(), key=lambda item: str(item[0]))}
 
@@ -1595,7 +1607,7 @@ def _assignment_target_backups(
     candidate_ids.extend(list(ranked_target_ids or []))
     return [
         target_id
-        for target_id in _sorted_strings(candidate_ids)
+        for target_id in _ordered_unique_strings(candidate_ids)
         if target_id and target_id != str(primary_target_id or "")
     ]
 
@@ -1673,6 +1685,175 @@ def _choose_shooting_assignment(
             str(entry.target_unit_id),
         ),
     )[0]
+
+
+def _entry_for_target(
+    entries: list[CommanderUnitTargetAnalysis],
+    target_unit_id: str | None,
+) -> CommanderUnitTargetAnalysis | None:
+    wanted = str(target_unit_id or "")
+    if not wanted:
+        return None
+    for entry in list(entries or []):
+        if str(entry.target_unit_id) == wanted:
+            return entry
+    return None
+
+
+def _compiled_unit_order_metadata(order: object | None) -> dict[str, Any]:
+    if order is None:
+        return {}
+    return dict(getattr(order, "metadata", {}) or {})
+
+
+def _compiled_unit_order_is_explicit(order: object | None) -> bool:
+    metadata = _compiled_unit_order_metadata(order)
+    if bool(metadata.get("explicit_general_override", False)):
+        return True
+    source_kinds = {str(kind) for kind in list(metadata.get("source_intent_kinds", []) or [])}
+    return "explicit_general_unit_order" in source_kinds
+
+
+def _compiled_unit_order_constraint_mode(order: object | None) -> str:
+    mode = str(getattr(order, "constraint_mode", "hint") or "hint").strip().lower()
+    return mode if mode in {"hint", "constrain", "replace", "override"} else "hint"
+
+
+def _compiled_shooting_primary_target(order: object | None) -> str | None:
+    shooting_order = getattr(order, "shooting_order", None)
+    target_id = str(getattr(shooting_order, "primary_target_unit_id", "") or "")
+    return target_id or None
+
+
+def _compiled_charge_primary_target(order: object | None) -> str | None:
+    charge_order = getattr(order, "charge_order", None)
+    target_id = str(getattr(charge_order, "primary_target_unit_id", "") or "")
+    return target_id or None
+
+
+def _remove_shooting_assignment_commitment(
+    *,
+    unit_id: str,
+    shooting_assignments: dict[str, CommanderUnitTargetAnalysis],
+    committed_damage: dict[str, float],
+    target_assigned_units: dict[str, list[str]],
+) -> None:
+    old = shooting_assignments.pop(str(unit_id), None)
+    if old is None:
+        return
+    old_target_id = str(old.target_unit_id)
+    committed_damage[old_target_id] = max(
+        0.0,
+        float(committed_damage.get(old_target_id, 0.0) or 0.0) - float(old.expected_shooting_damage or 0.0),
+    )
+    target_assigned_units[old_target_id] = [
+        assigned_unit_id
+        for assigned_unit_id in list(target_assigned_units.get(old_target_id, []) or [])
+        if str(assigned_unit_id) != str(unit_id)
+    ]
+
+
+def _compiled_target_commitment_allowed(
+    *,
+    mode: str,
+    target_order: object | None,
+    target_analysis: CommanderTargetAnalysis | None,
+    committed_damage: dict[str, float],
+    entry: CommanderUnitTargetAnalysis,
+) -> bool:
+    if mode in {"replace", "override"}:
+        return True
+    target_id = str(entry.target_unit_id)
+    wounds = max(1.0, _target_wounds_from_analysis(target_analysis))
+    desired_kill_probability = float(getattr(target_order, "desired_kill_probability", 0.75) or 0.75)
+    max_overkill_wounds = float(getattr(target_order, "max_overkill_wounds", COMMANDER_ASSIGNMENT_OVERKILL_LIMIT) or 0.0)
+    desired_damage = max(1.0, wounds * max(0.1, min(1.0, desired_kill_probability)))
+    max_commitment = desired_damage + max_overkill_wounds
+    return float(committed_damage.get(target_id, 0.0) or 0.0) < max_commitment
+
+
+def _apply_compiled_commander_assignment_constraints(
+    *,
+    commander_unit_orders: dict[str, object],
+    commander_target_orders: dict[str, object],
+    matrix_by_unit: dict[str, list[CommanderUnitTargetAnalysis]],
+    target_by_id: dict[str, CommanderTargetAnalysis],
+    unit_roles: dict[str, str],
+    shooting_assignments: dict[str, CommanderUnitTargetAnalysis],
+    charge_assignments: dict[str, CommanderUnitTargetAnalysis],
+    committed_damage: dict[str, float],
+    target_assigned_units: dict[str, list[str]],
+) -> dict[str, dict[str, Any]]:
+    statuses: dict[str, dict[str, Any]] = {}
+    for unit_id, order in sorted(commander_unit_orders.items(), key=lambda item: str(item[0])):
+        uid = str(unit_id)
+        explicit = _compiled_unit_order_is_explicit(order)
+        mode = _compiled_unit_order_constraint_mode(order)
+        status: dict[str, Any] = {
+            "explicit_general_override": bool(explicit),
+            "constraint_mode": mode,
+            "shooting_constraint_status": "not_requested",
+            "charge_constraint_status": "not_requested",
+        }
+        if not explicit or mode == "hint":
+            statuses[uid] = status
+            continue
+        if bool(getattr(order, "preserve", False)):
+            _remove_shooting_assignment_commitment(
+                unit_id=uid,
+                shooting_assignments=shooting_assignments,
+                committed_damage=committed_damage,
+                target_assigned_units=target_assigned_units,
+            )
+            charge_assignments.pop(uid, None)
+            unit_roles[uid] = ROLE_PRESERVE
+            status["shooting_constraint_status"] = "preserve_removed"
+            status["charge_constraint_status"] = "preserve_removed"
+            statuses[uid] = status
+            continue
+
+        entries = list(matrix_by_unit.get(uid, []) or [])
+        shooting_target_id = _compiled_shooting_primary_target(order)
+        if shooting_target_id:
+            shooting_entry = _entry_for_target(entries, shooting_target_id)
+            if shooting_entry is None or float(shooting_entry.expected_shooting_damage or 0.0) <= 0.0:
+                status["shooting_constraint_status"] = "target_not_in_current_analysis"
+            elif not _compiled_target_commitment_allowed(
+                mode=mode,
+                target_order=commander_target_orders.get(str(shooting_target_id)),
+                target_analysis=target_by_id.get(str(shooting_target_id)),
+                committed_damage=committed_damage,
+                entry=shooting_entry,
+            ):
+                status["shooting_constraint_status"] = "overkill_guard_rejected"
+            else:
+                _remove_shooting_assignment_commitment(
+                    unit_id=uid,
+                    shooting_assignments=shooting_assignments,
+                    committed_damage=committed_damage,
+                    target_assigned_units=target_assigned_units,
+                )
+                shooting_assignments[uid] = shooting_entry
+                committed_damage[str(shooting_entry.target_unit_id)] = float(
+                    committed_damage.get(str(shooting_entry.target_unit_id), 0.0) or 0.0
+                ) + float(shooting_entry.expected_shooting_damage or 0.0)
+                assigned_units = list(target_assigned_units.get(str(shooting_entry.target_unit_id), []) or [])
+                if uid not in assigned_units:
+                    assigned_units.append(uid)
+                target_assigned_units[str(shooting_entry.target_unit_id)] = _sorted_strings(assigned_units)
+                status["shooting_constraint_status"] = "applied"
+
+        charge_target_id = _compiled_charge_primary_target(order)
+        if charge_target_id:
+            charge_entry = _entry_for_target(entries, charge_target_id)
+            if charge_entry is None or float(charge_entry.expected_melee_damage or 0.0) <= 0.0:
+                status["charge_constraint_status"] = "target_not_in_current_analysis"
+            else:
+                charge_assignments[uid] = charge_entry
+                status["charge_constraint_status"] = "applied"
+
+        statuses[uid] = status
+    return statuses
 
 
 def _build_greedy_commander_assignments(
@@ -2013,12 +2194,24 @@ def build_battle_round_plan(
         snapshot=analysis_snapshot,
         tier2_bundle=tier2_bundle,
     )
+    target_by_id: dict[str, CommanderTargetAnalysis] = dict(greedy_assignments["target_by_id"])
     matrix_by_unit: dict[str, list[CommanderUnitTargetAnalysis]] = dict(greedy_assignments["matrix_by_unit"])
     unit_roles: dict[str, str] = dict(greedy_assignments["unit_roles"])
     shooting_assignments: dict[str, CommanderUnitTargetAnalysis] = dict(greedy_assignments["shooting_assignments"])
     charge_target_assignments: dict[str, CommanderUnitTargetAnalysis] = dict(greedy_assignments["charge_assignments"])
     committed_damage: dict[str, float] = dict(greedy_assignments["committed_damage"])
     target_assigned_units: dict[str, list[str]] = dict(greedy_assignments["target_assigned_units"])
+    compiled_constraint_statuses = _apply_compiled_commander_assignment_constraints(
+        commander_unit_orders=commander_unit_orders,
+        commander_target_orders=commander_target_orders,
+        matrix_by_unit=matrix_by_unit,
+        target_by_id=target_by_id,
+        unit_roles=unit_roles,
+        shooting_assignments=shooting_assignments,
+        charge_assignments=charge_target_assignments,
+        committed_damage=committed_damage,
+        target_assigned_units=target_assigned_units,
+    )
 
     unit_tasks: dict[str, UnitBattleTask] = {}
     positioning_tasks: dict[str, UnitPositioningTask] = {}
@@ -2034,6 +2227,14 @@ def build_battle_round_plan(
         uid = str(unit_id)
         role = unit_roles.get(uid, _task_role(task.task_type))
         commander_unit_order = commander_unit_orders.get(uid)
+        compiled_constraint_status = compiled_constraint_statuses.get(uid, {})
+        if (
+            commander_unit_order is not None
+            and _compiled_unit_order_is_explicit(commander_unit_order)
+            and _compiled_unit_order_constraint_mode(commander_unit_order) != "hint"
+            and str(getattr(commander_unit_order, "role", "") or "")
+        ):
+            role = str(getattr(commander_unit_order, "role", "") or role)
         if commander_unit_order is not None and bool(getattr(commander_unit_order, "preserve", False)):
             commander_preserve_sources = set(
                 dict(getattr(commander_unit_order, "metadata", {}) or {}).get("source_intent_kinds", []) or []
@@ -2088,6 +2289,7 @@ def build_battle_round_plan(
                 "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
                 "commander_unit_order_id": uid if commander_unit_order is not None else "",
                 "commander_unit_order_preserve": bool(getattr(commander_unit_order, "preserve", False)),
+                "commander_constraint_status": compiled_constraint_status,
                 "assignment_source": "strategic_intent_compiler_materialized",
             },
         )
@@ -2164,6 +2366,7 @@ def build_battle_round_plan(
                 "shooting_can_advance": bool(shooting_can_advance),
                 "shooting_requires_stationary": bool(shooting_requires_stationary),
                 "weapon_trigger_band_count": int(len(shooting_trigger_bands)),
+                "commander_constraint_status": compiled_constraint_status,
             },
         )
         fire_assignments[str(unit_id)] = UnitFireAssignment(
@@ -2182,6 +2385,7 @@ def build_battle_round_plan(
                 "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
                 "shooting_can_advance": bool(shooting_can_advance),
                 "weapon_trigger_bands": shooting_trigger_bands,
+                "commander_constraint_status": compiled_constraint_status,
                 "trigger_band_kinds": _sorted_strings(
                     [band.get("trigger_kind", "") for band in shooting_trigger_bands]
                 ),
@@ -2201,6 +2405,7 @@ def build_battle_round_plan(
                 "commander_role": role,
                 "source": "strategic_intent_compiler_materialized",
                 "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
+                "commander_constraint_status": compiled_constraint_status,
             },
         )
         fight_assignments[str(unit_id)] = FightTargetAssignment(
@@ -2215,6 +2420,7 @@ def build_battle_round_plan(
                 "commander_role": role,
                 "source": "strategic_intent_compiler_materialized",
                 "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
+                "commander_constraint_status": compiled_constraint_status,
             },
         )
 
@@ -2234,13 +2440,26 @@ def build_battle_round_plan(
                 / max(1.0, float(target.metadata.get("remaining_wounds_estimate", 0.0) or 0.0))
             ),
             assigned_unit_ids=target_assigned_units.get(str(target.target_unit_id), []),
-            overkill_limit=COMMANDER_ASSIGNMENT_OVERKILL_LIMIT,
+            overkill_limit=float(
+                getattr(
+                    commander_target_orders.get(str(target.target_unit_id)),
+                    "max_overkill_wounds",
+                    COMMANDER_ASSIGNMENT_OVERKILL_LIMIT,
+                )
+                or COMMANDER_ASSIGNMENT_OVERKILL_LIMIT
+            ),
             metadata={
                 "assignment_source": "strategic_intent_compiler_materialized",
                 "priority_kind": target.priority_kind,
                 "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
                 "commander_target_intent": str(
                     getattr(commander_target_orders.get(str(target.target_unit_id)), "intent", "") or ""
+                ),
+                "commander_target_preferred_phase": str(
+                    getattr(commander_target_orders.get(str(target.target_unit_id)), "preferred_phase", "") or ""
+                ),
+                "commander_target_allowed_resource_kinds": _sorted_strings(
+                    getattr(commander_target_orders.get(str(target.target_unit_id)), "allowed_resource_kinds", []) or []
                 ),
             },
         )

@@ -117,6 +117,14 @@ def _build_game(friendly: list[_Unit], enemy: list[_Unit]) -> tuple[Game, Player
     return game, player, opponent
 
 
+def _install_general_plan(game: Game, player: Player, general_plan: object) -> None:
+    game._general_plans = {player.id: general_plan}
+    game._deployment_order_bundles = {}
+    game._prebattle_order_bundles = {}
+    game._deployment_plans = {}
+    game._battle_round_plans = {}
+
+
 def test_stage_push_and_preserve_directives_compile_expected_budgets() -> None:
     game, player, _opponent = _build_game([_Unit("unit:line")], [])
     general = game.get_or_create_general_plan(player.id)
@@ -238,6 +246,143 @@ def test_commander_orders_compile_targets_preserve_and_resource_authorization() 
     assert "target:high" in authorization["allowed_target_unit_ids"]
 
 
+def test_commander_orders_include_enriched_schema_and_explicit_general_overrides() -> None:
+    shooter = _Unit(
+        "unit:shooter",
+        wargear=[_Wargear("ranged", _Profile(attacks=2, strength=8, ap=-2, damage=3), name="lascannon")],
+    )
+    high_target = _Unit("target:high", wounds=12, oc=5)
+    low_target = _Unit("target:low", wounds=2, oc=1)
+    game, player, _opponent = _build_game([shooter], [high_target, low_target])
+    general = game.get_or_create_general_plan(player.id)
+    custom_general = replace(
+        general,
+        target_priority_doctrine={
+            "target_overrides": {
+                "target:low": {
+                    "intent": "kill",
+                    "priority": 0.95,
+                    "desired_kill_probability": 0.9,
+                    "max_overkill_wounds": 0.25,
+                    "preferred_phase": "shooting",
+                    "allowed_resource_kinds": ["one_shot_weapon"],
+                }
+            },
+            "unit_order_overrides": {
+                "unit:shooter": {
+                    "constraint_mode": "constrain",
+                    "order_strength": 0.95,
+                    "role": "shooting_first",
+                    "primary_target_unit_id": "target:low",
+                    "backup_target_unit_ids": ["target:high"],
+                    "shooting_order": {
+                        "primary_target_unit_id": "target:low",
+                        "requires_los": True,
+                        "max_overkill_wounds": 0.25,
+                    },
+                }
+            },
+        },
+    )
+    deployment_orders = game.get_or_create_deployment_order_bundle(player.id)
+    prebattle_orders = game.get_or_create_prebattle_order_bundle(player.id)
+    tier1 = game.get_or_create_tier1_plan(player.id)
+    tier2 = game.get_or_create_tier2_task_bundle(player.id)
+    analysis = game.get_or_create_battle_round_plan(player.id).metadata["analysis_snapshot"]
+
+    commander_orders = compile_general_intent_to_commander_orders(
+        game,
+        custom_general,
+        deployment_orders,
+        prebattle_orders,
+        tier1,
+        tier2,
+        analysis,
+        battle_round=2,
+        player_id=player.id,
+    ).to_dict()
+
+    target_order = commander_orders["target_orders"]["target:low"]
+    unit_order = commander_orders["unit_orders"]["unit:shooter"]
+    assert target_order["intent"] == "kill"
+    assert target_order["max_overkill_wounds"] == 0.25
+    assert target_order["preferred_phase"] == "shooting"
+    assert target_order["allowed_resource_kinds"] == ["one_shot_weapon"]
+    assert target_order["metadata"]["explicit_general_override"] is True
+    assert unit_order["constraint_mode"] == "constrain"
+    assert unit_order["primary_target_unit_id"] == "target:low"
+    assert unit_order["backup_target_unit_ids"] == ["target:high"]
+    assert unit_order["shooting_order"]["primary_target_unit_id"] == "target:low"
+    assert unit_order["shooting_order"]["requires_los"] is True
+    assert unit_order["shooting_order"]["expected_damage_by_target"]["target:low"] > 0.0
+
+
+def test_explicit_general_unit_order_constrains_battle_round_fire_assignment() -> None:
+    shooter = _Unit(
+        "unit:shooter",
+        wargear=[_Wargear("ranged", _Profile(attacks=2, strength=8, ap=-2, damage=3), name="lascannon")],
+    )
+    high_target = _Unit("target:high", wounds=12, oc=5)
+    low_target = _Unit("target:low", wounds=2, oc=1)
+    game, player, _opponent = _build_game([shooter], [high_target, low_target])
+    general = game.get_or_create_general_plan(player.id)
+    custom_general = replace(
+        general,
+        target_priority_doctrine={
+            "unit_order_overrides": {
+                "unit:shooter": {
+                    "constraint_mode": "replace",
+                    "role": "shooting_first",
+                    "primary_target_unit_id": "target:low",
+                    "shooting_order": {"primary_target_unit_id": "target:low"},
+                }
+            }
+        },
+    )
+    _install_general_plan(game, player, custom_general)
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    fire_assignment = plan["shooting_plan"]["unit_fire_assignments"]["unit:shooter"]
+    unit_task = plan["unit_tasks"]["unit:shooter"]
+
+    assert fire_assignment["primary_target_unit_id"] == "target:low"
+    assert fire_assignment["metadata"]["commander_constraint_status"]["shooting_constraint_status"] == "applied"
+    assert unit_task["metadata"]["commander_constraint_status"]["constraint_mode"] == "replace"
+
+
+def test_stale_explicit_general_unit_order_falls_back_to_greedy_assignment() -> None:
+    shooter = _Unit(
+        "unit:shooter",
+        wargear=[_Wargear("ranged", _Profile(attacks=2, strength=8, ap=-2, damage=3), name="lascannon")],
+    )
+    target = _Unit("target:present", wounds=8, oc=3)
+    game, player, _opponent = _build_game([shooter], [target])
+    general = game.get_or_create_general_plan(player.id)
+    custom_general = replace(
+        general,
+        target_priority_doctrine={
+            "unit_order_overrides": {
+                "unit:shooter": {
+                    "constraint_mode": "constrain",
+                    "role": "shooting_first",
+                    "primary_target_unit_id": "target:missing",
+                    "shooting_order": {"primary_target_unit_id": "target:missing"},
+                }
+            }
+        },
+    )
+    _install_general_plan(game, player, custom_general)
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    fire_assignment = plan["shooting_plan"]["unit_fire_assignments"]["unit:shooter"]
+
+    assert fire_assignment["primary_target_unit_id"] == "target:present"
+    assert (
+        fire_assignment["metadata"]["commander_constraint_status"]["shooting_constraint_status"]
+        == "target_not_in_current_analysis"
+    )
+
+
 def test_order_bundle_serialization_is_deterministic_and_context_stays_slim() -> None:
     scout = _Unit("unit:scout", scout_distance=6.0, deployed=False)
     target = _Unit("target:high", wounds=8)
@@ -312,4 +457,3 @@ def test_non_deployment_context_can_opt_into_full_commander_order_bundle() -> No
     game.request_decision(request)
 
     assert request.context["commander_order_bundle"]["order_bundle_id"] == request.context["commander_order_bundle_id"]
-

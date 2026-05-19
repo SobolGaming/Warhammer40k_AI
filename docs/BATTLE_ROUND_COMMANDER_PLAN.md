@@ -183,6 +183,17 @@ existing priority target, unit task, movement, shooting, charge, fight, and
 transport assignment structures. Full compiler output remains audit/debug-only
 because the full battle-round plan is not attached in normal decision context.
 
+Compiled commander orders are normally hints. The existing greedy assignment
+planner remains the default source for unit-target commitments. If the active
+`GeneralPlan.target_priority_doctrine` supplies explicit unit orders with
+`constraint_mode` set to `constrain`, `replace`, or `override`, the commander
+materializer may redirect shooting or charge assignments to those compiled
+targets, but only when the target is present in the current commander analysis
+matrix. Missing/stale compiled targets are rejected and the greedy assignment
+is retained. Constraint diagnostics are recorded in full plan metadata and
+trimmed from normal unit-local context to preserve cache-key and payload
+guardrails.
+
 Weapon/ability trigger metadata is included in unit capability and unit-target
 matrix metadata when detected:
 

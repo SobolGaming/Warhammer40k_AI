@@ -526,6 +526,33 @@ Implemented behavior:
 - legality, masks, validators, PathWitness generation, and mutation remain
   owned by the engine.
 
+### PR 15 - Commander Order Enrichment And Explicit Constraints
+
+Enrich the compiled Commander order contract and let explicit General unit
+orders constrain BattleRoundPlan materialization without making the compiler a
+legality authority.
+
+Implemented behavior:
+
+- `TargetOrder` now records maximum overkill tolerance, preferred phase,
+  allowed resource kinds, forbidden resource ids, and assigned unit ids.
+- `MovementOrder`, `ShootingOrder`, `ChargeOrder`, `FightOrder`, and
+  `UnitOrder` carry more precise downstream intent for range bands, LoS,
+  shooting eligibility, expected damage, split-fire posture, charge/fight
+  targets, activation priority, constraint mode, and order strength.
+- `GeneralPlan.target_priority_doctrine` can provide explicit
+  `target_overrides` / `target_orders` and `unit_order_overrides` /
+  `unit_orders`.
+- default compiled unit orders remain hints, so existing greedy commander
+  assignments keep their current behavior.
+- explicit unit orders with `constraint_mode` `constrain`, `replace`, or
+  `override` can redirect shooting/charge assignments when the target exists in
+  the current commander analysis matrix.
+- stale explicit targets fall back to greedy assignments and record rejection
+  diagnostics in full plan metadata.
+- normal decision context remains below payload guardrails by trimming verbose
+  compiler constraint diagnostics from unit-local slices.
+
 ## Remaining Roadmap
 
 The next roadmap item has not been assigned yet.
