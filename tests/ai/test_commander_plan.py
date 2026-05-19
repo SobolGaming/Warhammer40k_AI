@@ -541,6 +541,63 @@ def test_greedy_assignment_marks_shooting_first_units_for_fire_plan() -> None:
     assert charge_assignment["intentionally_skip_shooting"] is False
 
 
+def test_trigger_band_planner_marks_melta_half_range_movement_intent() -> None:
+    profile = _Profile(range_inches=24, attacks=2, skill=3, strength=8, damage=4)
+    profile.name = "melta rifle"
+    profile.abilities = ["MELTA 2"]
+    melta_unit = _Unit("unit:melta", wargear=[_Wargear("ranged", profile)])
+    target = _Unit("target:tank", wounds=10, toughness=9, position=(12.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([melta_unit], [target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    capability = plan["metadata"]["analysis_snapshot"]["unit_capabilities"]["unit:melta"]
+    movement_task = plan["movement_plan"]["unit_positioning_tasks"]["unit:melta"]
+    fire_assignment = plan["shooting_plan"]["unit_fire_assignments"]["unit:melta"]
+
+    assert "melta_half_range_damage_bonus" in capability["metadata"]["trigger_band_kinds"]
+    assert fire_assignment["requires_half_range"] is True
+    assert any(
+        band["trigger_kind"] == "melta_half_range_damage_bonus"
+        for band in movement_task["desired_range_bands"]
+    )
+
+
+def test_trigger_band_planner_allows_assault_shooter_to_advance_without_ineligibility_penalty() -> None:
+    profile = _Profile(range_inches=18, attacks=3, skill=3, strength=4, damage=1)
+    profile.name = "assault carbine"
+    profile.abilities = ["ASSAULT"]
+    assault_unit = _Unit("unit:assault", wargear=[_Wargear("ranged", profile)])
+    target = _Unit("target:screen", wounds=5, position=(15.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([assault_unit], [target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    unit_task = plan["unit_tasks"]["unit:assault"]
+    movement_task = plan["movement_plan"]["unit_positioning_tasks"]["unit:assault"]
+    fire_assignment = plan["shooting_plan"]["unit_fire_assignments"]["unit:assault"]
+
+    assert "advance" not in unit_task["forbidden_movement_actions"]
+    assert movement_task["avoid_becoming_shooting_ineligible"] is False
+    assert fire_assignment["metadata"]["shooting_can_advance"] is True
+
+
+def test_trigger_band_planner_rewards_heavy_stationary_posture_when_target_is_viable() -> None:
+    profile = _Profile(range_inches=36, attacks=2, skill=4, strength=9, damage=3)
+    profile.name = "heavy cannon"
+    profile.abilities = ["HEAVY"]
+    heavy_unit = _Unit("unit:heavy", wargear=[_Wargear("ranged", profile)])
+    target = _Unit("target:heavy", wounds=9, toughness=8, position=(20.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([heavy_unit], [target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    movement_task = plan["movement_plan"]["unit_positioning_tasks"]["unit:heavy"]
+    fire_assignment = plan["shooting_plan"]["unit_fire_assignments"]["unit:heavy"]
+
+    assert movement_task["desired_action"] == "stationary"
+    assert movement_task["metadata"]["shooting_requires_stationary"] is True
+    assert fire_assignment["requires_stationary"] is True
+    assert "stationary_shooting_bonus" in fire_assignment["metadata"]["trigger_band_kinds"]
+
+
 def test_commander_context_attaches_to_unit_scoped_decision() -> None:
     game, player, unit = _build_game()
     request = _yes_no_request(player.id, unit.id)

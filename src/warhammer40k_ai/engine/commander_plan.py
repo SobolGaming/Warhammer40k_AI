@@ -957,8 +957,8 @@ def _weapon_mode_matches(wargear: object, mode: str) -> bool:
     return str(getattr(wargear, "type", "") or "").strip().lower() == str(mode)
 
 
-def _iter_weapon_profiles(unit: object, mode: str) -> list[object]:
-    profiles: list[object] = []
+def _iter_weapon_profile_entries(unit: object, mode: str) -> list[tuple[object, str, object]]:
+    entries: list[tuple[object, str, object]] = []
     for model in list(getattr(unit, "models", []) or []):
         if not _alive(model):
             continue
@@ -967,10 +967,188 @@ def _iter_weapon_profiles(unit: object, mode: str) -> list[object]:
                 continue
             wargear_profiles = getattr(wargear, "profiles", {}) or {}
             if isinstance(wargear_profiles, dict):
-                profiles.extend(list(wargear_profiles.values()))
+                for profile_name, profile in sorted(wargear_profiles.items(), key=lambda item: str(item[0])):
+                    if profile is not None:
+                        entries.append((wargear, str(profile_name), profile))
             else:
-                profiles.extend(list(wargear_profiles or []))
-    return profiles
+                for profile in list(wargear_profiles or []):
+                    if profile is not None:
+                        entries.append((wargear, str(getattr(profile, "name", "") or ""), profile))
+    return entries
+
+
+def _iter_weapon_profiles(unit: object, mode: str) -> list[object]:
+    return [profile for _wargear, _profile_name, profile in _iter_weapon_profile_entries(unit, mode)]
+
+
+def _profile_text_blob(unit: object, wargear: object, profile_name: str, profile: object) -> str:
+    del unit
+    parts: list[str] = [
+        str(getattr(wargear, "name", "") or getattr(wargear, "id", "") or ""),
+        str(getattr(wargear, "type", "") or ""),
+        str(profile_name or ""),
+        str(getattr(profile, "name", "") or ""),
+        str(getattr(profile, "type", "") or ""),
+    ]
+    for source in (wargear, profile):
+        for attr_name in ("keywords", "faction_keywords", "abilities", "special_rules", "metadata"):
+            value = getattr(source, attr_name, None)
+            if isinstance(value, dict):
+                parts.extend(str(item) for pair in value.items() for item in pair)
+            elif isinstance(value, (list, tuple, set)):
+                parts.extend(str(item) for item in value)
+            elif value is not None:
+                parts.append(str(value))
+    return " ".join(parts).lower()
+
+
+def _profile_range_inches(profile: object) -> float:
+    profile_range = getattr(profile, "range", None)
+    range_max = getattr(profile_range, "max", None)
+    if range_max is None:
+        range_max = getattr(profile, "range_inches", None)
+    return _floatish(range_max, 0.0)
+
+
+def _profile_identifier(unit: object, wargear: object, profile_name: str, profile: object) -> str:
+    profile_id = str(getattr(profile, "id", "") or getattr(profile, "_id", "") or "")
+    if profile_id:
+        return profile_id
+    return ":".join(
+        part
+        for part in (
+            _entity_id(unit),
+            str(getattr(wargear, "id", "") or getattr(wargear, "_id", "") or getattr(wargear, "name", "") or ""),
+            str(profile_name or getattr(profile, "name", "") or ""),
+        )
+        if part
+    )
+
+
+def _weapon_trigger_bands(unit: object) -> list[WeaponTriggerBand]:
+    bands: list[WeaponTriggerBand] = []
+    for wargear, profile_name, profile in _iter_weapon_profile_entries(unit, "ranged"):
+        text = _profile_text_blob(unit, wargear, profile_name, profile)
+        max_range = _profile_range_inches(profile)
+        if max_range <= 0.0:
+            continue
+        profile_id = _profile_identifier(unit, wargear, profile_name, profile)
+        damage = max(0.0, _floatish(getattr(profile, "damage", None), 0.0))
+        attacks = max(0.0, _floatish(getattr(profile, "attacks", None), 0.0))
+        half_range = max_range / 2.0
+        if "melta" in text:
+            bands.append(
+                WeaponTriggerBand(
+                    weapon_profile_id=profile_id,
+                    trigger_kind="melta_half_range_damage_bonus",
+                    range_threshold_inches=half_range,
+                    value_delta=max(0.5, damage * 0.5),
+                )
+            )
+        if "rapid fire" in text or "rapid_fire" in text:
+            bands.append(
+                WeaponTriggerBand(
+                    weapon_profile_id=profile_id,
+                    trigger_kind="rapid_fire_half_range_extra_attacks",
+                    range_threshold_inches=half_range,
+                    value_delta=max(0.4, attacks * 0.35),
+                )
+            )
+        if "assault" in text:
+            bands.append(
+                WeaponTriggerBand(
+                    weapon_profile_id=profile_id,
+                    trigger_kind="advance_and_shoot_enabled",
+                    range_threshold_inches=max_range,
+                    value_delta=0.45,
+                )
+            )
+        if "heavy" in text:
+            bands.append(
+                WeaponTriggerBand(
+                    weapon_profile_id=profile_id,
+                    trigger_kind="stationary_shooting_bonus",
+                    range_threshold_inches=max_range,
+                    value_delta=0.35,
+                    requires_stationary=True,
+                )
+            )
+        if "torrent" in text:
+            bands.append(
+                WeaponTriggerBand(
+                    weapon_profile_id=profile_id,
+                    trigger_kind="torrent_auto_hit_close_pressure",
+                    range_threshold_inches=max_range,
+                    value_delta=0.5,
+                )
+            )
+        if "pistol" in text:
+            bands.append(
+                WeaponTriggerBand(
+                    weapon_profile_id=profile_id,
+                    trigger_kind="pistol_engaged_shooting_relevance",
+                    range_threshold_inches=max_range,
+                    value_delta=0.25,
+                )
+            )
+    return sorted(
+        bands,
+        key=lambda band: (str(band.weapon_profile_id), str(band.trigger_kind), float(band.range_threshold_inches)),
+    )
+
+
+def _object_text_blob(*sources: object) -> str:
+    parts: list[str] = []
+    for source in sources:
+        parts.extend(
+            [
+                str(_entity_id(source)),
+                str(getattr(source, "name", "") or ""),
+                str(getattr(source, "id", "") or getattr(source, "_id", "") or ""),
+            ]
+        )
+        for attr_name in ("keywords", "faction_keywords", "abilities", "special_rules", "metadata"):
+            value = getattr(source, attr_name, None)
+            if isinstance(value, dict):
+                parts.extend(str(item) for pair in value.items() for item in pair)
+            elif isinstance(value, (list, tuple, set)):
+                parts.extend(str(item) for item in value)
+            elif value is not None:
+                parts.append(str(value))
+    return " ".join(parts).lower()
+
+
+def _unit_ability_trigger_metadata(unit: object) -> dict[str, bool]:
+    text = _object_text_blob(unit)
+    return {
+        "advance_and_charge": bool("advance and charge" in text or "advance-and-charge" in text),
+        "fall_back_and_shoot": bool("fall back and shoot" in text or "fallback and shoot" in text),
+    }
+
+
+def _trigger_band_summary(trigger_bands: list[WeaponTriggerBand]) -> dict[str, Any]:
+    kinds = _sorted_strings([band.trigger_kind for band in list(trigger_bands or [])])
+    half_range_value = sum(
+        float(band.value_delta)
+        for band in list(trigger_bands or [])
+        if str(band.trigger_kind) in {"melta_half_range_damage_bonus", "rapid_fire_half_range_extra_attacks"}
+    )
+    stationary_value = sum(
+        float(band.value_delta)
+        for band in list(trigger_bands or [])
+        if bool(band.requires_stationary) or str(band.trigger_kind) == "stationary_shooting_bonus"
+    )
+    return {
+        "trigger_band_count": int(len(trigger_bands or [])),
+        "trigger_band_kinds": kinds,
+        "has_half_range_trigger": bool(half_range_value > 0.0),
+        "half_range_trigger_value": float(half_range_value),
+        "has_assault_trigger": "advance_and_shoot_enabled" in kinds,
+        "has_heavy_stationary_trigger": bool(stationary_value > 0.0),
+        "stationary_trigger_value": float(stationary_value),
+        "has_torrent_trigger": "torrent_auto_hit_close_pressure" in kinds,
+        "has_pistol_trigger": "pistol_engaged_shooting_relevance" in kinds,
+    }
 
 
 def _wound_probability(strength: float, toughness: float) -> float:
@@ -1030,11 +1208,7 @@ def _unit_expected_damage(unit: object, target_unit: object | None, mode: str) -
 def _unit_max_ranged_range(unit: object) -> float:
     ranges: list[float] = []
     for profile in _iter_weapon_profiles(unit, "ranged"):
-        profile_range = getattr(profile, "range", None)
-        range_max = getattr(profile_range, "max", None)
-        if range_max is None:
-            range_max = getattr(profile, "range_inches", None)
-        ranges.append(_floatish(range_max, 0.0))
+        ranges.append(_profile_range_inches(profile))
     return float(max(ranges or [0.0]))
 
 
@@ -1135,6 +1309,9 @@ def _commander_unit_capability(
     movement = _unit_numeric_estimate(unit, "movement", 6.0)
     shooting_capability = _unit_expected_damage(unit, None, "ranged")
     melee_capability = _unit_expected_damage(unit, None, "melee")
+    trigger_bands = _weapon_trigger_bands(unit)
+    trigger_summary = _trigger_band_summary(trigger_bands)
+    ability_triggers = _unit_ability_trigger_metadata(unit)
     return CommanderUnitCapability(
         unit_id=unit_id,
         shooting_capability=shooting_capability,
@@ -1151,6 +1328,9 @@ def _commander_unit_capability(
             "ranged_profile_count": int(len(_iter_weapon_profiles(unit, "ranged"))),
             "melee_profile_count": int(len(_iter_weapon_profiles(unit, "melee"))),
             "tier2_task_type": str(getattr(task, "task_type", "") or ""),
+            "weapon_trigger_bands": [band.to_dict() for band in trigger_bands],
+            **trigger_summary,
+            **ability_triggers,
         },
     )
 
@@ -1166,6 +1346,8 @@ def _commander_unit_target_analysis(
     distance = _unit_distance_estimate(unit, target_unit)
     max_range = _unit_max_ranged_range(unit)
     half_range = max_range / 2.0 if max_range > 0.0 else 0.0
+    trigger_bands = _weapon_trigger_bands(unit)
+    trigger_summary = _trigger_band_summary(trigger_bands)
     shooting_damage = _unit_expected_damage(unit, target_unit, "ranged")
     melee_damage = _unit_expected_damage(unit, target_unit, "melee")
     movement_to_los = 0.0
@@ -1174,6 +1356,16 @@ def _commander_unit_target_analysis(
         movement_to_los = _clamp((movement + max_range - distance + 1.0) / max(1.0, max_range))
     if half_range > 0.0:
         movement_to_half_range = _clamp((movement + half_range - distance + 1.0) / max(1.0, half_range))
+    trigger_half_range_value = float(trigger_summary.get("half_range_trigger_value", 0.0) or 0.0)
+    trigger_stationary_value = float(trigger_summary.get("stationary_trigger_value", 0.0) or 0.0)
+    trigger_reachable_value = trigger_half_range_value * movement_to_half_range
+    if max_range > 0.0 and distance <= max_range:
+        trigger_reachable_value += trigger_stationary_value
+        if bool(trigger_summary.get("has_torrent_trigger", False)):
+            trigger_reachable_value += 0.25
+        if bool(trigger_summary.get("has_pistol_trigger", False)):
+            trigger_reachable_value += 0.1
+    shooting_damage = float(shooting_damage + trigger_reachable_value * 0.25)
     charge_feasibility = 0.0
     if melee_damage > 0.0:
         charge_feasibility = _clamp((movement + 7.0 - distance + 6.0) / 12.0)
@@ -1181,8 +1373,9 @@ def _commander_unit_target_analysis(
         shooting_damage
         + melee_damage
         + movement_to_los * 0.25
-        + movement_to_half_range * 0.25
+        + movement_to_half_range * (0.25 + min(0.35, trigger_half_range_value * 0.05))
         + charge_feasibility * 0.5
+        + trigger_reachable_value * 0.2
         + target_analysis.threat_score * 0.05
     )
     return CommanderUnitTargetAnalysis(
@@ -1197,6 +1390,9 @@ def _commander_unit_target_analysis(
         metadata={
             "distance_estimate_inches": distance,
             "max_ranged_range_inches": max_range,
+            "weapon_trigger_bands": [band.to_dict() for band in trigger_bands],
+            "trigger_reachable_value": float(trigger_reachable_value),
+            **trigger_summary,
         },
     )
 
@@ -1558,6 +1754,8 @@ def _unit_battle_task(
     shooting_intent: str,
     charge_intent: str,
     fight_intent: str,
+    shooting_can_advance: bool = False,
+    desired_weapon_bands: dict[str, float] | None = None,
 ) -> UnitBattleTask:
     allowed_actions = [
         MOVEMENT_ACTION_ADVANCE,
@@ -1565,7 +1763,7 @@ def _unit_battle_task(
         MOVEMENT_ACTION_NORMAL_MOVE,
         MOVEMENT_ACTION_STATIONARY,
     ]
-    forbidden_actions = [MOVEMENT_ACTION_ADVANCE] if role == ROLE_SHOOTING_FIRST else []
+    forbidden_actions = [MOVEMENT_ACTION_ADVANCE] if role == ROLE_SHOOTING_FIRST and not shooting_can_advance else []
     return UnitBattleTask(
         unit_id=task.unit_id,
         role=role,
@@ -1577,13 +1775,14 @@ def _unit_battle_task(
         fight_intent=fight_intent,
         allowed_movement_actions=allowed_actions,
         forbidden_movement_actions=forbidden_actions,
-        desired_weapon_bands={},
+        desired_weapon_bands=dict(desired_weapon_bands or {}),
         required_position_features=[],
         risk_budget=_risk_budget_for_tier(task.compute_tier),
         compute_tier=task.compute_tier,
         metadata={
             "assignment_source": "greedy_commander_assignment",
             "tier2_task_type": task.task_type,
+            "shooting_can_advance": bool(shooting_can_advance),
         },
     )
 
@@ -1787,6 +1986,23 @@ def build_battle_round_plan(
             shooting_intent = "skip_for_charge"
         charge_intent = "planned_charge" if charge_primary_target_id else "opportunistic"
         fight_intent = "planned_fight" if charge_primary_target_id else "opportunistic"
+        shooting_metadata = dict(getattr(shooting_entry, "metadata", {}) or {}) if shooting_entry is not None else {}
+        shooting_trigger_bands = [
+            dict(band)
+            for band in list(shooting_metadata.get("weapon_trigger_bands", []) or [])
+            if isinstance(band, dict)
+        ]
+        shooting_can_advance = bool(shooting_metadata.get("has_assault_trigger", False))
+        shooting_requires_stationary = bool(
+            shooting_metadata.get("has_heavy_stationary_trigger", False)
+            and float(shooting_metadata.get("distance_estimate_inches", 0.0) or 0.0)
+            <= float(shooting_metadata.get("max_ranged_range_inches", 0.0) or 0.0)
+        )
+        desired_weapon_bands = {
+            str(band.get("trigger_kind", "")): float(band.get("value_delta", 0.0) or 0.0)
+            for band in shooting_trigger_bands
+            if str(band.get("trigger_kind", "") or "")
+        }
         battle_task = _unit_battle_task(
             task,
             role=role,
@@ -1795,6 +2011,8 @@ def build_battle_round_plan(
             shooting_intent=shooting_intent,
             charge_intent=charge_intent,
             fight_intent=fight_intent,
+            shooting_can_advance=shooting_can_advance,
+            desired_weapon_bands=desired_weapon_bands,
         )
         unit_tasks[str(unit_id)] = battle_task
         expected_damage_by_target = {
@@ -1805,7 +2023,27 @@ def build_battle_round_plan(
         desired_range_bands: list[RangeBand] = []
         if shooting_entry is not None:
             max_range = float(dict(shooting_entry.metadata or {}).get("max_ranged_range_inches", 0.0) or 0.0)
-            if max_range > 0.0:
+            half_range_trigger_bands = [
+                band
+                for band in shooting_trigger_bands
+                if str(band.get("trigger_kind", "")) in {
+                    "melta_half_range_damage_bonus",
+                    "rapid_fire_half_range_extra_attacks",
+                }
+            ]
+            if half_range_trigger_bands:
+                for band in half_range_trigger_bands:
+                    desired_range_bands.append(
+                        RangeBand(
+                            target_unit_id=str(shooting_entry.target_unit_id),
+                            minimum_inches=0.0,
+                            maximum_inches=float(band.get("range_threshold_inches", 0.0) or 0.0),
+                            trigger_kind=str(band.get("trigger_kind", "") or "half_range_trigger"),
+                            priority=float(shooting_entry.movement_to_half_range_feasibility)
+                            + min(1.0, float(band.get("value_delta", 0.0) or 0.0) / 4.0),
+                        )
+                    )
+            elif max_range > 0.0:
                 desired_range_bands.append(
                     RangeBand(
                         target_unit_id=str(shooting_entry.target_unit_id),
@@ -1817,11 +2055,21 @@ def build_battle_round_plan(
                 )
         requires_half_range = bool(
             shooting_entry is not None
-            and float(shooting_entry.movement_to_half_range_feasibility or 0.0) >= 0.75
+            and (
+                (
+                    bool(shooting_metadata.get("has_half_range_trigger", False))
+                    and float(shooting_entry.movement_to_half_range_feasibility or 0.0) >= 0.5
+                )
+                or float(shooting_entry.movement_to_half_range_feasibility or 0.0) >= 0.75
+            )
         )
         positioning_tasks[str(unit_id)] = UnitPositioningTask(
             unit_id=str(unit_id),
-            desired_action=MOVEMENT_ACTION_ADVANCE if intentionally_skip_shooting else MOVEMENT_ACTION_NORMAL_MOVE,
+            desired_action=(
+                MOVEMENT_ACTION_ADVANCE
+                if intentionally_skip_shooting
+                else MOVEMENT_ACTION_STATIONARY if shooting_requires_stationary else MOVEMENT_ACTION_NORMAL_MOVE
+            ),
             target_regions=_regions_from_task(task),
             required_los_to_unit_ids=(
                 [fire_primary_target_id]
@@ -1829,12 +2077,15 @@ def build_battle_round_plan(
                 else []
             ),
             desired_range_bands=desired_range_bands,
-            avoid_becoming_shooting_ineligible=bool(not intentionally_skip_shooting),
+            avoid_becoming_shooting_ineligible=bool(not intentionally_skip_shooting and not shooting_can_advance),
             intentionally_accept_shooting_ineligible=intentionally_skip_shooting,
             charge_staging_target_unit_id=charge_primary_target_id if intentionally_skip_shooting else None,
             metadata={
                 "commander_role": role,
                 "source": "greedy_commander_assignment",
+                "shooting_can_advance": bool(shooting_can_advance),
+                "shooting_requires_stationary": bool(shooting_requires_stationary),
+                "weapon_trigger_band_count": int(len(shooting_trigger_bands)),
             },
         )
         fire_assignments[str(unit_id)] = UnitFireAssignment(
@@ -1845,11 +2096,16 @@ def build_battle_round_plan(
             expected_damage_by_target=expected_damage_by_target,
             requires_los=bool(fire_primary_target_id and not intentionally_skip_shooting),
             requires_half_range=requires_half_range,
-            requires_stationary=False,
+            requires_stationary=shooting_requires_stationary,
             allows_split_fire=True,
             metadata={
                 "commander_role": role,
                 "source": "greedy_commander_assignment",
+                "shooting_can_advance": bool(shooting_can_advance),
+                "weapon_trigger_bands": shooting_trigger_bands,
+                "trigger_band_kinds": _sorted_strings(
+                    [band.get("trigger_kind", "") for band in shooting_trigger_bands]
+                ),
             },
         )
         charge_assignments[str(unit_id)] = ChargeTargetAssignment(

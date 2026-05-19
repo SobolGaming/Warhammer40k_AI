@@ -106,6 +106,35 @@ analysis input snapshot. It is built with the plan and includes:
 The snapshot is approximate planning metadata only. It does not create legal
 candidates, change masks, validate attacks, or mutate state.
 
+Weapon/ability trigger metadata is included in unit capability and unit-target
+matrix metadata when detected:
+
+- `weapon_trigger_bands`
+- `trigger_band_count`
+- `trigger_band_kinds`
+- `has_half_range_trigger`
+- `half_range_trigger_value`
+- `has_assault_trigger`
+- `has_heavy_stationary_trigger`
+- `stationary_trigger_value`
+- `has_torrent_trigger`
+- `has_pistol_trigger`
+- `advance_and_charge`
+- `fall_back_and_shoot`
+
+Supported trigger kinds are:
+
+- `melta_half_range_damage_bonus`
+- `rapid_fire_half_range_extra_attacks`
+- `advance_and_shoot_enabled`
+- `stationary_shooting_bonus`
+- `torrent_auto_hit_close_pressure`
+- `pistol_engaged_shooting_relevance`
+
+These are planning/scoring hints only. They do not make a unit eligible to
+shoot, Advance, charge, fall back, or fight; the engine validators remain
+authoritative.
+
 `UnitBattleTask` is the cross-phase unit assignment:
 
 - `unit_id`
@@ -221,6 +250,10 @@ assignments without making those assignments authoritative:
 - movement tasks expose future-phase intent such as required LoS,
   generic half-range bands, avoiding shooting ineligibility for shooters, and
   intentionally accepting shooting ineligibility for melee charge staging.
+- trigger-band planning can replace generic half-range movement hints with
+  Melta/Rapid Fire trigger bands, permit Assault shooters to Advance without a
+  commander ineligibility penalty, and prefer stationary posture for Heavy
+  profiles when the planned target is already viable.
 
 These assignments are planning metadata. Rankers are not required to consume
 them yet, and the engine remains the only source of legal candidates, masks,

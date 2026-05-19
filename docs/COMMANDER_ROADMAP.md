@@ -431,9 +431,28 @@ Implemented behavior:
 
 ### PR 11 - Weapon And Ability Trigger-Band Planner
 
-Model cross-phase trigger bands such as Melta half range, Rapid Fire,
-Assault, Heavy, Torrent, Pistol, advance-and-charge, fall-back-and-shoot, and
-once-per-battle timing metadata.
+Model cross-phase trigger bands that affect commander analysis, movement
+intent, and fire assignment metadata.
+
+Implemented behavior:
+
+- ranged profile analysis extracts trigger bands for Melta half range, Rapid
+  Fire half range, Assault advance-and-shoot, Heavy stationary benefit,
+  Torrent, and Pistol.
+- unit capability metadata exposes trigger-band counts, kinds, half-range
+  value, Assault/Heavy/Torrent/Pistol flags, and simple unit-level
+  advance-and-charge / fall-back-and-shoot flags.
+- unit-target matrix metadata carries trigger bands and a bounded reachable
+  trigger value.
+- Melta/Rapid Fire trigger bands produce explicit desired movement range bands
+  instead of only a generic half-range hint.
+- Assault shooting assignments no longer forbid Advance solely because the unit
+  is shooting-first, and movement intent does not mark Advance as shooting
+  ineligible for that profile metadata.
+- Heavy shooting assignments can prefer stationary posture when the planned
+  target is already viable.
+- trigger metadata remains planner/scoring metadata only; engine legality and
+  validation still decide whether a shot, Advance, charge, or fight is legal.
 
 ### PR 12 - General/Commander/Deployment Telemetry And Audit Tooling
 
