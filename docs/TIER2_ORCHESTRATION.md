@@ -37,7 +37,7 @@ Attachment rules:
 
 Current baseline:
 - Deterministic heuristic assignment by Tier-1 unit priority tiers.
-- `BattleRoundPlan` derives cross-phase unit tasks and movement/shooting/charge/fight assignment shells from this bundle.
+- `BattleRoundPlan` derives cross-phase unit tasks and greedy movement/shooting/charge/fight assignments from this bundle plus the commander analysis snapshot.
 - Dirty flags and phase reports are event-driven telemetry only; they do not mutate plans or legality.
 - Time budgets continue to derive from decision type + compute tier after orchestration context has been attached.
 

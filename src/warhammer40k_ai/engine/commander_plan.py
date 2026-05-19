@@ -38,6 +38,11 @@ ROLE_SACRIFICE = "sacrifice"
 ROLE_TRADE = "trade"
 ROLE_DENY = "deny"
 ROLE_PROTECT = "protect"
+ROLE_SHOOTING_FIRST = "shooting_first"
+ROLE_MELEE_FIRST = "melee_first"
+ROLE_MIXED = "mixed"
+ROLE_SCORER = "scorer"
+ROLE_PRESERVE = "preserve"
 
 MOVEMENT_ACTION_STATIONARY = "stationary"
 MOVEMENT_ACTION_NORMAL_MOVE = "normal_move"
@@ -47,6 +52,8 @@ MOVEMENT_ACTION_FALL_BACK = "fall_back"
 COMMANDER_ANALYSIS_MAX_TARGETS = 6
 COMMANDER_ANALYSIS_MAX_UNITS = 24
 COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT = 4
+COMMANDER_ASSIGNMENT_KILL_DAMAGE_FRACTION = 0.85
+COMMANDER_ASSIGNMENT_OVERKILL_LIMIT = 1.5
 
 
 def _sorted_strings(values: list[object] | tuple[object, ...] | set[object] | None) -> list[str]:
@@ -1209,6 +1216,252 @@ def _build_commander_analysis_snapshot(
     )
 
 
+def _target_assignment_score(target: CommanderTargetAnalysis) -> float:
+    return float(target.threat_score + target.scoring_value + target.denial_value)
+
+
+def _entry_target_assignment_score(
+    entry: CommanderUnitTargetAnalysis,
+    target_by_id: dict[str, CommanderTargetAnalysis],
+) -> float:
+    target = target_by_id.get(str(entry.target_unit_id))
+    return _target_assignment_score(target) if target is not None else 0.0
+
+
+def _target_wounds_from_analysis(target: CommanderTargetAnalysis | None) -> float:
+    if target is None:
+        return 0.0
+    return float(target.wounds_estimate or 0.0)
+
+
+def _ranked_targets_from_analysis(snapshot: CommanderAnalysisSnapshot) -> list[CommanderTargetAnalysis]:
+    return sorted(
+        list(snapshot.target_analysis or []),
+        key=lambda target: (-_target_assignment_score(target), str(target.target_unit_id)),
+    )
+
+
+def _matrix_entries_by_unit(
+    snapshot: CommanderAnalysisSnapshot,
+) -> dict[str, list[CommanderUnitTargetAnalysis]]:
+    by_unit: dict[str, list[CommanderUnitTargetAnalysis]] = {}
+    for entry in list(snapshot.unit_target_matrix or []):
+        by_unit.setdefault(str(entry.unit_id), []).append(entry)
+    return {
+        unit_id: sorted(
+            entries,
+            key=lambda entry: (-float(entry.priority_score), str(entry.target_unit_id)),
+        )
+        for unit_id, entries in sorted(by_unit.items(), key=lambda item: str(item[0]))
+    }
+
+
+def _target_analysis_by_id(
+    snapshot: CommanderAnalysisSnapshot,
+) -> dict[str, CommanderTargetAnalysis]:
+    return {
+        str(target.target_unit_id): target
+        for target in list(snapshot.target_analysis or [])
+    }
+
+
+def _unit_commander_role(
+    task: Tier2Task,
+    capability: CommanderUnitCapability | None,
+) -> str:
+    task_type = str(task.task_type or "").strip().upper()
+    shooting = float(getattr(capability, "shooting_capability", 0.0) or 0.0)
+    melee = float(getattr(capability, "melee_capability", 0.0) or 0.0)
+    if task_type == TASK_SCORE and shooting <= 0.0 and melee <= 0.0:
+        return ROLE_SCORER
+    if task_type == TASK_SCREEN and shooting <= 0.0 and melee <= 0.0:
+        return ROLE_SCREEN
+    if task_type == TASK_PROTECT and shooting <= 0.0 and melee <= 0.0:
+        return ROLE_PRESERVE
+
+    if task_type in {TASK_TRADE, TASK_DENY, TASK_BAIT} and melee > 0.0:
+        return ROLE_MELEE_FIRST
+    if shooting > 0.0 and melee > 0.0:
+        if shooting >= melee * 1.2:
+            return ROLE_SHOOTING_FIRST
+        if melee >= shooting * 1.2:
+            return ROLE_MELEE_FIRST
+        return ROLE_MIXED
+    if shooting > 0.0:
+        return ROLE_SHOOTING_FIRST
+    if melee > 0.0:
+        return ROLE_MELEE_FIRST
+    if task_type == TASK_STAGE:
+        return ROLE_PRESERVE
+    return _task_role(task.task_type)
+
+
+def _assignment_target_backups(
+    entries: list[CommanderUnitTargetAnalysis],
+    ranked_target_ids: list[str],
+    primary_target_id: str | None,
+) -> list[str]:
+    candidate_ids = [
+        str(entry.target_unit_id)
+        for entry in sorted(
+            entries,
+            key=lambda entry: (-float(entry.priority_score), str(entry.target_unit_id)),
+        )
+    ]
+    candidate_ids.extend(list(ranked_target_ids or []))
+    return [
+        target_id
+        for target_id in _sorted_strings(candidate_ids)
+        if target_id and target_id != str(primary_target_id or "")
+    ]
+
+
+def _best_melee_target_assignment(
+    entries: list[CommanderUnitTargetAnalysis],
+    target_by_id: dict[str, CommanderTargetAnalysis],
+) -> CommanderUnitTargetAnalysis | None:
+    candidates = [
+        entry
+        for entry in list(entries or [])
+        if float(entry.expected_melee_damage or 0.0) > 0.0
+    ]
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda entry: (
+            -float(entry.expected_melee_damage),
+            -float(entry.charge_feasibility),
+            -_entry_target_assignment_score(entry, target_by_id),
+            str(entry.target_unit_id),
+        ),
+    )[0]
+
+
+def _shooting_entry_score(
+    entry: CommanderUnitTargetAnalysis,
+    target: CommanderTargetAnalysis | None,
+    committed_damage: dict[str, float],
+) -> float:
+    target_id = str(entry.target_unit_id)
+    target_score = _target_assignment_score(target) if target is not None else 0.0
+    wounds = max(1.0, _target_wounds_from_analysis(target))
+    commitment_pressure = float(committed_damage.get(target_id, 0.0) or 0.0) / wounds
+    return float(
+        target_score
+        + float(entry.expected_shooting_damage) * 1.5
+        + float(entry.movement_to_los_feasibility) * 0.25
+        + float(entry.movement_to_half_range_feasibility) * 0.1
+        - commitment_pressure * 2.0
+    )
+
+
+def _choose_shooting_assignment(
+    *,
+    unit_id: str,
+    entries: list[CommanderUnitTargetAnalysis],
+    target_by_id: dict[str, CommanderTargetAnalysis],
+    committed_damage: dict[str, float],
+) -> CommanderUnitTargetAnalysis | None:
+    candidates: list[CommanderUnitTargetAnalysis] = []
+    for entry in list(entries or []):
+        damage = float(entry.expected_shooting_damage or 0.0)
+        if damage <= 0.0:
+            continue
+        target = target_by_id.get(str(entry.target_unit_id))
+        wounds = max(1.0, _target_wounds_from_analysis(target))
+        desired_damage = max(1.0, wounds * COMMANDER_ASSIGNMENT_KILL_DAMAGE_FRACTION)
+        max_commitment = desired_damage + COMMANDER_ASSIGNMENT_OVERKILL_LIMIT
+        if float(committed_damage.get(str(entry.target_unit_id), 0.0) or 0.0) >= max_commitment:
+            continue
+        candidates.append(entry)
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda entry: (
+            -_shooting_entry_score(
+                entry,
+                target_by_id.get(str(entry.target_unit_id)),
+                committed_damage,
+            ),
+            str(unit_id),
+            str(entry.target_unit_id),
+        ),
+    )[0]
+
+
+def _build_greedy_commander_assignments(
+    *,
+    snapshot: CommanderAnalysisSnapshot,
+    tier2_bundle: Tier2TaskBundle,
+) -> dict[str, Any]:
+    ranked_targets = _ranked_targets_from_analysis(snapshot)
+    ranked_target_ids = [str(target.target_unit_id) for target in ranked_targets]
+    target_by_id = _target_analysis_by_id(snapshot)
+    matrix_by_unit = _matrix_entries_by_unit(snapshot)
+    unit_capabilities = dict(snapshot.unit_capabilities or {})
+    unit_roles: dict[str, str] = {}
+    shooting_assignments: dict[str, CommanderUnitTargetAnalysis] = {}
+    charge_assignments: dict[str, CommanderUnitTargetAnalysis] = {}
+    committed_damage: dict[str, float] = {target_id: 0.0 for target_id in ranked_target_ids}
+    target_assigned_units: dict[str, list[str]] = {target_id: [] for target_id in ranked_target_ids}
+
+    for unit_id, task in sorted(tier2_bundle.tasks_by_unit_id.items(), key=lambda item: str(item[0])):
+        capability = unit_capabilities.get(str(unit_id))
+        unit_roles[str(unit_id)] = _unit_commander_role(task, capability)
+
+    shooting_unit_ids = [
+        unit_id
+        for unit_id, role in sorted(unit_roles.items(), key=lambda item: str(item[0]))
+        if role in {ROLE_SHOOTING_FIRST, ROLE_MIXED}
+        and float(getattr(unit_capabilities.get(unit_id), "shooting_capability", 0.0) or 0.0) > 0.0
+    ]
+    shooting_unit_ids.sort(
+        key=lambda unit_id: (
+            -float(getattr(unit_capabilities.get(unit_id), "shooting_capability", 0.0) or 0.0),
+            str(unit_id),
+        )
+    )
+
+    for unit_id in shooting_unit_ids:
+        chosen = _choose_shooting_assignment(
+            unit_id=unit_id,
+            entries=matrix_by_unit.get(unit_id, []),
+            target_by_id=target_by_id,
+            committed_damage=committed_damage,
+        )
+        if chosen is None:
+            continue
+        target_id = str(chosen.target_unit_id)
+        shooting_assignments[unit_id] = chosen
+        committed_damage[target_id] = float(committed_damage.get(target_id, 0.0) or 0.0) + float(
+            chosen.expected_shooting_damage or 0.0
+        )
+        target_assigned_units.setdefault(target_id, []).append(unit_id)
+
+    for unit_id, role in sorted(unit_roles.items(), key=lambda item: str(item[0])):
+        if role not in {ROLE_MELEE_FIRST, ROLE_MIXED}:
+            continue
+        if role == ROLE_MIXED and unit_id in shooting_assignments:
+            continue
+        chosen = _best_melee_target_assignment(matrix_by_unit.get(unit_id, []), target_by_id)
+        if chosen is not None:
+            charge_assignments[unit_id] = chosen
+
+    return {
+        "ranked_target_ids": ranked_target_ids,
+        "target_by_id": target_by_id,
+        "matrix_by_unit": matrix_by_unit,
+        "unit_capabilities": unit_capabilities,
+        "unit_roles": unit_roles,
+        "shooting_assignments": shooting_assignments,
+        "charge_assignments": charge_assignments,
+        "committed_damage": committed_damage,
+        "target_assigned_units": target_assigned_units,
+    }
+
+
 def _task_role(task_type: str) -> str:
     task = str(task_type or "").strip().upper()
     if task == TASK_SCORE:
@@ -1254,36 +1507,39 @@ def _regions_from_task(task: Tier2Task) -> list[PositionRegion]:
 def _unit_battle_task(
     task: Tier2Task,
     *,
-    priority_target_ids: list[str],
+    role: str,
+    primary_target_unit_id: str | None,
+    backup_target_unit_ids: list[str],
+    shooting_intent: str,
+    charge_intent: str,
+    fight_intent: str,
 ) -> UnitBattleTask:
-    role = _task_role(task.task_type)
-    melee_role = role in {ROLE_TRADE, ROLE_DENY, ROLE_SACRIFICE}
     allowed_actions = [
         MOVEMENT_ACTION_ADVANCE,
         MOVEMENT_ACTION_FALL_BACK,
         MOVEMENT_ACTION_NORMAL_MOVE,
         MOVEMENT_ACTION_STATIONARY,
     ]
+    forbidden_actions = [MOVEMENT_ACTION_ADVANCE] if role == ROLE_SHOOTING_FIRST else []
     return UnitBattleTask(
         unit_id=task.unit_id,
         role=role,
-        primary_target_unit_id=(
-            priority_target_ids[0]
-            if role in {ROLE_KILL, ROLE_TRADE, ROLE_DENY} and priority_target_ids
-            else None
-        ),
-        backup_target_unit_ids=priority_target_ids,
+        primary_target_unit_id=primary_target_unit_id,
+        backup_target_unit_ids=backup_target_unit_ids,
         movement_intent=_movement_intent_label(task),
-        shooting_intent="opportunistic" if not melee_role else "secondary",
-        charge_intent="opportunistic" if not melee_role else "high_priority",
-        fight_intent="opportunistic" if not melee_role else "high_priority",
+        shooting_intent=shooting_intent,
+        charge_intent=charge_intent,
+        fight_intent=fight_intent,
         allowed_movement_actions=allowed_actions,
-        forbidden_movement_actions=[],
+        forbidden_movement_actions=forbidden_actions,
         desired_weapon_bands={},
         required_position_features=[],
         risk_budget=_risk_budget_for_tier(task.compute_tier),
         compute_tier=task.compute_tier,
-        metadata={"tier2_task_type": task.task_type},
+        metadata={
+            "assignment_source": "greedy_commander_assignment",
+            "tier2_task_type": task.task_type,
+        },
     )
 
 
@@ -1306,24 +1562,46 @@ def build_battle_round_plan(
         tier2_bundle=tier2_bundle,
         generation=generation,
     )
-    priority_targets: list[TargetPriority] = []
+    target_analysis_by_id = {
+        str(target.target_unit_id): target
+        for target in list(analysis_snapshot.target_analysis or [])
+    }
     for enemy in enemy_units:
         enemy_id = _entity_id(enemy)
-        if not enemy_id:
-            continue
-        wounds = _unit_wounds_estimate(enemy)
-        priority_targets.append(
-            TargetPriority(
-                target_unit_id=enemy_id,
-                priority_kind="enemy_unit",
-                threat_score=wounds,
-                scoring_value=0.0,
-                denial_value=0.0,
-                metadata={"remaining_wounds_estimate": wounds},
-            )
+        if enemy_id and enemy_id not in target_analysis_by_id:
+            target_analysis_by_id[enemy_id] = _commander_target_analysis(enemy)
+    priority_targets = [
+        TargetPriority(
+            target_unit_id=str(target.target_unit_id),
+            priority_kind="enemy_unit",
+            threat_score=float(target.threat_score),
+            scoring_value=float(target.scoring_value),
+            denial_value=float(target.denial_value),
+            metadata={
+                "objective_control_estimate": float(target.objective_control_estimate),
+                "remaining_wounds_estimate": float(target.wounds_estimate),
+                "source": "commander_analysis_snapshot",
+            },
         )
-    priority_targets.sort(key=lambda target: (-target.threat_score, target.target_unit_id))
+        for target in target_analysis_by_id.values()
+    ]
+    priority_targets.sort(
+        key=lambda target: (
+            -float(target.threat_score + target.scoring_value + target.denial_value),
+            str(target.target_unit_id),
+        )
+    )
     priority_target_ids = [target.target_unit_id for target in priority_targets]
+    greedy_assignments = _build_greedy_commander_assignments(
+        snapshot=analysis_snapshot,
+        tier2_bundle=tier2_bundle,
+    )
+    matrix_by_unit: dict[str, list[CommanderUnitTargetAnalysis]] = dict(greedy_assignments["matrix_by_unit"])
+    unit_roles: dict[str, str] = dict(greedy_assignments["unit_roles"])
+    shooting_assignments: dict[str, CommanderUnitTargetAnalysis] = dict(greedy_assignments["shooting_assignments"])
+    charge_target_assignments: dict[str, CommanderUnitTargetAnalysis] = dict(greedy_assignments["charge_assignments"])
+    committed_damage: dict[str, float] = dict(greedy_assignments["committed_damage"])
+    target_assigned_units: dict[str, list[str]] = dict(greedy_assignments["target_assigned_units"])
 
     unit_tasks: dict[str, UnitBattleTask] = {}
     positioning_tasks: dict[str, UnitPositioningTask] = {}
@@ -1332,52 +1610,117 @@ def build_battle_round_plan(
     fight_assignments: dict[str, FightTargetAssignment] = {}
 
     for unit_id, task in sorted(tier2_bundle.tasks_by_unit_id.items(), key=lambda item: str(item[0])):
-        battle_task = _unit_battle_task(task, priority_target_ids=priority_target_ids)
+        uid = str(unit_id)
+        role = unit_roles.get(uid, _task_role(task.task_type))
+        unit_entries = matrix_by_unit.get(uid, [])
+        shooting_entry = shooting_assignments.get(uid)
+        charge_entry = charge_target_assignments.get(uid)
+        fire_primary_target_id = str(shooting_entry.target_unit_id) if shooting_entry is not None else None
+        charge_primary_target_id = str(charge_entry.target_unit_id) if charge_entry is not None else None
+        primary_target_id = fire_primary_target_id or charge_primary_target_id
+        backup_target_ids = _assignment_target_backups(
+            unit_entries,
+            priority_target_ids,
+            primary_target_id,
+        )
+        intentionally_skip_shooting = bool(role == ROLE_MELEE_FIRST and charge_primary_target_id)
+        shooting_intent = "planned_focus_fire" if fire_primary_target_id else "opportunistic"
+        if intentionally_skip_shooting:
+            shooting_intent = "skip_for_charge"
+        charge_intent = "planned_charge" if charge_primary_target_id else "opportunistic"
+        fight_intent = "planned_fight" if charge_primary_target_id else "opportunistic"
+        battle_task = _unit_battle_task(
+            task,
+            role=role,
+            primary_target_unit_id=primary_target_id,
+            backup_target_unit_ids=backup_target_ids,
+            shooting_intent=shooting_intent,
+            charge_intent=charge_intent,
+            fight_intent=fight_intent,
+        )
         unit_tasks[str(unit_id)] = battle_task
-        role = str(battle_task.role)
-        primary_target_id = battle_task.primary_target_unit_id
-        intentionally_skip_shooting = role in {ROLE_TRADE, ROLE_DENY, ROLE_SACRIFICE}
+        expected_damage_by_target = {
+            str(entry.target_unit_id): float(entry.expected_shooting_damage)
+            for entry in unit_entries
+            if float(entry.expected_shooting_damage or 0.0) > 0.0
+        }
+        desired_range_bands: list[RangeBand] = []
+        if shooting_entry is not None:
+            max_range = float(dict(shooting_entry.metadata or {}).get("max_ranged_range_inches", 0.0) or 0.0)
+            if max_range > 0.0:
+                desired_range_bands.append(
+                    RangeBand(
+                        target_unit_id=str(shooting_entry.target_unit_id),
+                        minimum_inches=0.0,
+                        maximum_inches=max_range / 2.0,
+                        trigger_kind="generic_half_range",
+                        priority=float(shooting_entry.movement_to_half_range_feasibility),
+                    )
+                )
+        requires_half_range = bool(
+            shooting_entry is not None
+            and float(shooting_entry.movement_to_half_range_feasibility or 0.0) >= 0.75
+        )
         positioning_tasks[str(unit_id)] = UnitPositioningTask(
             unit_id=str(unit_id),
-            desired_action=MOVEMENT_ACTION_NORMAL_MOVE,
+            desired_action=MOVEMENT_ACTION_ADVANCE if intentionally_skip_shooting else MOVEMENT_ACTION_NORMAL_MOVE,
             target_regions=_regions_from_task(task),
             required_los_to_unit_ids=(
-                [primary_target_id]
-                if primary_target_id and not intentionally_skip_shooting
+                [fire_primary_target_id]
+                if fire_primary_target_id and not intentionally_skip_shooting
                 else []
             ),
-            desired_range_bands=[],
-            avoid_becoming_shooting_ineligible=not intentionally_skip_shooting,
+            desired_range_bands=desired_range_bands,
+            avoid_becoming_shooting_ineligible=bool(not intentionally_skip_shooting),
             intentionally_accept_shooting_ineligible=intentionally_skip_shooting,
-            charge_staging_target_unit_id=primary_target_id if intentionally_skip_shooting else None,
-            metadata={"source": "tier2_task_bundle"},
+            charge_staging_target_unit_id=charge_primary_target_id if intentionally_skip_shooting else None,
+            metadata={
+                "commander_role": role,
+                "source": "greedy_commander_assignment",
+            },
         )
         fire_assignments[str(unit_id)] = UnitFireAssignment(
             unit_id=str(unit_id),
-            primary_target_unit_id=primary_target_id if not intentionally_skip_shooting else None,
+            primary_target_unit_id=fire_primary_target_id if not intentionally_skip_shooting else None,
             backup_target_unit_ids=battle_task.backup_target_unit_ids,
             preferred_declarations=[],
-            expected_damage_by_target={},
-            requires_los=bool(primary_target_id and not intentionally_skip_shooting),
-            requires_half_range=False,
+            expected_damage_by_target=expected_damage_by_target,
+            requires_los=bool(fire_primary_target_id and not intentionally_skip_shooting),
+            requires_half_range=requires_half_range,
             requires_stationary=False,
             allows_split_fire=True,
-            metadata={"source": "battle_round_plan"},
+            metadata={
+                "commander_role": role,
+                "source": "greedy_commander_assignment",
+            },
         )
         charge_assignments[str(unit_id)] = ChargeTargetAssignment(
             unit_id=str(unit_id),
-            primary_target_unit_id=primary_target_id if intentionally_skip_shooting else None,
+            primary_target_unit_id=charge_primary_target_id,
             backup_target_unit_ids=battle_task.backup_target_unit_ids,
-            desired_charge_probability=0.65 if intentionally_skip_shooting else 0.0,
+            desired_charge_probability=(
+                float(charge_entry.charge_feasibility)
+                if charge_entry is not None
+                else 0.0
+            ),
             intentionally_skip_shooting=intentionally_skip_shooting,
-            metadata={"source": "battle_round_plan"},
+            metadata={
+                "commander_role": role,
+                "source": "greedy_commander_assignment",
+            },
         )
         fight_assignments[str(unit_id)] = FightTargetAssignment(
             unit_id=str(unit_id),
-            primary_target_unit_id=primary_target_id if intentionally_skip_shooting else None,
+            primary_target_unit_id=charge_primary_target_id,
             backup_target_unit_ids=battle_task.backup_target_unit_ids,
-            activation_priority=_risk_budget_for_tier(task.compute_tier),
-            metadata={"source": "battle_round_plan"},
+            activation_priority=float(
+                _risk_budget_for_tier(task.compute_tier)
+                + (float(charge_entry.expected_melee_damage) if charge_entry is not None else 0.0)
+            ),
+            metadata={
+                "commander_role": role,
+                "source": "greedy_commander_assignment",
+            },
         )
 
     target_fire_plans = {
@@ -1385,12 +1728,18 @@ def build_battle_round_plan(
             target_unit_id=target.target_unit_id,
             threat_score=target.threat_score,
             remaining_wounds_estimate=float(target.metadata.get("remaining_wounds_estimate", 0.0) or 0.0),
-            desired_kill_probability=0.0,
-            committed_expected_damage=0.0,
-            committed_kill_probability=0.0,
-            assigned_unit_ids=[],
-            overkill_limit=0.0,
-            metadata={"priority_kind": target.priority_kind},
+            desired_kill_probability=0.75,
+            committed_expected_damage=float(committed_damage.get(str(target.target_unit_id), 0.0) or 0.0),
+            committed_kill_probability=_clamp(
+                float(committed_damage.get(str(target.target_unit_id), 0.0) or 0.0)
+                / max(1.0, float(target.metadata.get("remaining_wounds_estimate", 0.0) or 0.0))
+            ),
+            assigned_unit_ids=target_assigned_units.get(str(target.target_unit_id), []),
+            overkill_limit=COMMANDER_ASSIGNMENT_OVERKILL_LIMIT,
+            metadata={
+                "assignment_source": "greedy_commander_assignment",
+                "priority_kind": target.priority_kind,
+            },
         )
         for target in priority_targets
     }

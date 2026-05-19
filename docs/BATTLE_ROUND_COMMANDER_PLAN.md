@@ -75,7 +75,8 @@ candidates, change masks, validate attacks, or mutate state.
 `UnitBattleTask` is the cross-phase unit assignment:
 
 - `unit_id`
-- `role`
+- `role`: `shooting_first`, `melee_first`, `mixed`, `scorer`, `screen`, or
+  `preserve`
 - `primary_target_unit_id`
 - `backup_target_unit_ids`
 - `movement_intent`
@@ -152,15 +153,37 @@ The first implementation records dirty-flag summaries only. Future executors can
 populate per-unit, per-target, and per-objective reports as they compare planned
 intent with actual execution outcomes.
 
+## Greedy Assignment Baseline
+
+The commander now consumes `metadata.analysis_snapshot` to populate tactical
+assignments without making those assignments authoritative:
+
+- enemy targets are ranked by threat plus scoring and denial value.
+- friendly units are classified from Tier-2 task posture and PR 2 shooting/melee
+  capability analysis.
+- shooting-first and mixed units are greedily assigned to high-priority targets
+  until expected committed damage reaches a kill-damage threshold plus a small
+  overkill allowance.
+- melee-first units receive charge and fight assignments instead of primary fire
+  assignments.
+- movement tasks expose future-phase intent such as required LoS,
+  generic half-range bands, avoiding shooting ineligibility for shooters, and
+  intentionally accepting shooting ineligibility for melee charge staging.
+
+These assignments are planning metadata. Rankers are not required to consume
+them yet, and the engine remains the only source of legal candidates, masks,
+validation, PathWitness artifacts, and state mutation.
+
 ## Current Baseline
 
 The first implementation is deliberately conservative:
 
-- target priorities are deterministic enemy-unit wound estimates.
+- target priorities are deterministic commander threat/scoring/denial estimates.
 - analysis snapshots are deterministic, bounded, and audit-only.
-- unit roles derive from Tier-2 task types.
-- movement tasks mirror Tier-2 target regions and eligibility posture.
-- fire, charge, and fight assignments are serializable intent placeholders.
+- unit roles derive from Tier-2 task types plus capability analysis.
+- movement tasks mirror Tier-2 target regions and commander phase intent.
+- fire, charge, and fight assignments are populated by the greedy commander
+  assignment baseline.
 - dirty flags and phase reports are recorded from engine events.
 - no phase behavior changes consume or clear repair pressure yet.
 

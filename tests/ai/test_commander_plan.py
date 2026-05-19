@@ -29,8 +29,11 @@ class _Profile:
 
 
 class _Wargear:
+    _next_id = 0
+
     def __init__(self, mode: str, profile: _Profile) -> None:
-        self._id = f"wargear:{mode}:{profile.strength}:{profile.damage}:{profile.range.max}"
+        type(self)._next_id += 1
+        self._id = f"wargear:{mode}:{profile.strength}:{profile.damage}:{profile.range.max}:{type(self)._next_id}"
         self.id = self._id
         self.type = mode
         self.profiles = {"default": profile}
@@ -160,6 +163,16 @@ def _build_game() -> tuple[Game, Player, _Unit]:
     player.army.set_player(player)
     opponent.army.set_player(opponent)
     return Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player, opponent]), player, fast_unit
+
+
+def _build_custom_game(friendly_units: list[_Unit], enemy_units: list[_Unit]) -> tuple[Game, Player, Player]:
+    player = Player("P1")
+    opponent = Player("P2")
+    player.army = _Army("army:p1", friendly_units)
+    opponent.army = _Army("army:p2", enemy_units)
+    player.army.set_player(player)
+    opponent.army.set_player(opponent)
+    return Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player, opponent]), player, opponent
 
 
 def _yes_no_request(player_id: str, unit_id: str) -> DecisionRequest:
@@ -300,6 +313,122 @@ def test_commander_analysis_records_melee_capability_and_charge_feasibility() ->
     assert capability["melee_capability"] > 0.0
     assert matrix_entry["expected_melee_damage"] > 0.0
     assert matrix_entry["charge_feasibility"] > 0.0
+
+
+def test_greedy_assignment_focuses_multiple_weak_shooters_on_high_threat_target() -> None:
+    weak_gun = lambda: _Wargear(
+        "ranged",
+        _Profile(range_inches=24, attacks=4, skill=3, strength=5, ap=-1, damage=2),
+    )
+    shooters = [
+        _Unit(f"unit:shooter:{idx}", wargear=[weak_gun()])
+        for idx in range(3)
+    ]
+    heavy_target = _Unit("target:heavy", toughness=8, save=3, wounds=12, position=(12.0, 0.0, 0.0))
+    backup_target = _Unit("target:backup", toughness=4, save=4, wounds=4, position=(14.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game(shooters, [backup_target, heavy_target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    heavy_fire_plan = plan["shooting_plan"]["target_fire_plans"]["target:heavy"]
+    assigned_units = heavy_fire_plan["assigned_unit_ids"]
+
+    assert len(assigned_units) >= 2
+    for unit_id in assigned_units:
+        assert (
+            plan["shooting_plan"]["unit_fire_assignments"][unit_id]["primary_target_unit_id"]
+            == "target:heavy"
+        )
+
+
+def test_greedy_assignment_overkill_guard_redirects_extra_shooters() -> None:
+    strong_gun = lambda: _Wargear(
+        "ranged",
+        _Profile(range_inches=36, attacks=2, skill=3, strength=12, ap=-4, damage=6),
+    )
+    shooters = [
+        _Unit(f"unit:strong:{idx}", wargear=[strong_gun()])
+        for idx in range(2)
+    ]
+    thin_priority_target = _Unit(
+        "target:thin_priority",
+        toughness=12,
+        save=2,
+        wounds=2,
+        objective_control=8,
+        keywords=["VEHICLE"],
+        position=(12.0, 0.0, 0.0),
+    )
+    secondary_target = _Unit(
+        "target:secondary",
+        toughness=4,
+        save=4,
+        wounds=8,
+        position=(16.0, 0.0, 0.0),
+    )
+    game, player, _opponent = _build_custom_game(shooters, [secondary_target, thin_priority_target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    target_fire_plans = plan["shooting_plan"]["target_fire_plans"]
+
+    assert len(target_fire_plans["target:thin_priority"]["assigned_unit_ids"]) == 1
+    assert len(target_fire_plans["target:secondary"]["assigned_unit_ids"]) == 1
+
+
+def test_greedy_assignment_marks_melee_first_units_for_charge_and_fight() -> None:
+    melee_unit = _Unit(
+        "unit:melee",
+        movement=6,
+        wargear=[
+            _Wargear(
+                "melee",
+                _Profile(range_inches=0, attacks=6, skill=3, strength=6, ap=-1, damage=2),
+            )
+        ],
+    )
+    target = _Unit("target:charge", wounds=6, position=(8.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([melee_unit], [target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+
+    assert plan["unit_tasks"]["unit:melee"]["role"] == "melee_first"
+    assert plan["unit_tasks"]["unit:melee"]["primary_target_unit_id"] == "target:charge"
+    assert plan["unit_tasks"]["unit:melee"]["shooting_intent"] == "skip_for_charge"
+    assert plan["movement_plan"]["unit_positioning_tasks"]["unit:melee"]["intentionally_accept_shooting_ineligible"] is True
+    assert plan["shooting_plan"]["unit_fire_assignments"]["unit:melee"].get("primary_target_unit_id") is None
+    assert plan["charge_plan"]["unit_charge_assignments"]["unit:melee"]["primary_target_unit_id"] == "target:charge"
+    assert plan["charge_plan"]["unit_charge_assignments"]["unit:melee"]["intentionally_skip_shooting"] is True
+    assert plan["fight_plan"]["unit_fight_assignments"]["unit:melee"]["primary_target_unit_id"] == "target:charge"
+
+
+def test_greedy_assignment_marks_shooting_first_units_for_fire_plan() -> None:
+    shooting_unit = _Unit(
+        "unit:shooter",
+        movement=6,
+        wargear=[
+            _Wargear(
+                "ranged",
+                _Profile(range_inches=30, attacks=5, skill=3, strength=5, ap=-1, damage=2),
+            )
+        ],
+    )
+    target = _Unit("target:shoot", wounds=8, position=(15.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([shooting_unit], [target])
+
+    plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    unit_task = plan["unit_tasks"]["unit:shooter"]
+    movement_task = plan["movement_plan"]["unit_positioning_tasks"]["unit:shooter"]
+    fire_assignment = plan["shooting_plan"]["unit_fire_assignments"]["unit:shooter"]
+    charge_assignment = plan["charge_plan"]["unit_charge_assignments"]["unit:shooter"]
+
+    assert unit_task["role"] == "shooting_first"
+    assert unit_task["primary_target_unit_id"] == "target:shoot"
+    assert unit_task["shooting_intent"] == "planned_focus_fire"
+    assert movement_task["avoid_becoming_shooting_ineligible"] is True
+    assert movement_task["required_los_to_unit_ids"] == ["target:shoot"]
+    assert fire_assignment["primary_target_unit_id"] == "target:shoot"
+    assert fire_assignment["expected_damage_by_target"]["target:shoot"] > 0.0
+    assert fire_assignment["requires_los"] is True
+    assert charge_assignment["intentionally_skip_shooting"] is False
 
 
 def test_commander_context_attaches_to_unit_scoped_decision() -> None:

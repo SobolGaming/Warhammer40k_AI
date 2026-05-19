@@ -70,10 +70,24 @@ Implementation notes:
 
 ### PR 3 - Greedy Commander Assignment Planner
 
+Commit: `Add greedy commander assignments`
+
 Use the PR 2 analysis snapshot to populate meaningful `UnitBattleTask`,
 `TargetFirePlan`, `UnitFireAssignment`, `ChargeTargetAssignment`, and
 `FightTargetAssignment` fields while keeping the engine as the sole legality
 authority.
+
+Implementation notes:
+
+- Enemy targets are ranked by threat plus scoring and denial pressure.
+- Friendly units are classified as `shooting_first`, `melee_first`, `mixed`,
+  `scorer`, `screen`, or `preserve`.
+- Shooting assignments greedily commit expected damage into priority targets
+  until a kill-damage threshold plus overkill limit is reached.
+- Melee-first units receive charge/fight assignments and intentionally skip
+  shooting so later movement can stage them for charges.
+- Rankers still do not have to obey these assignments; they are commander
+  metadata for later PRs.
 
 ### PR 4 - Phase Checkpoint And Repair Loop
 
