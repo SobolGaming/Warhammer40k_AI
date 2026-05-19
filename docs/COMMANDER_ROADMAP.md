@@ -32,7 +32,7 @@ cache keys.
 
 ### PR 2 - Commander Analysis Matrices
 
-Commit: `Add commander analysis snapshot`
+Commit: `a8d3365b Add commander analysis snapshot`
 
 Goal: build deterministic, serializable commander analysis inputs at Command
 phase / lazy plan creation time, without consuming them for decisions yet.
