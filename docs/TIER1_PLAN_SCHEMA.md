@@ -85,6 +85,7 @@ Runtime use:
 - Lazy attachment is handled by `attach_ai_orchestration_context(...)` after rules, descriptor, and version-adapter context is attached and before time-budget decoration.
 - A cached `BattleRoundPlan` is built from the Tier-1 plan plus the Tier-2 task bundle. Eligible requests receive `battle_round_plan_id`; unit-scoped requests receive the relevant local commander slices.
 - The full `battle_round_plan` dict is attached only when `request.context["include_full_battle_round_plan"]` or `game.attach_full_battle_round_plan_context` enables audit/debug payloads.
+- Incoming full `battle_round_plan` payloads are removed unless that same audit/debug opt-in is active, so cache keys do not silently inherit large plan dicts.
 - Event-driven commander dirty flags and the last phase report are attached so downstream rankers can detect stale or variance-affected plans without triggering a full replan.
 - Decision-specific rankers consume the plan through `request.context` when useful.
 - A local reaction, dice, allocation, or simple tool decision may route without consulting a fresh Tier-1 plan.

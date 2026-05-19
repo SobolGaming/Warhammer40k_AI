@@ -122,6 +122,28 @@ def test_commander_context_attaches_to_unit_scoped_decision() -> None:
     assert request.context["commander_fight_assignment"]["unit_id"] == unit.id
 
 
+def test_preexisting_full_battle_round_plan_is_stripped_without_audit_payload() -> None:
+    game, player, unit = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+        context={
+            "unit_id": unit.id,
+            "battle_round_plan": {"plan_id": "caller-provided"},
+        },
+    )
+
+    game.request_decision(request)
+
+    assert request.context["battle_round_plan_id"].endswith(":battle_round")
+    assert "battle_round_plan" not in request.context
+
+
 def test_full_battle_round_plan_attaches_when_request_enables_audit_payload() -> None:
     game, player, unit = _build_game()
     request = DecisionRequest.create(

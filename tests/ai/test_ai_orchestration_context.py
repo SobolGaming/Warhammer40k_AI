@@ -119,3 +119,22 @@ def test_orchestration_context_excludes_dice_policy_and_normalizes_compute_tier(
     assert "turn_plan" not in updated
     assert updated["compute_tier"] == "P1"
     assert game.calls == []
+
+
+def test_orchestration_context_strips_full_battle_round_plan_without_audit_opt_in() -> None:
+    game = _Game()
+    request = DecisionRequest.create(
+        DECISION_REQUEST_DICE_ROLL,
+        "Roll",
+        player_id="p1",
+        context={"compute_tier": "unknown"},
+    )
+    original = {
+        "compute_tier": "unknown",
+        "battle_round_plan": {"plan_id": "caller-provided"},
+    }
+
+    updated = attach_ai_orchestration_context(game, request, original, COMPONENT_DICE_POLICY)
+
+    assert "battle_round_plan" not in updated
+    assert original["battle_round_plan"] == {"plan_id": "caller-provided"}

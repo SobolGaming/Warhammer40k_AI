@@ -70,6 +70,10 @@ def attach_ai_orchestration_context(
     """
 
     updated = dict(ctx or {})
+    attach_full_battle_round_plan = _should_attach_full_battle_round_plan(game, updated)
+    if not attach_full_battle_round_plan:
+        updated.pop("battle_round_plan", None)
+
     requested_component = str(component_name or "")
     if requested_component in _STRATEGIC_CONTEXT_EXCLUDED_COMPONENTS:
         updated["compute_tier"] = _normalize_compute_tier(updated.get("compute_tier"))
@@ -103,7 +107,7 @@ def attach_ai_orchestration_context(
     if (
         battle_round_plan is not None
         and "battle_round_plan" not in updated
-        and _should_attach_full_battle_round_plan(game, updated)
+        and attach_full_battle_round_plan
     ):
         updated["battle_round_plan"] = battle_round_plan.to_dict()
     if dirty_flags is not None and "commander_dirty_flags" not in updated:

@@ -34,6 +34,9 @@ decision.
 - The full `battle_round_plan` payload is attached only for audit/debug
   contexts, either when `request.context["include_full_battle_round_plan"]` is
   true or when `game.attach_full_battle_round_plan_context` is true.
+- A caller-provided `battle_round_plan` payload is stripped unless the same
+  audit/debug opt-in is active, including for decisions that skip strategic
+  context.
 - Dice, allocation, and `n/a` decisions still skip strategic context.
 
 ## Plan Shape
