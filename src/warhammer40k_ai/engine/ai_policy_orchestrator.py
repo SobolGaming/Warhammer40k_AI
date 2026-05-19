@@ -242,6 +242,8 @@ def policy_component_for_decision(decision_type: str, context: Mapping[str, Any]
     if dtype == kinds.DECISION_SELECT_UNIT:
         if "SHOOT" in phase_key:
             return COMPONENT_SHOOTING_RANKER
+        if "CHARGE" in phase_key:
+            return COMPONENT_CHARGE_RANKER
         if "FIGHT" in phase_key:
             return COMPONENT_FIGHT_RANKER
         return COMPONENT_TACTICAL_ORCHESTRATOR

@@ -496,6 +496,167 @@ def _commander_plan_stale(context: Mapping[str, Any]) -> bool:
     )
 
 
+def _commander_phase_plan_stale(
+    context: Mapping[str, Any],
+    *,
+    stale_scopes: set[str],
+    dirty_keys: set[str],
+) -> bool:
+    scope = str(context.get("commander_replan_scope", "") or "").strip().lower()
+    if scope in stale_scopes or scope in {"phase", "full_round"}:
+        return True
+    dirty = _dictish(context.get("commander_dirty_flags"))
+    if bool(dirty.get("full_replan_required", False)):
+        return True
+    return any(bool(dirty.get(key, False)) for key in dirty_keys)
+
+
+def _candidate_target_ids(params: Mapping[str, Any]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: object) -> None:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            ordered.append(text)
+
+    add(params.get("target_unit_id"))
+    for key in ("target_unit_ids", "allowed_target_unit_ids"):
+        raw = params.get(key)
+        if isinstance(raw, (list, tuple, set)):
+            for value in raw:
+                add(value)
+    return ordered
+
+
+def _commander_assignment_for_candidate(
+    context: Mapping[str, Any],
+    *,
+    direct_key: str,
+    candidate_map_key: str,
+    unit_id: str,
+) -> dict[str, Any]:
+    direct = _dictish(context.get(direct_key))
+    if direct:
+        return direct
+    if not unit_id:
+        return {}
+    candidate_map = context.get(candidate_map_key)
+    if not isinstance(candidate_map, dict):
+        return {}
+    return _dictish(candidate_map.get(unit_id))
+
+
+def _assignment_target_alignment(
+    *,
+    assignment: Mapping[str, Any],
+    target_ids: list[str],
+) -> tuple[float, float, float, float]:
+    primary_target_id = str(assignment.get("primary_target_unit_id", "") or "").strip()
+    backup_target_ids = [
+        str(value or "").strip()
+        for value in list(assignment.get("backup_target_unit_ids", []) or [])
+        if str(value or "").strip()
+    ]
+    target_set = set(target_ids)
+    primary_selected = 1.0 if primary_target_id and primary_target_id in target_set else 0.0
+    backup_selected = 1.0 if any(target_id in target_set for target_id in backup_target_ids) else 0.0
+    alignment = primary_selected * 1.2 + backup_selected * 0.65
+    multi_target_penalty = 0.0
+    if primary_selected and len(target_set) > 1:
+        multi_target_penalty = min(0.35, 0.1 * float(len(target_set) - 1))
+        alignment -= multi_target_penalty
+    return (
+        _round6(_clamp(alignment, low=-1.0, high=2.0)),
+        primary_selected,
+        backup_selected,
+        _round6(multi_target_penalty),
+    )
+
+
+def _commander_charge_metadata(
+    *,
+    params: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    unit_id = str(params.get("unit_id", "") or context.get("unit_id", "") or "").strip()
+    assignment = _commander_assignment_for_candidate(
+        context,
+        direct_key="commander_charge_assignment",
+        candidate_map_key="commander_candidate_charge_assignments",
+        unit_id=unit_id,
+    )
+    if not assignment:
+        return {}
+    target_ids = _candidate_target_ids(params)
+    target_alignment, primary_selected, backup_selected, multi_target_penalty = _assignment_target_alignment(
+        assignment=assignment,
+        target_ids=target_ids,
+    )
+    desired_probability = _safe_float(assignment.get("desired_charge_probability"), 0.0)
+    activation_alignment = min(0.8, desired_probability)
+    alignment = target_alignment if target_ids else activation_alignment
+    if not target_ids and str(assignment.get("primary_target_unit_id", "") or "").strip():
+        alignment += 0.2
+    stale = _commander_phase_plan_stale(
+        context,
+        stale_scopes={"charge_only"},
+        dirty_keys={"charge_plan_dirty", "target_priorities_dirty"},
+    )
+    if stale:
+        alignment *= 0.25
+    return {
+        "commander_charge_alignment": _round6(_clamp(alignment, low=-1.0, high=2.0)),
+        "commander_charge_primary_target_selected": primary_selected,
+        "commander_charge_backup_target_selected": backup_selected,
+        "commander_charge_multi_target_penalty": multi_target_penalty,
+        "commander_charge_probability": _round6(_clamp(desired_probability, low=0.0, high=1.0)),
+        "commander_charge_plan_stale_penalty": 1.0 if stale else 0.0,
+    }
+
+
+def _commander_fight_metadata(
+    *,
+    params: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    unit_id = str(params.get("unit_id", "") or context.get("unit_id", "") or "").strip()
+    assignment = _commander_assignment_for_candidate(
+        context,
+        direct_key="commander_fight_assignment",
+        candidate_map_key="commander_candidate_fight_assignments",
+        unit_id=unit_id,
+    )
+    if not assignment:
+        return {}
+    target_ids = _candidate_target_ids(params)
+    target_alignment, primary_selected, backup_selected, multi_target_penalty = _assignment_target_alignment(
+        assignment=assignment,
+        target_ids=target_ids,
+    )
+    activation_priority = _safe_float(assignment.get("activation_priority"), 0.0)
+    activation_alignment = _clamp(activation_priority / 10.0, low=0.0, high=1.0)
+    alignment = target_alignment if target_ids else activation_alignment
+    if not target_ids and str(assignment.get("primary_target_unit_id", "") or "").strip():
+        alignment += 0.15
+    stale = _commander_phase_plan_stale(
+        context,
+        stale_scopes={"fight_only"},
+        dirty_keys={"fight_plan_dirty", "target_priorities_dirty"},
+    )
+    if stale:
+        alignment *= 0.25
+    return {
+        "commander_fight_alignment": _round6(_clamp(alignment, low=-1.0, high=2.0)),
+        "commander_fight_primary_target_selected": primary_selected,
+        "commander_fight_backup_target_selected": backup_selected,
+        "commander_fight_multi_target_penalty": multi_target_penalty,
+        "commander_fight_activation_priority": _round6(_clamp(activation_priority, low=0.0, high=20.0)),
+        "commander_fight_plan_stale_penalty": 1.0 if stale else 0.0,
+    }
+
+
 def _transport_assignment_for_context(context: Mapping[str, Any]) -> dict[str, Any]:
     transport_assignment = _dictish(context.get("commander_transport_assignment"))
     if transport_assignment:
@@ -1522,6 +1683,20 @@ def normalize_candidate_semantic_metadata(
                 decision_type=str(decision_type or ""),
                 params=dict(params or {}),
                 metadata=metadata_data,
+                context=context_data,
+            )
+        )
+    elif projection_kind == "charge":
+        metadata_data.update(
+            _commander_charge_metadata(
+                params=dict(params or {}),
+                context=context_data,
+            )
+        )
+    elif projection_kind == "fight":
+        metadata_data.update(
+            _commander_fight_metadata(
+                params=dict(params or {}),
                 context=context_data,
             )
         )

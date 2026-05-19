@@ -406,9 +406,28 @@ Implemented behavior:
 
 ### PR 10 - Charge/Fight Consume Commander Assignments
 
-Charge and Fight rankers prefer commander charge/fight targets when legal,
-fallback when stale or impossible, and report failed-charge / target-death
-variance back to the commander repair loop.
+Make Charge and Fight rankers consume commander assignments as scoring hints
+while preserving existing legality, masks, and validation.
+
+Implemented behavior:
+
+- charge/fight unit-selection requests can receive decision-local
+  `commander_candidate_charge_assignments` and
+  `commander_candidate_fight_assignments` maps for candidate units.
+- semantic metadata now includes commander charge target alignment, primary /
+  backup target selection, multi-target penalty, desired charge probability, and
+  stale-plan penalty.
+- semantic metadata now includes commander fight target alignment, primary /
+  backup target selection, multi-target penalty, activation priority, and
+  stale-plan penalty.
+- `SELECT_UNIT` in Charge phase routes to the charge ranker so charge activation
+  can consume commander charge metadata.
+- charge/fight ranker weights prefer legal candidates that satisfy commander
+  primary targets or activation priority.
+- stale charge/fight dirty scopes reduce commander influence so local scoring
+  remains the fallback.
+- no charge/fight legality, candidate generation, masks, movement validation,
+  engagement validation, or state mutation was moved into the commander layer.
 
 ### PR 11 - Weapon And Ability Trigger-Band Planner
 

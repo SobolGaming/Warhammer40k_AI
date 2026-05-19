@@ -79,6 +79,7 @@ def test_orchestrator_uses_context_for_shared_decision_surfaces() -> None:
     assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
     assert policy_component_for_decision(kinds.DECISION_MOVE_UNIT, {"movement_type": "normal"}) == COMPONENT_MOVEMENT_RANKER
     assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "FIGHT_FIRST"}) == COMPONENT_FIGHT_RANKER
+    assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "DECLARE_CHARGES"}) == COMPONENT_CHARGE_RANKER
     assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "SHOOT_UNITS"}) == COMPONENT_SHOOTING_RANKER
     assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_name": "SHOOTING_PHASE"}) == COMPONENT_SHOOTING_RANKER
     assert policy_component_for_decision(kinds.DECISION_SELECT_UNIT, {"phase_step": "MOVE_UNITS"}) == COMPONENT_TACTICAL_ORCHESTRATOR
@@ -121,6 +122,30 @@ def test_component_ranker_ignores_masked_candidates_and_ties_by_action_id() -> N
     )
 
     assert ranker.choose_action_id(request) == "b"
+
+
+def test_charge_and_fight_rankers_consume_commander_assignment_metadata() -> None:
+    charge_ranker = default_ai_component_rankers()[COMPONENT_CHARGE_RANKER]
+    fight_ranker = default_ai_component_rankers()[COMPONENT_FIGHT_RANKER]
+    charge_request = _request(
+        kinds.DECISION_DECLARE_CHARGE,
+        candidates=[
+            CandidateAction("local-best", params={}, metadata={"projected_trade_ev": 0.6}),
+            CandidateAction("commander-primary", params={}, metadata={"commander_charge_alignment": 1.0}),
+        ],
+        mask=[True, True],
+    )
+    fight_request = _request(
+        kinds.DECISION_SELECT_FIGHT_TARGETS,
+        candidates=[
+            CandidateAction("local-best", params={}, metadata={"projected_trade_ev": 0.6}),
+            CandidateAction("commander-primary", params={}, metadata={"commander_fight_alignment": 1.0}),
+        ],
+        mask=[True, True],
+    )
+
+    assert charge_ranker.choose_action_id(charge_request) == "commander-primary"
+    assert fight_ranker.choose_action_id(fight_request) == "commander-primary"
 
 
 class _StaticRanker:

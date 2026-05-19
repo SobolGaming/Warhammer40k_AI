@@ -14,6 +14,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_DECLARE_CHARGE,
     DECISION_DECLARE_SHOTS,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_FIGHT_TARGETS,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_UNIT,
     DECISION_USE_GILDED_CHAMPION,
@@ -426,6 +427,103 @@ def test_semantic_projection_value_shifts_with_bundle_change(
         for key in SEMANTIC_NUMERIC_KEYS
     ]
     assert any(old_value != new_value for old_value, new_value in value_pairs)
+
+
+def test_commander_charge_metadata_prefers_primary_target() -> None:
+    request = DecisionRequest.create(
+        DECISION_DECLARE_CHARGE,
+        "Declare charge",
+        candidates=[
+            CandidateAction(
+                action_id="charge-a",
+                params={"unit_id": "unit:charger", "target_unit_id": "target:a"},
+                metadata={},
+            ),
+            CandidateAction(
+                action_id="charge-b",
+                params={"unit_id": "unit:charger", "target_unit_id": "target:b"},
+                metadata={},
+            ),
+        ],
+        mask=[True, True],
+        context={
+            "commander_charge_assignment": {
+                "unit_id": "unit:charger",
+                "primary_target_unit_id": "target:b",
+                "backup_target_unit_ids": ["target:a"],
+                "desired_charge_probability": 0.72,
+            }
+        },
+    )
+
+    ensure_candidate_semantic_metadata(request, rules_bundle_id="rules_bundle:test")
+    by_id = {candidate.action_id: dict(candidate.metadata or {}) for candidate in request.candidates}
+
+    assert by_id["charge-b"]["commander_charge_primary_target_selected"] == 1.0
+    assert by_id["charge-a"]["commander_charge_backup_target_selected"] == 1.0
+    assert by_id["charge-b"]["commander_charge_alignment"] > by_id["charge-a"]["commander_charge_alignment"]
+
+
+def test_commander_fight_metadata_prefers_primary_target_and_activation_priority() -> None:
+    target_request = DecisionRequest.create(
+        DECISION_SELECT_FIGHT_TARGETS,
+        "Select fight target",
+        candidates=[
+            CandidateAction(
+                action_id="fight-target-a",
+                params={"unit_id": "unit:fighter", "target_unit_id": "target:a"},
+                metadata={},
+            ),
+            CandidateAction(
+                action_id="fight-target-b",
+                params={"unit_id": "unit:fighter", "target_unit_id": "target:b"},
+                metadata={},
+            ),
+        ],
+        mask=[True, True],
+        context={
+            "commander_fight_assignment": {
+                "unit_id": "unit:fighter",
+                "primary_target_unit_id": "target:b",
+                "backup_target_unit_ids": ["target:a"],
+                "activation_priority": 8.0,
+            }
+        },
+    )
+    activation_request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select fighter",
+        candidates=[
+            CandidateAction(action_id="unit-a", params={"unit_id": "unit:a"}, metadata={}),
+            CandidateAction(action_id="unit-b", params={"unit_id": "unit:b"}, metadata={}),
+        ],
+        mask=[True, True],
+        context={
+            "phase_name": "FIGHT_PHASE",
+            "phase_step": "FIGHT_FIRST",
+            "commander_candidate_fight_assignments": {
+                "unit:a": {"unit_id": "unit:a", "activation_priority": 1.0},
+                "unit:b": {
+                    "unit_id": "unit:b",
+                    "primary_target_unit_id": "target:b",
+                    "activation_priority": 9.0,
+                },
+            },
+        },
+    )
+
+    ensure_candidate_semantic_metadata(target_request, rules_bundle_id="rules_bundle:test")
+    ensure_candidate_semantic_metadata(activation_request, rules_bundle_id="rules_bundle:test")
+    target_metadata = {candidate.action_id: dict(candidate.metadata or {}) for candidate in target_request.candidates}
+    activation_metadata = {
+        candidate.action_id: dict(candidate.metadata or {})
+        for candidate in activation_request.candidates
+    }
+
+    assert target_metadata["fight-target-b"]["commander_fight_primary_target_selected"] == 1.0
+    assert target_metadata["fight-target-b"]["commander_fight_alignment"] > target_metadata["fight-target-a"]["commander_fight_alignment"]
+    assert activation_metadata["unit-b"]["commander_fight_activation_priority"] == 9.0
+    assert activation_metadata["unit-b"]["commander_fight_alignment"] > activation_metadata["unit-a"]["commander_fight_alignment"]
 
 
 def test_reroll_request_backfills_roll_state_before_semantic_projection() -> None:

@@ -26,6 +26,9 @@ Context keys:
   `target_fire_plan_summary` for unit-scoped shooting decisions when present
 - `general_limited_resource_policy` and `general_cp_policy` for unit-scoped
   decisions that need slim General resource context
+- `commander_candidate_charge_assignments` and
+  `commander_candidate_fight_assignments` for charge/fight phase unit
+  selection requests
 
 Audit/debug-only context keys:
 - `general_plan`
@@ -114,6 +117,10 @@ Runtime use:
   order, preferred declaration hints, the primary target fire-plan summary, and
   slim General limited-resource policy. These fields are execution hints only;
   existing candidate generation and validation remain authoritative.
+- Charge/Fight phase unit-selection requests can receive candidate-local
+  commander assignment maps. Charge/Fight candidate metadata consumes those
+  maps for ranking only; legal charge/fight targets still come from existing
+  engine requests and validators.
 - The full `deployment_plan` dict is attached only when `request.context["include_full_deployment_plan"]` or `game.attach_full_deployment_plan_context` enables audit/debug payloads.
 - The full `battle_round_plan` dict is attached only when `request.context["include_full_battle_round_plan"]` or `game.attach_full_battle_round_plan_context` enables audit/debug payloads.
 - Incoming full `deployment_plan`, `battle_round_plan`, and `general_plan`

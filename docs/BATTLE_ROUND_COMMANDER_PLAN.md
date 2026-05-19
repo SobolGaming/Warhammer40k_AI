@@ -45,6 +45,10 @@ decision.
   - `target_fire_plan_summary` for the unit's primary fire target
   - `commander_charge_assignment`
   - `commander_fight_assignment`
+  - `commander_candidate_charge_assignments` for charge-phase unit selection
+    requests
+  - `commander_candidate_fight_assignments` for fight-phase unit selection
+    requests
   - `general_limited_resource_policy` for resources relevant to the unit plus
     global CP/stratagem reserves
   - `general_cp_policy`
@@ -289,6 +293,41 @@ All shooting legality still comes from existing legal target candidate
 generation and profile validation. The commander and General only influence
 which legal declaration is tried first.
 
+## Charge/Fight Consumption Baseline
+
+Charge and Fight rankers now consume commander assignments as scoring metadata
+only.
+
+Charge metadata includes:
+
+- `commander_charge_alignment`
+- `commander_charge_primary_target_selected`
+- `commander_charge_backup_target_selected`
+- `commander_charge_multi_target_penalty`
+- `commander_charge_probability`
+- `commander_charge_plan_stale_penalty`
+
+Fight metadata includes:
+
+- `commander_fight_alignment`
+- `commander_fight_primary_target_selected`
+- `commander_fight_backup_target_selected`
+- `commander_fight_multi_target_penalty`
+- `commander_fight_activation_priority`
+- `commander_fight_plan_stale_penalty`
+
+Unit-scoped charge/fight decisions use the local `commander_charge_assignment`
+or `commander_fight_assignment`. Phase unit-selection requests can receive
+candidate-local assignment maps so activation ordering can see commander
+priority without attaching the full battle-round plan.
+
+Stale charge/fight repair pressure reduces commander alignment. If a primary
+target is dead, unavailable, or absent from the legal candidate set, local
+semantic scoring remains the fallback.
+
+This does not generate charge/fight candidates, mask unavailable targets,
+bypass engagement/charge validation, or alter charge/fight mutation.
+
 ## Current Baseline
 
 The first implementation is deliberately conservative:
@@ -312,6 +351,8 @@ The first implementation is deliberately conservative:
   local commander transport slices derived from General transport doctrine, and
   shooting declaration synthesis consumes slim General limited-resource policy
   without attaching the full General plan.
+- charge/fight rankers can score legal candidates against commander assignments
+  and activation priority, while validation and mutation remain engine-owned.
 
 This establishes the stable data contract for later work where movement can
 score LoS/range/trigger-band enablement, shooting can execute preferred legal

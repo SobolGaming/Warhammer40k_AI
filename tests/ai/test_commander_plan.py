@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CONFIRM_YES_NO,
     DECISION_DISEMBARK,
     DECISION_EMBARK,
+    DECISION_SELECT_UNIT,
 )
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Game
@@ -582,6 +583,46 @@ def test_shooting_commander_context_attaches_preferred_targets_and_general_resou
         for policy in request.context["general_limited_resource_policy"]
     ) == ["cp_pool", "stratagem"]
     assert request.context["general_cp_policy"]["reserve_for_interrupt_or_overwatch"] == 1
+
+
+def test_phase_unit_selection_context_receives_candidate_charge_and_fight_assignments() -> None:
+    melee_unit = _Unit(
+        "unit:melee",
+        movement=8,
+        wargear=[
+            _Wargear(
+                "melee",
+                _Profile(attacks=5, skill=3, strength=6, damage=2),
+            )
+        ],
+    )
+    target = _Unit("target:charge", wounds=6, position=(7.0, 0.0, 0.0))
+    game, player, _opponent = _build_custom_game([melee_unit], [target])
+    options = [DecisionOption.create("Melee", payload={"unit_id": melee_unit.id})]
+    charge_request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select charger",
+        player_id=player.id,
+        options=options,
+        context={"phase_name": "CHARGE_PHASE", "phase_step": "DECLARE_CHARGES"},
+    )
+    fight_request = DecisionRequest.create(
+        DECISION_SELECT_UNIT,
+        "Select fighter",
+        player_id=player.id,
+        options=[DecisionOption.create("Melee", payload={"unit_id": melee_unit.id})],
+        context={"phase_name": "FIGHT_PHASE", "phase_step": "FIGHT_FIRST"},
+    )
+
+    game.request_decision(charge_request)
+    game.request_decision(fight_request)
+
+    charge_assignment = charge_request.context["commander_candidate_charge_assignments"][melee_unit.id]
+    fight_assignment = fight_request.context["commander_candidate_fight_assignments"][melee_unit.id]
+    assert charge_assignment["primary_target_unit_id"] == "target:charge"
+    assert charge_assignment["intentionally_skip_shooting"] is True
+    assert fight_assignment["primary_target_unit_id"] == "target:charge"
+    assert fight_assignment["activation_priority"] > 0.0
 
 
 def test_disembark_decision_context_receives_commander_disembark_slice() -> None:

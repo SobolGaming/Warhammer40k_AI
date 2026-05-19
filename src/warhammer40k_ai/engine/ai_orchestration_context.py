@@ -13,6 +13,7 @@ from .decision_kinds import (
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
     DECISION_SCOUT_MOVE,
+    DECISION_SELECT_UNIT,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from .decisions import DecisionRequest
@@ -376,6 +377,37 @@ def attach_ai_orchestration_context(
                     getattr(tempo_capabilities[unit_key], "has_scout", False)
                     or getattr(tempo_capabilities[unit_key], "has_infiltrate", False)
                 )
+            }
+
+    if battle_round_plan is not None and str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_UNIT:
+        candidate_unit_ids = sorted(
+            {
+                str(dict(getattr(option, "payload", {}) or {}).get("unit_id", "") or "")
+                for option in list(getattr(request, "options", []) or [])
+                if str(dict(getattr(option, "payload", {}) or {}).get("unit_id", "") or "")
+            }
+        )
+        phase_key = " ".join(
+            str(updated.get(key, "") or "").strip().upper()
+            for key in ("phase_step", "phase", "phase_name", "selection_purpose")
+        )
+        if candidate_unit_ids and "CHARGE" in phase_key and "commander_candidate_charge_assignments" not in updated:
+            charge_assignments = dict(
+                getattr(battle_round_plan.charge_plan, "unit_charge_assignments", {}) or {}
+            )
+            updated["commander_candidate_charge_assignments"] = {
+                unit_key: charge_assignments[unit_key].to_dict()
+                for unit_key in candidate_unit_ids
+                if unit_key in charge_assignments
+            }
+        if candidate_unit_ids and "FIGHT" in phase_key and "commander_candidate_fight_assignments" not in updated:
+            fight_assignments = dict(
+                getattr(battle_round_plan.fight_plan, "unit_fight_assignments", {}) or {}
+            )
+            updated["commander_candidate_fight_assignments"] = {
+                unit_key: fight_assignments[unit_key].to_dict()
+                for unit_key in candidate_unit_ids
+                if unit_key in fight_assignments
             }
 
     updated["compute_tier"] = _normalize_compute_tier(
