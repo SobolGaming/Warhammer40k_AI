@@ -182,6 +182,32 @@ def test_orchestrator_preserves_movement_path_witness_candidate_metadata() -> No
     assert ranked[0].metadata["path_witness_ref"] == "pathwitness://unit/u1/move/b"
 
 
+def test_general_plan_context_does_not_change_local_movement_ranking() -> None:
+    base_candidates = [
+        CandidateAction("a", params={}, metadata={"projected_score_delta_next_window": 0.0}),
+        CandidateAction("b", params={}, metadata={"projected_score_delta_next_window": 2.0}),
+    ]
+    orchestrator = AIPolicyOrchestrator(
+        components={COMPONENT_MOVEMENT_RANKER: default_ai_component_rankers()[COMPONENT_MOVEMENT_RANKER]}
+    )
+    baseline = _request(
+        kinds.DECISION_MOVE_UNIT,
+        candidates=base_candidates,
+        context={"movement_type": "normal"},
+    )
+    with_general = _request(
+        kinds.DECISION_MOVE_UNIT,
+        candidates=base_candidates,
+        context={
+            "movement_type": "normal",
+            "general_plan_id": "general:p1:game",
+        },
+    )
+
+    assert orchestrator.choose_action(baseline).action_id == "b"
+    assert orchestrator.choose_action(with_general).action_id == "b"
+
+
 def test_policy_bundle_resolves_policy_orchestration_component_names(tmp_path: Path) -> None:
     bundle_id = "policy_bundle:policy_orchestration_heuristic_v1"
     manifest_store = ArtifactManifestStore(tmp_path / "models")

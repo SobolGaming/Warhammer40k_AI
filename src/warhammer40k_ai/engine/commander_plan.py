@@ -1547,6 +1547,8 @@ def build_battle_round_plan(
     game: object,
     tier1_plan: Tier1Plan,
     tier2_bundle: Tier2TaskBundle,
+    *,
+    general_plan_id: str | None = None,
 ) -> BattleRoundPlan:
     player = _resolve_player(game, tier1_plan.player_id)
     if player is None:
@@ -1768,6 +1770,7 @@ def build_battle_round_plan(
             repair_count=0,
         ),
         metadata={
+            "general_plan_id": str(general_plan_id or ""),
             "tier1_plan_id": tier1_plan.plan_id,
             "tier2_plan_id": tier2_bundle.plan_id,
             "analysis_snapshot": analysis_snapshot.to_dict(),

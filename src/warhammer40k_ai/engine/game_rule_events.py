@@ -82,6 +82,7 @@ from .commander_plan import (
     consume_commander_dirty_flags,
     repair_battle_round_plan,
 )
+from .general_plan import GeneralPlan, build_general_plan
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -133,6 +134,9 @@ class GameRuleEventService(GameServiceBase):
     def _tier1_plan_key(self, player_id: str) -> tuple[int, str]:
         return (self._current_battle_round(), str(player_id or ""))
 
+    def _general_plan_key(self, player_id: str) -> str:
+        return str(player_id or "")
+
     def get_or_create_tier1_plan(self, player_id: str) -> Tier1Plan:
         pid = str(player_id or "")
         if not pid:
@@ -162,6 +166,20 @@ class GameRuleEventService(GameServiceBase):
         self._tier2_task_bundles[key] = bundle
         return bundle
 
+    def get_or_create_general_plan(self, player_id: str) -> GeneralPlan:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("General plan requires player_id.")
+        if not hasattr(self, "_general_plans") or not isinstance(self._general_plans, dict):
+            self._general_plans = {}
+        key = self._general_plan_key(pid)
+        existing = self._general_plans.get(key)
+        if existing is not None:
+            return existing
+        plan = build_general_plan(self, pid)
+        self._general_plans[key] = plan
+        return plan
+
     def get_or_create_battle_round_plan(self, player_id: str) -> BattleRoundPlan:
         pid = str(player_id or "")
         if not pid:
@@ -174,7 +192,13 @@ class GameRuleEventService(GameServiceBase):
             return existing
         tier1_plan = self.get_or_create_tier1_plan(pid)
         tier2_bundle = self.get_or_create_tier2_task_bundle(pid)
-        plan = build_battle_round_plan(self, tier1_plan, tier2_bundle)
+        general_plan = self.get_or_create_general_plan(pid)
+        plan = build_battle_round_plan(
+            self,
+            tier1_plan,
+            tier2_bundle,
+            general_plan_id=general_plan.plan_id,
+        )
         self._battle_round_plans[key] = plan
         return plan
 
@@ -200,7 +224,13 @@ class GameRuleEventService(GameServiceBase):
         else:
             tier1_plan = self.get_or_create_tier1_plan(pid)
             tier2_bundle = self.get_or_create_tier2_task_bundle(pid)
-        return build_battle_round_plan(self, tier1_plan, tier2_bundle)
+        general_plan = self.get_or_create_general_plan(pid)
+        return build_battle_round_plan(
+            self,
+            tier1_plan,
+            tier2_bundle,
+            general_plan_id=general_plan.plan_id,
+        )
 
     def get_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:
         pid = str(player_id or "")

@@ -54,6 +54,14 @@ def _should_attach_full_battle_round_plan(game: object, context: dict[str, Any])
     return bool(getattr(game, "attach_full_battle_round_plan_context", False))
 
 
+def _should_attach_full_general_plan(game: object, context: dict[str, Any]) -> bool:
+    """Return whether to attach the full General plan payload for audit/debug."""
+
+    if bool(context.get("include_full_general_plan", False)):
+        return True
+    return bool(getattr(game, "attach_full_general_plan_context", False))
+
+
 def attach_ai_orchestration_context(
     game: object,
     request: DecisionRequest,
@@ -71,8 +79,11 @@ def attach_ai_orchestration_context(
 
     updated = dict(ctx or {})
     attach_full_battle_round_plan = _should_attach_full_battle_round_plan(game, updated)
+    attach_full_general_plan = _should_attach_full_general_plan(game, updated)
     if not attach_full_battle_round_plan:
         updated.pop("battle_round_plan", None)
+    if not attach_full_general_plan:
+        updated.pop("general_plan", None)
 
     requested_component = str(component_name or "")
     if requested_component in _STRATEGIC_CONTEXT_EXCLUDED_COMPONENTS:
@@ -86,6 +97,7 @@ def attach_ai_orchestration_context(
 
     get_tier1_plan = getattr(game, "get_or_create_tier1_plan", None)
     get_tier2_bundle = getattr(game, "get_or_create_tier2_task_bundle", None)
+    get_general_plan = getattr(game, "get_or_create_general_plan", None)
     get_battle_round_plan = getattr(game, "get_or_create_battle_round_plan", None)
     if not callable(get_tier1_plan) or not callable(get_tier2_bundle):
         updated["compute_tier"] = _normalize_compute_tier(updated.get("compute_tier"))
@@ -93,6 +105,7 @@ def attach_ai_orchestration_context(
 
     plan = get_tier1_plan(player_id)
     tier2_bundle = get_tier2_bundle(player_id)
+    general_plan = get_general_plan(player_id) if callable(get_general_plan) else None
     battle_round_plan = get_battle_round_plan(player_id) if callable(get_battle_round_plan) else None
     get_dirty_flags = getattr(game, "get_commander_dirty_flags", None)
     dirty_flags = get_dirty_flags(player_id) if callable(get_dirty_flags) else None
@@ -102,8 +115,12 @@ def attach_ai_orchestration_context(
         updated["plan_id"] = plan.plan_id
     if battle_round_plan is not None and "battle_round_plan_id" not in updated:
         updated["battle_round_plan_id"] = battle_round_plan.plan_id
+    if general_plan is not None and "general_plan_id" not in updated:
+        updated["general_plan_id"] = general_plan.plan_id
     if "turn_plan" not in updated:
         updated["turn_plan"] = plan.to_dict()
+    if general_plan is not None and "general_plan" not in updated and attach_full_general_plan:
+        updated["general_plan"] = general_plan.to_dict()
     if (
         battle_round_plan is not None
         and "battle_round_plan" not in updated

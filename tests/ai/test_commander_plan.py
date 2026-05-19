@@ -203,6 +203,25 @@ def test_battle_round_plan_is_cached_and_serializable() -> None:
     assert sorted(data["movement_plan"]["unit_positioning_tasks"]) == ["unit:fast", "unit:slow"]
     assert sorted(data["shooting_plan"]["unit_fire_assignments"]) == ["unit:fast", "unit:slow"]
     assert data["invalidation"]["invalidated"] is False
+    assert data["metadata"]["general_plan_id"] == game.get_or_create_general_plan(player.id).plan_id
+
+
+def test_general_plan_is_cached_serializable_and_has_limited_resource_ledger() -> None:
+    game, player, _unit = _build_game()
+
+    first = game.get_or_create_general_plan(player.id)
+    second = game.get_or_create_general_plan(player.id)
+    data = first.to_dict()
+
+    assert first is second
+    assert data["plan_id"] == f"general:{player.id}:game"
+    assert data["player_id"] == player.id
+    assert sorted(data["battle_round_directives"]) == ["1", "2", "3", "4", "5"]
+    assert f"{player.id}:cp_pool" in data["limited_resource_policy"]
+    assert f"{player.id}:stratagem_reserve" in data["limited_resource_policy"]
+    assert data["resource_ledger"]["resource_count"] >= 2
+    assert data["cp_policy"]["reserve_for_interrupt_or_overwatch"] == 1
+    assert data["reserve_policy"]["late_game_scoring_preservation"] is True
 
 
 def test_commander_analysis_snapshot_is_deterministic_and_bounded() -> None:
@@ -438,6 +457,8 @@ def test_commander_context_attaches_to_unit_scoped_decision() -> None:
 
     game.request_decision(request)
 
+    assert request.context["general_plan_id"] == game.get_or_create_general_plan(player.id).plan_id
+    assert "general_plan" not in request.context
     assert request.context["battle_round_plan_id"].endswith(":battle_round")
     assert "battle_round_plan" not in request.context
     assert request.context["unit_battle_task"]["unit_id"] == unit.id
@@ -460,6 +481,7 @@ def test_preexisting_full_battle_round_plan_is_stripped_without_audit_payload() 
         context={
             "unit_id": unit.id,
             "battle_round_plan": {"plan_id": "caller-provided"},
+            "general_plan": {"plan_id": "caller-provided-general"},
         },
     )
 
@@ -467,6 +489,8 @@ def test_preexisting_full_battle_round_plan_is_stripped_without_audit_payload() 
 
     assert request.context["battle_round_plan_id"].endswith(":battle_round")
     assert "battle_round_plan" not in request.context
+    assert request.context["general_plan_id"] == game.get_or_create_general_plan(player.id).plan_id
+    assert "general_plan" not in request.context
 
 
 def test_full_battle_round_plan_attaches_when_request_enables_audit_payload() -> None:
@@ -490,6 +514,25 @@ def test_full_battle_round_plan_attaches_when_request_enables_audit_payload() ->
     )
 
 
+def test_full_general_plan_attaches_when_request_enables_audit_payload() -> None:
+    game, player, unit = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+        context={"unit_id": unit.id, "include_full_general_plan": True},
+    )
+
+    game.request_decision(request)
+
+    assert request.context["general_plan"]["plan_id"] == request.context["general_plan_id"]
+    assert "battle_round_plan" not in request.context
+
+
 def test_full_battle_round_plan_attaches_when_game_enables_audit_payload() -> None:
     game, player, unit = _build_game()
     game.attach_full_battle_round_plan_context = True
@@ -501,6 +544,17 @@ def test_full_battle_round_plan_attaches_when_game_enables_audit_payload() -> No
         request.context["battle_round_plan"]["plan_id"]
         == request.context["battle_round_plan_id"]
     )
+
+
+def test_full_general_plan_attaches_when_game_enables_audit_payload() -> None:
+    game, player, unit = _build_game()
+    game.attach_full_general_plan_context = True
+    request = _yes_no_request(player.id, unit.id)
+
+    game.request_decision(request)
+
+    assert request.context["general_plan"]["plan_id"] == request.context["general_plan_id"]
+    assert "battle_round_plan" not in request.context
 
 
 def test_command_phase_start_builds_battle_round_plan() -> None:

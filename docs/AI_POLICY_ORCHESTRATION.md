@@ -106,10 +106,12 @@ Request context is assembled in this order:
 10. queue the decision
 
 Strategic context is skipped for `n/a`, `dice_policy`, and
-`allocation_ranker`. Tier-2 task context and battle-round commander unit context
-attach only when the request context contains a `unit_id` that matches a task in
-the current bundle. Global commander dirty flags, recommended replan scope, and
-the last phase report attach with the battle-round plan when available.
+`allocation_ranker`. General plan id, Tier-2 task context, and battle-round
+commander unit context attach only when strategic context is enabled; unit-local
+context still requires a request `unit_id` that matches a task in the current
+bundle. Global commander dirty flags, recommended replan scope, and the last
+phase report attach with the battle-round plan when available. Full
+`general_plan` and `battle_round_plan` payloads are audit/debug-only.
 Movement semantic normalization consumes unit-local commander context to add
 alignment metadata; the movement ranker may use that metadata to order legal
 candidates, but it does not create legality or bypass masks.
@@ -133,31 +135,34 @@ Routing is deterministic:
 
 Headless mode resolves the same `DecisionRequest` objects as UI and network play. The controller can rank candidates, but legality, mutation, follow-up decisions, and telemetry stay inside the authoritative engine path.
 
-Tier 1, Tier 2, and the battle-round commander plan are deterministic, cached context
-providers rather than independent player-facing decisions. They are created at Command
-phase start when possible, repaired at phase-start checkpoints when dirty flags
-require a scoped refresh, and lazily inside `Game.request_decision(...)` for any
-player decision that benefits from strategic or tactical context.
+Tier 1, Tier 2, the game-level General plan, and the battle-round commander plan
+are deterministic, cached context providers rather than independent
+player-facing decisions. They are created at Command phase start when possible,
+repaired at phase-start checkpoints when dirty flags require a scoped refresh,
+and lazily inside `Game.request_decision(...)` for any player decision that
+benefits from strategic or tactical context.
 
 ```mermaid
 flowchart TD
   A["Command phase start or first decision for player this battle round"] --> B["get_or_create_tier1_plan(player_id)"]
   B --> C["build_heuristic_tier1_plan from mission, objectives, score state, resources, and unit priorities"]
   C --> D["Cache Tier1Plan by battle_round and player_id"]
-  D --> E["get_or_create_tier2_task_bundle(player_id)"]
-  E --> F["build_tier2_task_bundle maps units to task_type, compute_tier, MovementIntent, and CP reserve policy"]
-  F --> G["Cache Tier2TaskBundle by battle_round and player_id"]
-  G --> H["get_or_create_battle_round_plan(player_id) builds cross-phase commander context"]
-  H --> I["Game.request_decision injects turn_plan, battle_round_plan_id, dirty flags, score_window_state, opportunity_catalog, and cp_reserve_policy"]
-  I --> J{"Decision has unit_id?"}
-  J -->|"Yes"| K["Inject tier2_task, movement_intent, unit_battle_task, commander phase assignments, and compute_tier"]
-  J -->|"No"| L["Use global strategic context only"]
-  K --> M["Candidate generators and semantic metadata consume the strategic context"]
-  L --> M
-  M --> N["AIPolicyOrchestrator maps the request to a decision-specific ranker"]
-  N --> O["Ranker orders legal candidates only"]
-  O --> P["DecisionRecord preserves plan/task context with chosen_action_id and outcome"]
-  P --> Q["State mutation affects future requests; next battle-round cache rebuild reflects new state"]
+  D --> E["get_or_create_general_plan(player_id) builds whole-game resource and transport doctrine"]
+  E --> F["Cache GeneralPlan by player_id"]
+  F --> G["get_or_create_tier2_task_bundle(player_id)"]
+  G --> H["build_tier2_task_bundle maps units to task_type, compute_tier, MovementIntent, and CP reserve policy"]
+  H --> I["Cache Tier2TaskBundle by battle_round and player_id"]
+  I --> J["get_or_create_battle_round_plan(player_id) builds cross-phase commander context linked to general_plan_id"]
+  J --> K["Game.request_decision injects turn_plan, general_plan_id, battle_round_plan_id, dirty flags, score_window_state, opportunity_catalog, and cp_reserve_policy"]
+  K --> L{"Decision has unit_id?"}
+  L -->|"Yes"| M["Inject tier2_task, movement_intent, unit_battle_task, commander phase assignments, and compute_tier"]
+  L -->|"No"| N["Use global strategic context only"]
+  M --> O["Candidate generators and semantic metadata consume the strategic context"]
+  N --> O
+  O --> P["AIPolicyOrchestrator maps the request to a decision-specific ranker"]
+  P --> Q["Ranker orders legal candidates only"]
+  Q --> R["DecisionRecord preserves plan/task context with chosen_action_id and outcome"]
+  R --> S["State mutation affects future requests; next battle-round cache rebuild reflects new state"]
 ```
 
 ```mermaid

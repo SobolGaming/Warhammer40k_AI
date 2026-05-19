@@ -1,10 +1,10 @@
 # Battle-Round Commander Plan
 
 `BattleRoundPlan` is the cross-phase commander context for one player in one
-battle round. It is built from the existing Tier-1 strategic plan and Tier-2
-task bundle, cached by `(battle_round, player_id)`, and exposed to eligible
-decision contexts through stable identifiers plus unit-local serializable
-metadata.
+battle round. It is built from the existing Tier-1 strategic plan, Tier-2 task
+bundle, and active game-level `GeneralPlan`, cached by `(battle_round,
+player_id)`, and exposed to eligible decision contexts through stable
+identifiers plus unit-local serializable metadata.
 
 The plan is not a legality source. Tier 0 candidate generation, masks,
 validation, PathWitness generation, and command resolution remain authoritative.
@@ -15,6 +15,8 @@ decision.
 ## Runtime Contract
 
 - `Game.get_or_create_battle_round_plan(player_id)` returns the cached plan.
+- `Game.get_or_create_general_plan(player_id)` returns the cached game-level
+  General plan that owns long-horizon resource and transport doctrine.
 - `Game.get_commander_dirty_flags(player_id)` returns current repair pressure.
 - `Game.mark_commander_dirty(...)` records event-driven repair pressure.
 - `Game.clear_commander_dirty_flags(player_id)` resets repair pressure after a
@@ -22,6 +24,7 @@ decision.
 - `Game.get_commander_phase_reports(player_id)` returns recent phase summaries.
 - Command phase start prebuilds the plan for the active player.
 - `Game.request_decision(...)` attaches by default:
+  - `general_plan_id`
   - `battle_round_plan_id`
   - `commander_dirty_flags`
   - `commander_replan_scope`
@@ -34,9 +37,14 @@ decision.
 - The full `battle_round_plan` payload is attached only for audit/debug
   contexts, either when `request.context["include_full_battle_round_plan"]` is
   true or when `game.attach_full_battle_round_plan_context` is true.
+- The full `general_plan` payload follows the same audit/debug rule via
+  `request.context["include_full_general_plan"]` or
+  `game.attach_full_general_plan_context`.
 - A caller-provided `battle_round_plan` payload is stripped unless the same
   audit/debug opt-in is active, including for decisions that skip strategic
   context.
+- A caller-provided `general_plan` payload is stripped unless the same
+  audit/debug opt-in is active.
 - Dice, allocation, and `n/a` decisions still skip strategic context.
 
 ## Plan Shape
@@ -57,8 +65,9 @@ Top-level fields:
 - `invalidation`
 - `metadata`
 
-`metadata.analysis_snapshot` is a bounded, audit-only commander analysis input
-snapshot. It is built with the plan and includes:
+`metadata.general_plan_id` links the commander plan to the active game-level
+General plan. `metadata.analysis_snapshot` is a bounded, audit-only commander
+analysis input snapshot. It is built with the plan and includes:
 
 - a `cache_key` with `battle_round`, `player_id`, and `map_generation`.
 - enemy target threat, scoring, denial, wounds, toughness, save, OC, and
@@ -220,6 +229,8 @@ The first implementation is deliberately conservative:
   repair scope and pre/post dirty state when a repair ran.
 - movement rankers can now score legal candidates against commander intent, but
   legality and mutation remain owned by the existing engine validators.
+- General policy is linked by `general_plan_id` and remains scaffold-only; no
+  ranker consumes limited-resource or transport doctrine yet.
 
 This establishes the stable data contract for later work where movement can
 score LoS/range/trigger-band enablement, shooting can try preferred

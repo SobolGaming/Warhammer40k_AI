@@ -4,6 +4,29 @@ This file tracks the commander orchestration PR sequence. The repository has
 been receiving these as PR-sized commits directly on `dev`; the commit mapping
 below is the durable reference for future "PR N" work.
 
+## Strategic Hierarchy
+
+The long-horizon orchestration stack is:
+
+- `GeneralPlan`: game-level / multi-battle-round strategist.
+- `BattleRoundPlan`: battle-round / phase commander orchestrator.
+- phase rankers: local legal-candidate executors.
+- engine: legality, masks, validation, PathWitness artifacts, and mutation
+  authority.
+
+The General answers whole-game questions: win path, battle-round posture,
+scarce resource reserves, once-per-game timing, CP policy, transport doctrine,
+late-game preservation, and primary push/trading/staging rounds.
+
+The Commander answers current battle-round questions: priority targets, unit
+tasks, movement/shooting/charge/fight subplans, transport execution for the
+current round, dirty-flag repair, and phase reports.
+
+Rankers execute legal candidates locally. They may consume General/Commander
+metadata for ordering, but they do not create legality or mutate state.
+
+Engine validation remains authoritative.
+
 ## Completed
 
 ### PR 1 - Commander Scaffold
@@ -132,33 +155,152 @@ Implementation notes:
 - forbidden movement actions receive negative commander score only; they are not
   masked illegal by this layer.
 
+### PR 6A - General Plan Scaffold And Limited Resource Ledger
+
+Commit: `Add general plan scaffold`
+
+Added a non-behavior-changing General scaffold above the battle-round
+commander.
+
+Planned data model:
+
+- `GeneralPlan`
+- `GeneralRoundDirective`
+- `LimitedResourcePolicy`
+- `TransportDoctrine`
+- optional `GeneralDirtyFlags` / `GeneralVarianceReport`
+
+Planned behavior:
+
+- `get_or_create_general_plan(player_id)` caches a serializable whole-game plan.
+- `BattleRoundPlan.metadata.general_plan_id` links each commander plan to the
+  active General plan.
+- full `general_plan` payload is audit/debug-only, matching the slim context
+  rule for full battle-round plans.
+- one-shot weapons, once-per-battle abilities, rare stratagem windows, and CP
+  reserves are represented as policy data only.
+
+Acceptance criteria:
+
+- General plan serializes deterministically.
+- normal decision context remains slim.
+- commander plan includes `general_plan_id`.
+- limited-resource policy structures exist but do not alter legality, masks, or
+  decision choices.
+- tests cover cache identity, context slimming, and deterministic serialization.
+
 ## Remaining
 
-### PR 6 - Shooting Executes Commander Fire Assignments
+### PR 6B - Commander Transport Intent
+
+Add explicit transport doctrine/execution slices before deeper movement
+behavior.
+
+Planned data model:
+
+- `TransportAssignment`
+- General `transport_policy` slice consumed by the commander.
+- `movement_plan.transport_assignments`.
+- unit-local `commander_transport_assignment`,
+  `commander_embark_assignment`, and `commander_disembark_assignment` context
+  slices.
+
+Planned behavior:
+
+- embarked units can receive `stay_embarked`, `disembark`, or `deliver` intent.
+- transports can receive `deliver`, `screen_with_transport`, or `reposition`
+  intent.
+- embark/disembark decisions receive unit-local commander transport metadata.
+
+Acceptance criteria:
+
+- no candidate generation, legality, or decision choice changes.
+- transport assignments serialize deterministically.
+- unit-scoped decision context stays slim and local.
+- tests cover embarked passenger, transport delivery, and missing/stale
+  transport intent cases.
+
+### PR 6C - Movement Ranker Consumes Commander Transport Intent
+
+Extend the completed PR5 movement ranker consumption to transport-specific
+movement decisions.
+
+Movement ranker should score:
+
+- embark intent.
+- disembark intent.
+- transport delivery intent.
+- destination-region alignment.
+- stale/illegal transport intent fallback.
+
+Acceptance criteria:
+
+- unit with disembark intent prefers legal disembark candidate matching the
+  commander destination.
+- unit with embark intent prefers legal embark candidate.
+- transport with delivery intent prefers legal movement toward commander staging
+  region.
+- local fallback still wins if commander transport intent is illegal, stale, or
+  unsupported by candidate metadata.
+- legality remains owned by existing validators.
+
+### PR 7 - Shooting Executes Commander Fire Assignments And General Resource Policy
 
 Make `DECLARE_SHOTS` try commander preferred targets/declarations first, validate
 through existing legal candidate paths, fall back when stale or illegal, and
-update target commitments after each shooting resolution.
+update target commitments after each shooting resolution. Shooting should also
+consume General limited-resource policy for one-shot weapons and once-per-battle
+offensive effects.
 
-### PR 7 - Charge And Fight Consume Commander Assignments
+Acceptance criteria:
+
+- planned targets/declarations are tried first but never bypass validation.
+- dead or unreachable planned targets fall back legally.
+- overkill guard redirects later shooters after target destruction or projected
+  damage saturation.
+- one-shot / once-per-battle resources are used only when General policy
+  authorizes them.
+- local fallback remains deterministic when General/Commander policy is absent.
+
+### PR 8 - Charge And Fight Consume Commander Assignments
 
 Make charge/fight target selection prefer commander assignments while preserving
-existing charge/fight legality and fallback behavior.
+existing charge/fight legality and fallback behavior. General posture/resource
+constraints can influence whether melee assets are preserved, traded, or
+committed.
 
-### PR 8 - Weapon And Ability Trigger-Band Planner
+### PR 9 - Weapon And Ability Trigger-Band Planner
 
 Extract and model trigger bands such as Melta, Rapid Fire, Assault, Heavy,
 Torrent, Pistol, half-range unit abilities, advance-and-charge, and
-fall-back-and-shoot as planning metadata.
+fall-back-and-shoot as planning metadata. This should feed both General
+whole-game resource timing and Commander current-round movement/fire planning.
 
-### PR 9 - Commander Telemetry And Audit Tooling
+### PR 10 - General/Commander Telemetry And Audit Tooling
 
-Add structured commander events and counters for plan build/repair, assignment
-hits/rejections/fallbacks, overkill redirects, phase reports, hit rates,
-fallback rates, and default context payload size.
+Add structured General and Commander events/counters:
 
-### PR 10 - Performance Guardrails And Cache Hardening
+- `general_plan_built`
+- `general_resource_authorized`
+- `general_resource_spent`
+- `commander_plan_repaired`
+- `commander_assignment_used`
+- `commander_assignment_fallback`
+- `transport_plan_used`
+- `transport_plan_fallback`
+- context payload size, hit rates, fallback rates, and repair timing.
+
+### PR 11 - Performance Guardrails And Cache Hardening
 
 Add budgets/top-K constraints and representative performance checks so commander
-planning stays bounded and improves later phase work without bloating default
-cache keys.
+and General planning stay bounded and improve later phase work without bloating
+default cache keys.
+
+Performance counters should include:
+
+- `general_plan_build_ms`
+- `commander_plan_build_ms`
+- `repair_ms`
+- `context_payload_bytes`
+- movement candidate reduction.
+- shooting validation reduction.
