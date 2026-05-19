@@ -28,6 +28,9 @@ can order already-legal candidates against higher-level deployment intent.
   - `scout_projection` / `infiltrate_projection` for matching forward
     deployment units when present
   - `transport_deployment_task` for transports and planned passengers
+  - `deployment_candidate_unit_tasks` and
+    `deployment_candidate_tempo_capabilities` for next-unit deployment
+    selection requests
 - The full `deployment_plan` payload is audit/debug-only. It is attached only
   when `request.context["include_full_deployment_plan"]` or
   `game.attach_full_deployment_plan_context` is true.
@@ -204,15 +207,50 @@ The scaffold subscribes to deployment reveal events:
 - `deployment_reserves_declared`: dirty reserve planning and enemy information
   for opposing declarations.
 
-## Current Baseline
+## Ranker Consumption
 
-PR7 is deliberately non-behavioral:
+PR8 makes the deployment ranker consume commander deployment metadata when it
+orders legal candidates.
+
+Candidate metadata can include:
+
+- `commander_deployment_alignment`
+- `deployment_sequence_priority`
+- `preferred_drop_window_score`
+- `scout_lane_value`
+- `scout_cover_after_move_score`
+- `scout_objective_threat_score`
+- `infiltrate_screen_value`
+- `counter_scout_value`
+- `enemy_forward_deny_value`
+- `go_first_value`
+- `go_second_safety`
+- `first_turn_uncertainty_risk`
+- `deployment_reveal_risk`
+- `deployment_replan_stale_penalty`
+- `fixed_secondary_lane_score`
+- `tactical_secondary_flexibility_score`
+
+This affects only ranking among candidates that already exist and remain
+unmasked legal.
+
+Deployment ranker behavior:
+
+- Scout units can be selected earlier when viable Scout lanes exist.
+- Infiltrate units can be selected earlier when they can screen or counter
+  enemy Scout pressure.
+- Scout deployment placements prefer forward staging with post-Scout cover,
+  lane screening, and objective pressure metadata.
+- Infiltrate placements prefer forward regions that screen Scout lanes and deny
+  enemy forward space.
+- first-turn-unknown exposure and stale deployment-repair scopes reduce
+  commander alignment.
+
+## Current Boundary
+
+PR7/PR8 preserve the legality boundary:
 
 - no deployment candidate generation changes.
 - no deployment masks change.
 - no placement validation changes.
-- no deployment ranker consumes these fields yet.
 - full plan payload remains audit/debug-only.
-
-PR8 is expected to make the deployment ranker consume these local slices when
-ordering legal deployment candidates.

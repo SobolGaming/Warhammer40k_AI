@@ -297,6 +297,33 @@ def attach_ai_orchestration_context(
         if transport_task is not None and "transport_deployment_task" not in updated:
             updated["transport_deployment_task"] = transport_task.to_dict()
 
+    if deployment_plan is not None and str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_NEXT_DEPLOY_UNIT:
+        candidate_unit_ids = sorted(
+            {
+                str(dict(getattr(option, "payload", {}) or {}).get("unit_id", "") or "")
+                for option in list(getattr(request, "options", []) or [])
+                if str(dict(getattr(option, "payload", {}) or {}).get("unit_id", "") or "")
+            }
+        )
+        if candidate_unit_ids and "deployment_candidate_unit_tasks" not in updated:
+            unit_tasks = dict(getattr(deployment_plan, "unit_tasks", {}) or {})
+            updated["deployment_candidate_unit_tasks"] = {
+                unit_key: unit_tasks[unit_key].to_dict()
+                for unit_key in candidate_unit_ids
+                if unit_key in unit_tasks
+            }
+        if candidate_unit_ids and "deployment_candidate_tempo_capabilities" not in updated:
+            tempo_capabilities = dict(getattr(deployment_plan, "tempo_capabilities", {}) or {})
+            updated["deployment_candidate_tempo_capabilities"] = {
+                unit_key: tempo_capabilities[unit_key].to_dict()
+                for unit_key in candidate_unit_ids
+                if unit_key in tempo_capabilities
+                and bool(
+                    getattr(tempo_capabilities[unit_key], "has_scout", False)
+                    or getattr(tempo_capabilities[unit_key], "has_infiltrate", False)
+                )
+            }
+
     updated["compute_tier"] = _normalize_compute_tier(
         task_compute_tier if task_compute_tier is not None else updated.get("compute_tier")
     )

@@ -171,6 +171,228 @@ def _as_string_set(values: object) -> set[str]:
     return set()
 
 
+def _as_dict(value: object) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _deployment_task_for_unit(context: dict[str, Any], unit_id: str) -> dict[str, Any]:
+    unit_key = str(unit_id or "")
+    local_task = _as_dict(context.get("unit_deployment_task"))
+    if local_task and (not unit_key or str(local_task.get("unit_id", "") or "") == unit_key):
+        return local_task
+    candidate_tasks = _as_dict(context.get("deployment_candidate_unit_tasks"))
+    return _as_dict(candidate_tasks.get(unit_key))
+
+
+def _deployment_tempo_for_unit(context: dict[str, Any], unit_id: str) -> dict[str, Any]:
+    unit_key = str(unit_id or "")
+    local_tempo = _as_dict(context.get("deployment_tempo_capability"))
+    if local_tempo and (not unit_key or str(local_tempo.get("unit_id", "") or "") == unit_key):
+        return local_tempo
+    candidate_tempos = _as_dict(context.get("deployment_candidate_tempo_capabilities"))
+    return _as_dict(candidate_tempos.get(unit_key))
+
+
+def _secondary_mode(context: dict[str, Any]) -> str:
+    direct = str(context.get("secondary_mode", context.get("secondary_mission_mode", "")) or "").strip().lower()
+    if direct:
+        return direct
+    mission_state = _as_dict(context.get("mission_state"))
+    selected = _as_dict(mission_state.get("selected_mission_info"))
+    return str(
+        selected.get("secondary_mission_mode", "")
+        or mission_state.get("secondary_mission_mode", "")
+        or ""
+    ).strip().lower()
+
+
+def _deployment_replan_stale_penalty(context: dict[str, Any]) -> float:
+    scope = str(context.get("deployment_replan_scope", "") or "").strip().lower()
+    dirty_flags = _as_dict(context.get("deployment_dirty_flags"))
+    status = str(dirty_flags.get("status", "") or "").strip().lower()
+    if scope and scope != "none":
+        return -0.45
+    if status and status != "on_plan":
+        return -0.35
+    return 0.0
+
+
+def _preferred_drop_window_score(task: dict[str, Any], *, progress: float) -> float:
+    window = str(task.get("preferred_drop_window", "any") or "any").strip().lower()
+    if window == "early":
+        return _round6(1.0 - _clamp(progress, low=0.0, high=1.0))
+    if window == "middle":
+        return _round6(1.0 - abs(_clamp(progress, low=0.0, high=1.0) - 0.5) * 2.0)
+    if window == "late":
+        return _round6(_clamp(progress, low=0.0, high=1.0))
+    return 0.15
+
+
+def _deployment_sequence_metadata(
+    context: dict[str, Any],
+    *,
+    unit_id: str,
+    progress: float,
+) -> dict[str, float]:
+    task = _deployment_task_for_unit(context, unit_id)
+    tempo = _deployment_tempo_for_unit(context, unit_id)
+    if not task and not tempo:
+        return {}
+    has_scout = bool(task.get("has_scout", False) or tempo.get("has_scout", False))
+    has_infiltrate = bool(task.get("has_infiltrate", False) or tempo.get("has_infiltrate", False))
+    sequence_priority = max(
+        _safe_float(task.get("deployment_sequence_priority"), 0.0),
+        _safe_float(tempo.get("early_drop_priority"), 0.0),
+    )
+    window_score = _preferred_drop_window_score(task, progress=progress)
+    scout_lane_value = float(len(list(task.get("scout_lane_targets", []) or []))) * 0.2 if has_scout else 0.0
+    counter_scout = float(len(list(task.get("counter_scout_regions", []) or []))) * 0.22 if has_infiltrate else 0.0
+    infiltrate_screen = float(len(list(task.get("infiltrate_screen_regions", []) or []))) * 0.18 if has_infiltrate else 0.0
+    no_mans_pressure = float(len(list(task.get("no_mans_land_pressure_regions", []) or []))) * 0.12
+    go_first_value = _safe_float(task.get("go_first_value"), 0.0)
+    go_second_safety = _safe_float(task.get("go_second_safety"), 0.0)
+    reveal_risk = max(
+        _safe_float(tempo.get("reveal_risk"), 0.0),
+        _safe_float(_as_dict(task.get("metadata")).get("deployment_reveal_risk"), 0.0),
+        _safe_float(_as_dict(task.get("metadata")).get("first_turn_uncertainty_risk"), 0.0),
+    )
+    secondary = _secondary_mode(context)
+    fixed_lane = 0.25 if secondary == "fixed" and bool(task.get("preserve_for_late_game", False)) else 0.0
+    tactical_flex = _safe_float(task.get("tactical_flexibility"), 0.0) if secondary in {"tactical", "unknown"} else 0.0
+    alignment = (
+        sequence_priority * 0.45
+        + window_score * 0.35
+        + scout_lane_value * 0.45
+        + counter_scout * 0.55
+        + infiltrate_screen * 0.45
+        + no_mans_pressure * 0.25
+        + go_first_value * 0.15
+        + go_second_safety * 0.2
+        + tactical_flex * 0.12
+        + fixed_lane * 0.12
+        - reveal_risk * 0.18
+        + _deployment_replan_stale_penalty(context)
+    )
+    return {
+        "commander_deployment_alignment": _round6(alignment),
+        "deployment_sequence_priority": _round6(sequence_priority),
+        "preferred_drop_window_score": _round6(window_score),
+        "scout_lane_value": _round6(scout_lane_value),
+        "infiltrate_screen_value": _round6(infiltrate_screen),
+        "counter_scout_value": _round6(counter_scout),
+        "enemy_forward_deny_value": _round6(counter_scout + no_mans_pressure),
+        "go_first_value": _round6(go_first_value),
+        "go_second_safety": _round6(go_second_safety),
+        "first_turn_uncertainty_risk": _round6(reveal_risk),
+        "deployment_reveal_risk": _round6(reveal_risk),
+        "deployment_replan_stale_penalty": _round6(_deployment_replan_stale_penalty(context)),
+        "fixed_secondary_lane_score": _round6(fixed_lane),
+        "tactical_secondary_flexibility_score": _round6(tactical_flex),
+    }
+
+
+def _deployment_placement_metadata(
+    context: dict[str, Any],
+    *,
+    unit_id: str,
+    forward_norm: float,
+    lateral_norm: float,
+    center_norm: float,
+    cover_delta: float,
+    exposure_if_enemy_first: float,
+) -> dict[str, float]:
+    task = _deployment_task_for_unit(context, unit_id)
+    tempo = _deployment_tempo_for_unit(context, unit_id)
+    scout_projection = _as_dict(context.get("scout_projection"))
+    infiltrate_projection = _as_dict(context.get("infiltrate_projection"))
+    if not task and not tempo and not scout_projection and not infiltrate_projection:
+        return {}
+    has_scout = bool(task.get("has_scout", False) or tempo.get("has_scout", False))
+    has_infiltrate = bool(task.get("has_infiltrate", False) or tempo.get("has_infiltrate", False))
+    role = str(task.get("role", "") or "").strip().lower()
+    go_first_value = _safe_float(task.get("go_first_value"), 0.0)
+    go_second_safety = _safe_float(task.get("go_second_safety"), 0.0)
+    reveal_risk = max(
+        _safe_float(tempo.get("reveal_risk"), 0.0),
+        _safe_float(_as_dict(task.get("metadata")).get("first_turn_uncertainty_risk"), 0.0),
+    )
+    forward = max(0.0, float(forward_norm))
+    backfield = max(0.0, -float(forward_norm))
+    cover = max(0.0, float(cover_delta))
+    safety = max(0.0, 1.0 - float(exposure_if_enemy_first))
+    scout_lane_value = 0.0
+    scout_cover = 0.0
+    scout_objective = 0.0
+    if has_scout:
+        scout_lane_count = len(list(task.get("scout_lane_targets", []) or []))
+        scout_screen_count = len(list(scout_projection.get("can_screen_lane_ids", []) or []))
+        objective_count = len(list(scout_projection.get("can_threaten_objective_ids", []) or []))
+        scout_lane_value = forward * 0.55 + min(1.0, float(max(scout_lane_count, scout_screen_count)) * 0.16)
+        scout_cover = cover * 0.75 + (0.25 if bool(scout_projection.get("can_reach_cover", False)) else 0.0)
+        scout_objective = forward * 0.5 + min(0.6, float(objective_count) * 0.2)
+    infiltrate_screen = 0.0
+    counter_scout = 0.0
+    enemy_forward_deny = 0.0
+    if has_infiltrate:
+        blocked_lanes = len(list(infiltrate_projection.get("blocks_enemy_scout_lane_ids", []) or []))
+        denied_regions = len(list(infiltrate_projection.get("denies_enemy_forward_regions", []) or []))
+        infiltrate_regions = len(list(task.get("infiltrate_screen_regions", []) or []))
+        counter_regions = len(list(task.get("counter_scout_regions", []) or []))
+        infiltrate_screen = forward * 0.65 + min(0.8, float(max(infiltrate_regions, denied_regions)) * 0.15)
+        counter_scout = forward * 0.45 + min(0.8, float(max(counter_regions, blocked_lanes)) * 0.16)
+        enemy_forward_deny = forward * 0.5 + min(0.8, float(denied_regions) * 0.18)
+    role_alignment = 0.0
+    if role == "hide":
+        role_alignment = backfield * 0.35 + cover * 0.45 + safety * 0.35
+    elif role == "screen":
+        role_alignment = forward * 0.45 + lateral_norm * 0.12 + safety * 0.18
+    elif role == "score":
+        role_alignment = (1.0 - min(1.0, abs(center_norm - 0.55))) * 0.35 + safety * 0.2
+    elif role in {"stage", "counterpunch", "transported"}:
+        role_alignment = (1.0 - min(1.0, center_norm)) * 0.25 + safety * 0.25 + cover * 0.2
+    secondary = _secondary_mode(context)
+    fixed_lane = 0.0
+    tactical_flex = 0.0
+    if secondary == "fixed":
+        fixed_lane = forward * 0.12 + safety * 0.18
+    elif secondary in {"tactical", "unknown"}:
+        tactical_flex = (1.0 - min(1.0, center_norm)) * 0.25 + lateral_norm * 0.08
+    uncertainty_risk = reveal_risk + max(0.0, exposure_if_enemy_first - go_second_safety)
+    alignment = (
+        role_alignment
+        + scout_lane_value * 0.55
+        + scout_cover * 0.35
+        + scout_objective * 0.35
+        + infiltrate_screen * 0.55
+        + counter_scout * 0.5
+        + enemy_forward_deny * 0.35
+        + go_first_value * max(0.0, forward_norm) * 0.12
+        + go_second_safety * safety * 0.2
+        + fixed_lane
+        + tactical_flex
+        - uncertainty_risk * 0.35
+        + _deployment_replan_stale_penalty(context)
+    )
+    return {
+        "commander_deployment_alignment": _round6(alignment),
+        "deployment_sequence_priority": _round6(_safe_float(task.get("deployment_sequence_priority"), 0.0)),
+        "preferred_drop_window_score": _round6(_preferred_drop_window_score(task, progress=0.5) if task else 0.0),
+        "scout_lane_value": _round6(scout_lane_value),
+        "scout_cover_after_move_score": _round6(scout_cover),
+        "scout_objective_threat_score": _round6(scout_objective),
+        "infiltrate_screen_value": _round6(infiltrate_screen),
+        "counter_scout_value": _round6(counter_scout),
+        "enemy_forward_deny_value": _round6(enemy_forward_deny),
+        "go_first_value": _round6(go_first_value),
+        "go_second_safety": _round6(go_second_safety),
+        "first_turn_uncertainty_risk": _round6(uncertainty_risk),
+        "deployment_reveal_risk": _round6(reveal_risk),
+        "deployment_replan_stale_penalty": _round6(_deployment_replan_stale_penalty(context)),
+        "fixed_secondary_lane_score": _round6(fixed_lane),
+        "tactical_secondary_flexibility_score": _round6(tactical_flex),
+    }
+
+
 def _lookahead_config(context: dict[str, Any], intent: DeploymentIntent) -> dict[str, Any]:
     toggles = dict(intent.constraint_toggles or {})
     raw = context.get("deployment_lookahead")
@@ -853,6 +1075,11 @@ def _next_deploy_unit_candidates(game: object, request: DecisionRequest, intent:
     ctx = dict(getattr(request, "context", {}) or {})
     already_deployed_count = _safe_int(ctx.get("already_deployed_count", 0), 0)
     undeployed_count = max(1, _safe_int(ctx.get("undeployed_count", len(list(getattr(request, "options", []) or [])),)))
+    progress = _clamp(
+        float(max(0, already_deployed_count)) / float(max(1, already_deployed_count + undeployed_count)),
+        low=0.0,
+        high=1.0,
+    )
     candidates: list[CandidateAction] = []
     for option in list(getattr(request, "options", []) or []):
         option_id = str(getattr(option, "option_id", "") or "")
@@ -884,6 +1111,12 @@ def _next_deploy_unit_candidates(game: object, request: DecisionRequest, intent:
             "rules_provenance_refs": [str(ctx.get("rules_bundle_id", "") or "")] if str(ctx.get("rules_bundle_id", "") or "") else [],
         }
         metadata.update(projection)
+        commander_metadata = _deployment_sequence_metadata(
+            ctx,
+            unit_id=unit_id,
+            progress=progress,
+        )
+        metadata.update(commander_metadata)
         candidates.append(
             CandidateAction(
                 action_id=str(action_id),
@@ -1214,6 +1447,17 @@ def _scout_move_candidates(game: object, request: DecisionRequest, intent: Deplo
             "projected_exposure_delta_if_enemy_goes_first": _round6(exposure_if_enemy_first),
             "projected_melee_staging_delta": _round6(staging_weight * (0.05 + max(0.0, center_delta) * 0.2)),
         }
+        metadata.update(
+            _deployment_placement_metadata(
+                ctx,
+                unit_id=unit_id,
+                forward_norm=center_delta,
+                lateral_norm=0.0,
+                center_norm=_clamp(dest_center_dist / max(1.0, max(board_width, board_height) * 0.5), low=0.0, high=2.0),
+                cover_delta=cover,
+                exposure_if_enemy_first=exposure_if_enemy_first,
+            )
+        )
         candidates.append(
             CandidateAction(
                 action_id=str(action_id),
@@ -1232,6 +1476,7 @@ def _scout_move_candidates(game: object, request: DecisionRequest, intent: Deplo
 
 def _deployment_move_candidates(game: object, request: DecisionRequest, intent: DeploymentIntent) -> tuple[list[CandidateAction], list[bool]]:
     ctx = dict(getattr(request, "context", {}) or {})
+    request_unit_id = str(ctx.get("unit_id", "") or "")
     fallback_positions = list(ctx.get("deployment_model_positions", []) or [])
     if not fallback_positions and not list(getattr(request, "options", []) or []):
         return _copy_request_candidates(request, fallback_mode=False)
@@ -1427,6 +1672,17 @@ def _deployment_move_candidates(game: object, request: DecisionRequest, intent: 
             "projected_exposure_delta_if_enemy_goes_first": _round6(exposure_if_enemy_first),
             "projected_melee_staging_delta": _round6(melee_staging_delta),
         }
+        metadata.update(
+            _deployment_placement_metadata(
+                ctx,
+                unit_id=str(payload.get("unit_id", "") or request_unit_id),
+                forward_norm=forward_norm,
+                lateral_norm=lateral_norm,
+                center_norm=center_norm,
+                cover_delta=cover,
+                exposure_if_enemy_first=exposure_if_enemy_first,
+            )
+        )
         candidates.append(
             CandidateAction(
                 action_id=str(action_id),

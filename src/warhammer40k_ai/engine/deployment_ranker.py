@@ -45,6 +45,22 @@ DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS: tuple[str, ...] = (
     "lookahead_followup_value",
     "lookahead_enemy_pressure",
     "lookahead_total_value",
+    "commander_deployment_alignment",
+    "deployment_sequence_priority",
+    "preferred_drop_window_score",
+    "scout_lane_value",
+    "scout_cover_after_move_score",
+    "scout_objective_threat_score",
+    "infiltrate_screen_value",
+    "counter_scout_value",
+    "enemy_forward_deny_value",
+    "go_first_value",
+    "go_second_safety",
+    "first_turn_uncertainty_risk",
+    "deployment_reveal_risk",
+    "deployment_replan_stale_penalty",
+    "fixed_secondary_lane_score",
+    "tactical_secondary_flexibility_score",
 )
 
 

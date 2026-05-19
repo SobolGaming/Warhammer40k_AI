@@ -16,6 +16,9 @@ Context keys:
   when Scout/Infiltrate tempo metadata is present
 - `scout_projection` / `infiltrate_projection` for matching unit-scoped
   setup/deployment decisions when present
+- `deployment_candidate_unit_tasks` and
+  `deployment_candidate_tempo_capabilities` for next-unit deployment selection
+  requests
 - `commander_dirty_flags`
 - `commander_replan_scope`
 - `last_commander_phase_report`
@@ -100,7 +103,8 @@ Runtime use:
   requests receive `deployment_plan_id`, `deployment_dirty_flags`,
   `deployment_replan_scope`, and unit-local deployment slices when applicable.
   Scout/Infiltrate-capable units can also receive local deployment tempo and
-  projection slices for future deployment ranker consumption.
+  projection slices. Next-unit deployment selection receives only decision-local
+  task/tempo slices for the candidate units, not the full deployment plan.
 - A cached `BattleRoundPlan` is built from the Tier-1 plan plus the Tier-2 task bundle. Eligible requests receive `battle_round_plan_id`; unit-scoped requests receive the relevant local commander slices.
 - The full `deployment_plan` dict is attached only when `request.context["include_full_deployment_plan"]` or `game.attach_full_deployment_plan_context` enables audit/debug payloads.
 - The full `battle_round_plan` dict is attached only when `request.context["include_full_battle_round_plan"]` or `game.attach_full_battle_round_plan_context` enables audit/debug payloads.

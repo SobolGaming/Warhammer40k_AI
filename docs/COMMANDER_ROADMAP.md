@@ -350,26 +350,34 @@ Implemented behavior:
 - full `deployment_plan` payload remains audit/debug-only.
 - deployment legality, candidate generation, masks, and rankers are unchanged.
 
-## Remaining Roadmap
-
 ### PR 8 - Deployment Ranker Consumes Deployment Commander Intent
 
-Score legal deployment candidates against go-first value, go-second safety,
-obscuring/exposure, objective access, tactical-secondary flexibility,
-screening, reserve denial, transport delivery support, and revealed enemy
-deployment response. PR8 should also consume deployment tempo metadata for both
-drop order and placement:
+Score legal deployment candidates against commander deployment metadata.
 
-- Scout units should deploy early when viable lanes exist.
-- Infiltrate units should deploy early to block enemy Scout or forward staging
-  lanes.
-- Scout placement should prefer No Man's Land border staging with post-Scout
-  cover and objective access.
-- Scout placement should avoid lanes blocked by enemy Infiltrate.
-- Infiltrate placement should prefer regions that screen enemy Scout movement.
-- first-turn-unknown exposed Scout/Infiltrate placements should be penalized.
+Implemented behavior:
 
-No legality changes.
+- next-unit deployment requests receive decision-local unit task and tempo
+  capability slices for the candidate units.
+- deployment candidate metadata includes commander alignment, deployment
+  sequence priority, preferred drop-window score, Scout lane value, Scout cover
+  and objective pressure, Infiltrate screen value, counter-Scout value, enemy
+  forward deny value, go-first value, go-second safety, uncertainty/reveal risk,
+  stale deployment-plan penalty, and fixed/tactical secondary bias fields.
+- the deterministic deployment ranker and deployment ranker feature vector know
+  those metadata keys.
+- Scout units can be selected earlier when viable Scout lanes exist.
+- Infiltrate units can be selected earlier when they can screen or counter
+  enemy Scout pressure.
+- Scout placement can prefer No Man's Land border staging with post-Scout cover
+  and objective access.
+- Scout placement can avoid stale or overexposed forward intent through
+  uncertainty-risk metadata.
+- Infiltrate placement can prefer regions that screen enemy Scout movement and
+  deny enemy forward space.
+- deployment legality, candidate generation, masks, and validation are
+  unchanged.
+
+## Remaining Roadmap
 
 ### PR 9 - Shooting Executes Commander Fire Assignments And General Resource Policy
 

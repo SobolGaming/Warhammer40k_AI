@@ -4,13 +4,29 @@ from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
+from warhammer40k_ai.engine.ai_component_rankers import default_ai_component_rankers
+from warhammer40k_ai.engine.ai_policy_orchestrator import COMPONENT_DEPLOYMENT_RANKER
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.deployment_intent import DeploymentIntent
 from warhammer40k_ai.engine.deployment_ranker import DeploymentCandidateRanker
 from warhammer40k_ai.engine.deployment_ranker_training import (
     build_deployment_ranking_dataset,
     train_deployment_ranker_model,
 )
+from warhammer40k_ai.engine.deployment_solver import generate_deployment_candidates
+
+
+class _Map:
+    width = 60.0
+    height = 44.0
+
+
+class _Game:
+    players: list[object] = []
+    time_manager = None
+    map = _Map()
 
 
 def _metadata(*, score: float, deny: float, candidate_kind: str = "deployment_zone") -> dict:
@@ -212,3 +228,225 @@ def test_default_dataset_includes_reserves_and_filters_non_deployment_move_recor
     kinds = set(str(value) for value in list(dataset.get("candidate_kinds", []) or []))
     assert "deployment_reserves" in kinds
     assert "deployment_move" in kinds
+
+
+def test_deployment_ranker_consumes_commander_sequence_priority_for_next_drop() -> None:
+    request = DecisionRequest.create(
+        DECISION_SELECT_NEXT_DEPLOY_UNIT,
+        "Select next unit",
+        player_id="player:test",
+        options=[
+            DecisionOption.create("Line", payload={"unit_id": "unit:line"}),
+            DecisionOption.create("Scout", payload={"unit_id": "unit:scout"}),
+        ],
+        context={
+            "already_deployed_count": 0,
+            "undeployed_count": 2,
+            "deployment_candidate_unit_tasks": {
+                "unit:line": {
+                    "unit_id": "unit:line",
+                    "role": "stage",
+                    "preferred_drop_window": "late",
+                    "deployment_sequence_priority": 0.1,
+                    "go_first_value": 0.4,
+                    "go_second_safety": 0.6,
+                    "tactical_flexibility": 0.4,
+                },
+                "unit:scout": {
+                    "unit_id": "unit:scout",
+                    "role": "screen",
+                    "preferred_drop_window": "early",
+                    "deployment_sequence_priority": 2.4,
+                    "has_scout": True,
+                    "scout_lane_targets": ["left_no_mans_land_lane"],
+                    "no_mans_land_pressure_regions": ["left_forward_screen"],
+                    "go_first_value": 0.65,
+                    "go_second_safety": 0.55,
+                    "tactical_flexibility": 0.75,
+                },
+            },
+            "deployment_candidate_tempo_capabilities": {
+                "unit:scout": {
+                    "unit_id": "unit:scout",
+                    "has_scout": True,
+                    "early_drop_priority": 2.3,
+                    "reveal_risk": 0.1,
+                },
+            },
+            "mission_state": {"selected_mission_info": {"secondary_mission_mode": "tactical"}},
+        },
+    )
+    candidates, mask, _wall_ms, fallback_mode = generate_deployment_candidates(
+        _Game(),
+        request,
+        DeploymentIntent.from_context(request.context),
+    )
+    request.candidates = candidates
+    request.mask = mask
+
+    scout_action = request.action_id_for_option_id(request.options[1].option_id)
+    scout_candidate = next(candidate for candidate in candidates if candidate.action_id == scout_action)
+    assert fallback_mode is False
+    assert scout_candidate.metadata["deployment_sequence_priority"] > 0.0
+    assert scout_candidate.metadata["scout_lane_value"] > 0.0
+    assert (
+        default_ai_component_rankers()[COMPONENT_DEPLOYMENT_RANKER].choose_action_id(request)
+        == scout_action
+    )
+
+
+def test_deployment_ranker_consumes_scout_placement_tempo_metadata() -> None:
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy scout",
+        player_id="player:test",
+        options=[
+            DecisionOption.create(
+                "Back",
+                payload={
+                    "unit_id": "unit:scout",
+                    "action": "confirm",
+                    "deployment_anchor": [30.0, 4.0],
+                    "model_positions": [{"model_id": "m1", "position": [30.0, 4.0, 0.0]}],
+                },
+            ),
+            DecisionOption.create(
+                "Forward",
+                payload={
+                    "unit_id": "unit:scout",
+                    "action": "confirm",
+                    "deployment_anchor": [30.0, 18.0],
+                    "model_positions": [{"model_id": "m1", "position": [30.0, 18.0, 0.0]}],
+                },
+            ),
+        ],
+        context={
+            "unit_id": "unit:scout",
+            "placement_kind": "deployment",
+            "deployment_candidate_count": 2,
+            "deployment_intent": {
+                "desired_affordances": ["FORWARD_SCREEN"],
+                "anchors": {"deployment_center_x": "30.0", "deployment_center_y": "10.0"},
+            },
+            "unit_deployment_task": {
+                "unit_id": "unit:scout",
+                "role": "screen",
+                "preferred_drop_window": "early",
+                "deployment_sequence_priority": 2.0,
+                "has_scout": True,
+                "scout_lane_targets": ["left_no_mans_land_lane"],
+                "no_mans_land_pressure_regions": ["left_forward_screen"],
+                "go_first_value": 0.65,
+                "go_second_safety": 0.75,
+                "metadata": {"first_turn_uncertainty_risk": 0.05},
+            },
+            "deployment_tempo_capability": {
+                "unit_id": "unit:scout",
+                "has_scout": True,
+                "early_drop_priority": 2.0,
+                "reveal_risk": 0.05,
+            },
+            "scout_projection": {
+                "unit_id": "unit:scout",
+                "can_reach_cover": True,
+                "can_screen_lane_ids": ["left_no_mans_land_lane"],
+                "can_threaten_objective_ids": ["midfield_objective"],
+            },
+        },
+    )
+    candidates, mask, _wall_ms, _fallback_mode = generate_deployment_candidates(
+        _Game(),
+        request,
+        DeploymentIntent.from_context(request.context),
+    )
+    request.candidates = candidates
+    request.mask = mask
+
+    forward_action = request.action_id_for_option_id(request.options[1].option_id)
+    by_action = {candidate.action_id: candidate for candidate in candidates}
+    assert by_action[forward_action].metadata["scout_lane_value"] > 0.0
+    assert by_action[forward_action].metadata["scout_objective_threat_score"] > 0.0
+    assert by_action[forward_action].metadata["commander_deployment_alignment"] > by_action[
+        request.action_id_for_option_id(request.options[0].option_id)
+    ].metadata["commander_deployment_alignment"]
+    assert (
+        default_ai_component_rankers()[COMPONENT_DEPLOYMENT_RANKER].choose_action_id(request)
+        == forward_action
+    )
+
+
+def test_deployment_ranker_consumes_infiltrate_counter_scout_metadata() -> None:
+    request = DecisionRequest.create(
+        DECISION_MOVE_UNIT,
+        "Deploy infiltrator",
+        player_id="player:test",
+        options=[
+            DecisionOption.create(
+                "Safe back",
+                payload={
+                    "unit_id": "unit:infiltrator",
+                    "action": "confirm",
+                    "deployment_anchor": [30.0, 6.0],
+                    "model_positions": [{"model_id": "m1", "position": [30.0, 6.0, 0.0]}],
+                },
+            ),
+            DecisionOption.create(
+                "Counter scout",
+                payload={
+                    "unit_id": "unit:infiltrator",
+                    "action": "confirm",
+                    "deployment_anchor": [30.0, 20.0],
+                    "model_positions": [{"model_id": "m1", "position": [30.0, 20.0, 0.0]}],
+                },
+            ),
+        ],
+        context={
+            "unit_id": "unit:infiltrator",
+            "placement_kind": "deployment",
+            "deployment_candidate_count": 2,
+            "deployment_intent": {
+                "desired_affordances": ["FORWARD_SCREEN"],
+                "anchors": {"deployment_center_x": "30.0", "deployment_center_y": "10.0"},
+            },
+            "unit_deployment_task": {
+                "unit_id": "unit:infiltrator",
+                "role": "screen",
+                "preferred_drop_window": "early",
+                "deployment_sequence_priority": 3.0,
+                "has_infiltrate": True,
+                "counter_scout_regions": ["left_forward_screen"],
+                "infiltrate_screen_regions": ["left_forward_screen"],
+                "no_mans_land_pressure_regions": ["left_forward_screen"],
+                "go_first_value": 0.7,
+                "go_second_safety": 0.7,
+            },
+            "deployment_tempo_capability": {
+                "unit_id": "unit:infiltrator",
+                "has_infiltrate": True,
+                "early_drop_priority": 3.0,
+                "reveal_risk": 0.1,
+            },
+            "infiltrate_projection": {
+                "unit_id": "unit:infiltrator",
+                "blocks_enemy_scout_lane_ids": ["left_no_mans_land_lane"],
+                "denies_enemy_forward_regions": ["left_forward_screen"],
+            },
+        },
+    )
+    candidates, mask, _wall_ms, _fallback_mode = generate_deployment_candidates(
+        _Game(),
+        request,
+        DeploymentIntent.from_context(request.context),
+    )
+    request.candidates = candidates
+    request.mask = mask
+
+    counter_action = request.action_id_for_option_id(request.options[1].option_id)
+    counter_candidate = next(candidate for candidate in candidates if candidate.action_id == counter_action)
+    assert counter_candidate.metadata["infiltrate_screen_value"] > 0.0
+    assert counter_candidate.metadata["counter_scout_value"] > 0.0
+    assert counter_candidate.metadata["enemy_forward_deny_value"] > 0.0
+    assert (
+        default_ai_component_rankers()[COMPONENT_DEPLOYMENT_RANKER].choose_action_id(request)
+        == counter_action
+    )
