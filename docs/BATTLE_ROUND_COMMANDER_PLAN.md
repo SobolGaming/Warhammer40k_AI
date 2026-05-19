@@ -111,6 +111,27 @@ and whether full General, Deployment, or BattleRound plan payloads were
 explicitly attached through audit/debug opt-in. Normal decision context keeps
 only ids and local slices.
 
+## Performance Guardrails
+
+Planner guardrails are metadata and audit checks, not legality rules:
+
+- General, Deployment, and BattleRound plan metadata includes configured
+  build/repair budgets and compact count limits.
+- Commander analysis snapshots expose top-K limits:
+  - `max_targets`
+  - `max_units`
+  - `max_targets_per_unit`
+  - `max_unit_target_entries`
+- Commander snapshot metadata records whether target/unit analysis was
+  truncated and estimates avoided unit-target matrix work.
+- `orchestration_context_attached` audit metadata records context payload bytes,
+  warning/hard-limit status, full-plan payload keys, and
+  `context_cache_key_safe`.
+
+Full `general_plan`, `deployment_plan`, and `battle_round_plan` payloads remain
+audit/debug-only. A normal context is cache-key safe when it has no full plan
+payload keys and stays below the warning payload size.
+
 ## Plan Shape
 
 Top-level fields:

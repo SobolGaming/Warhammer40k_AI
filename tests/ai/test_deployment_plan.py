@@ -206,6 +206,11 @@ def test_deployment_plan_is_cached_and_serializable() -> None:
     assert data["secondary_mode"] == "tactical"
     assert data["information_state"]["enemy_unplaced_unit_ids"] == ["enemy:unplaced"]
     assert data["metadata"]["general_plan_id"] == game.get_or_create_general_plan(player.id).plan_id
+    guardrails = data["metadata"]["performance_guardrails"]
+    assert guardrails["plan_build_budget_ms"] > 0
+    assert guardrails["repair_budget_ms"] > 0
+    assert guardrails["context_payload_warning_bytes"] > 0
+    assert guardrails["unit_task_count"] == 1
 
 
 def test_deployment_context_is_slim_and_attaches_unit_task() -> None:

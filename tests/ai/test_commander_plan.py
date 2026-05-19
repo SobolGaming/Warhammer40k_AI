@@ -250,6 +250,11 @@ def test_orchestration_audit_events_record_plan_builds_and_context_attachment() 
     context_event = game.get_orchestration_audit_events(event_kind="orchestration_context_attached")[-1]
     assert context_event["metadata"]["full_battle_round_plan_attached"] is False
     assert "commander_fire_assignment" in context_event["metadata"]["attached_keys"]
+    assert context_event["metadata"]["context_payload_bytes"] > 0
+    assert context_event["metadata"]["context_payload_over_warning"] is False
+    assert context_event["metadata"]["context_payload_within_hard_limit"] is True
+    assert context_event["metadata"]["context_full_plan_keys"] == []
+    assert context_event["metadata"]["context_cache_key_safe"] is True
 
 
 def test_general_plan_is_cached_serializable_and_has_limited_resource_ledger() -> None:
@@ -268,6 +273,9 @@ def test_general_plan_is_cached_serializable_and_has_limited_resource_ledger() -
     assert data["resource_ledger"]["resource_count"] >= 2
     assert data["cp_policy"]["reserve_for_interrupt_or_overwatch"] == 1
     assert data["reserve_policy"]["late_game_scoring_preservation"] is True
+    guardrails = data["metadata"]["performance_guardrails"]
+    assert guardrails["plan_build_budget_ms"] > 0
+    assert guardrails["context_payload_warning_bytes"] > 0
 
 
 def test_general_transport_doctrine_records_current_passengers() -> None:
@@ -363,7 +371,15 @@ def test_commander_analysis_snapshot_is_deterministic_and_bounded() -> None:
         first["unit_target_entry_count"]
         <= first["limits"]["max_units"] * first["limits"]["max_targets_per_unit"]
     )
+    assert first["unit_target_entry_count"] <= first["limits"]["max_unit_target_entries"]
     assert first["cache_key"]["player_id"] == player.id
+    guardrails = first["metadata"]["performance_guardrails"]
+    reduction = first["metadata"]["phase_work_reduction_estimate"]
+    assert guardrails["target_analysis_truncated"] is True
+    assert guardrails["unit_analysis_truncated"] is True
+    assert guardrails["max_unit_target_entries"] == first["limits"]["max_unit_target_entries"]
+    assert reduction["unbounded_unit_target_entries"] >= reduction["bounded_unit_target_entries"]
+    assert reduction["avoided_unit_target_entries"] > 0
 
 
 def test_commander_analysis_scores_high_wound_targets_above_chaff() -> None:
@@ -822,6 +838,9 @@ def test_full_battle_round_plan_attaches_when_request_enables_audit_payload() ->
         request.context["battle_round_plan"]["plan_id"]
         == request.context["battle_round_plan_id"]
     )
+    context_event = game.get_orchestration_audit_events(event_kind="orchestration_context_attached")[-1]
+    assert context_event["metadata"]["context_full_plan_keys"] == ["battle_round_plan"]
+    assert context_event["metadata"]["context_cache_key_safe"] is False
 
 
 def test_full_general_plan_attaches_when_request_enables_audit_payload() -> None:

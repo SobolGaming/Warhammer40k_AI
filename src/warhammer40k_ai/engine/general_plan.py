@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .orchestration_guardrails import (
+    GENERAL_PLAN_BUILD_BUDGET_MS,
+    ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES,
+)
 from ..utility.entity_ids import get_entity_id
 
 
@@ -510,5 +514,11 @@ def build_general_plan(game: object, player_id: str) -> GeneralPlan:
             "source": "general_scaffold",
             "friendly_unit_count": int(len(units)),
             "transport_policy_count": int(len(transport_policy)),
+            "performance_guardrails": {
+                "plan_build_budget_ms": int(GENERAL_PLAN_BUILD_BUDGET_MS),
+                "context_payload_warning_bytes": int(ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES),
+                "limited_resource_policy_count": int(len(resource_policies)),
+                "transport_policy_count": int(len(transport_policy)),
+            },
         },
     )

@@ -15,6 +15,11 @@ from .tier2_orchestrator import (
     Tier2Task,
     Tier2TaskBundle,
 )
+from .orchestration_guardrails import (
+    COMMANDER_PLAN_BUILD_BUDGET_MS,
+    COMMANDER_REPAIR_BUDGET_MS,
+    ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES,
+)
 from ..utility.entity_ids import get_entity_id
 
 
@@ -58,6 +63,9 @@ TRANSPORT_INTENT_SCREEN_AFTER_DELIVERY = "transport_screen_after_delivery"
 COMMANDER_ANALYSIS_MAX_TARGETS = 6
 COMMANDER_ANALYSIS_MAX_UNITS = 24
 COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT = 4
+COMMANDER_ANALYSIS_MAX_MATRIX_ENTRIES = (
+    COMMANDER_ANALYSIS_MAX_UNITS * COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT
+)
 COMMANDER_ASSIGNMENT_KILL_DAMAGE_FRACTION = 0.85
 COMMANDER_ASSIGNMENT_OVERKILL_LIMIT = 1.5
 
@@ -413,6 +421,7 @@ class CommanderAnalysisSnapshot:
                 "max_targets": int(self.max_targets),
                 "max_units": int(self.max_units),
                 "max_targets_per_unit": int(self.max_targets_per_unit),
+                "max_unit_target_entries": int(self.max_units * self.max_targets_per_unit),
             },
             "target_count": int(len(target_analysis)),
             "unit_count": int(len(unit_capabilities)),
@@ -1405,6 +1414,7 @@ def _build_commander_analysis_snapshot(
     tier2_bundle: Tier2TaskBundle,
     generation: int,
 ) -> CommanderAnalysisSnapshot:
+    enemy_unit_count = int(len(enemy_units or []))
     target_analysis = [
         _commander_target_analysis(unit)
         for unit in sorted(enemy_units, key=lambda enemy: _entity_id(enemy))
@@ -1420,7 +1430,9 @@ def _build_commander_analysis_snapshot(
         for unit in list(enemy_units or [])
         if _entity_id(unit)
     }
-    friendly_units = _friendly_units_for_player(player)[:COMMANDER_ANALYSIS_MAX_UNITS]
+    all_friendly_units = _friendly_units_for_player(player)
+    friendly_unit_count = int(len(all_friendly_units))
+    friendly_units = all_friendly_units[:COMMANDER_ANALYSIS_MAX_UNITS]
     unit_capabilities = {
         _entity_id(unit): _commander_unit_capability(unit, tier2_bundle)
         for unit in friendly_units
@@ -1442,6 +1454,15 @@ def _build_commander_analysis_snapshot(
             )[:COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT]
         )
 
+    unbounded_matrix_entries = int(friendly_unit_count * min(enemy_unit_count, len(target_analysis)))
+    max_matrix_entries = int(COMMANDER_ANALYSIS_MAX_MATRIX_ENTRIES)
+    actual_matrix_entries = int(len(matrix_entries))
+    reduction_fraction = 0.0
+    if unbounded_matrix_entries > 0:
+        reduction_fraction = max(
+            0.0,
+            float(unbounded_matrix_entries - actual_matrix_entries) / float(unbounded_matrix_entries),
+        )
     return CommanderAnalysisSnapshot(
         player_id=str(tier1_plan.player_id),
         battle_round=int(tier1_plan.battle_round),
@@ -1452,7 +1473,23 @@ def _build_commander_analysis_snapshot(
         metadata={
             "source": "battle_round_plan_build",
             "friendly_unit_candidates": int(len(friendly_units)),
-            "enemy_target_candidates": int(len(enemy_units)),
+            "friendly_unit_candidate_count": friendly_unit_count,
+            "enemy_target_candidates": enemy_unit_count,
+            "performance_guardrails": {
+                "max_targets": int(COMMANDER_ANALYSIS_MAX_TARGETS),
+                "max_units": int(COMMANDER_ANALYSIS_MAX_UNITS),
+                "max_targets_per_unit": int(COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT),
+                "max_unit_target_entries": max_matrix_entries,
+                "target_analysis_truncated": bool(enemy_unit_count > COMMANDER_ANALYSIS_MAX_TARGETS),
+                "unit_analysis_truncated": bool(friendly_unit_count > COMMANDER_ANALYSIS_MAX_UNITS),
+                "matrix_entry_limit_hit": bool(actual_matrix_entries >= max_matrix_entries),
+            },
+            "phase_work_reduction_estimate": {
+                "unbounded_unit_target_entries": unbounded_matrix_entries,
+                "bounded_unit_target_entries": actual_matrix_entries,
+                "avoided_unit_target_entries": max(0, unbounded_matrix_entries - actual_matrix_entries),
+                "unit_target_reduction_fraction": reduction_fraction,
+            },
         },
     )
 
@@ -2190,6 +2227,15 @@ def build_battle_round_plan(
             "tier2_plan_id": tier2_bundle.plan_id,
             "general_transport_policy_count": int(len(dict(general_transport_policy or {}))),
             "analysis_snapshot": analysis_snapshot.to_dict(),
+            "performance_guardrails": {
+                "plan_build_budget_ms": int(COMMANDER_PLAN_BUILD_BUDGET_MS),
+                "repair_budget_ms": int(COMMANDER_REPAIR_BUDGET_MS),
+                "max_targets": int(COMMANDER_ANALYSIS_MAX_TARGETS),
+                "max_units": int(COMMANDER_ANALYSIS_MAX_UNITS),
+                "max_targets_per_unit": int(COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT),
+                "max_unit_target_entries": int(COMMANDER_ANALYSIS_MAX_MATRIX_ENTRIES),
+                "context_payload_warning_bytes": int(ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES),
+            },
         },
     )
 

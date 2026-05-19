@@ -4,6 +4,11 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from .orchestration_guardrails import (
+    DEPLOYMENT_PLAN_BUILD_BUDGET_MS,
+    DEPLOYMENT_REPAIR_BUDGET_MS,
+    ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES,
+)
 from ..utility.entity_ids import get_entity_id
 
 
@@ -1391,6 +1396,14 @@ def build_deployment_plan(
             "tempo_capability_count": int(len(tempo_capabilities)),
             "scout_projection_count": int(len(scout_projections)),
             "infiltrate_projection_count": int(len(infiltrate_projections)),
+            "performance_guardrails": {
+                "plan_build_budget_ms": int(DEPLOYMENT_PLAN_BUILD_BUDGET_MS),
+                "repair_budget_ms": int(DEPLOYMENT_REPAIR_BUDGET_MS),
+                "context_payload_warning_bytes": int(ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES),
+                "unit_task_count": int(len(unit_tasks)),
+                "transport_task_count": int(len(transport_tasks)),
+                "tempo_capability_count": int(len(tempo_capabilities)),
+            },
         },
     )
 

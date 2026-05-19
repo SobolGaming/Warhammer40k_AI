@@ -483,3 +483,20 @@ Implemented behavior:
 Add bounded top-K planning budgets, context payload size checks, cache-key
 guardrails, and phase-work reduction metrics across deployment, movement,
 shooting, charge, and fight.
+
+Implemented behavior:
+
+- shared orchestration guardrail constants define General, Deployment,
+  Commander build/repair budgets and decision-context payload warning/hard
+  limits.
+- normal decision context remains unchanged; context payload size and full-plan
+  cache-key risk are recorded only in `orchestration_context_attached` audit
+  metadata.
+- context audit metadata records payload bytes, warning/hard-limit status,
+  full plan payload keys, and whether the context is cache-key safe.
+- Commander analysis snapshots expose bounded top-K limits, max matrix entries,
+  truncation flags, and estimated avoided unit-target matrix work.
+- General, Deployment, and BattleRound plans expose compact
+  `performance_guardrails` metadata instead of full-plan payloads in normal
+  decision context.
+- plan build and repair audit events include their configured budget values.

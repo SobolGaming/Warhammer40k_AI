@@ -17,6 +17,7 @@ from .decision_kinds import (
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from .decisions import DecisionRequest
+from .orchestration_guardrails import context_payload_guardrail_report
 
 
 _STRATEGIC_CONTEXT_EXCLUDED_COMPONENTS = {
@@ -457,6 +458,7 @@ def attach_ai_orchestration_context(
                 "full_general_plan_attached": "general_plan" in updated,
                 "full_deployment_plan_attached": "deployment_plan" in updated,
                 "full_battle_round_plan_attached": "battle_round_plan" in updated,
+                **context_payload_guardrail_report(updated),
             },
         )
 

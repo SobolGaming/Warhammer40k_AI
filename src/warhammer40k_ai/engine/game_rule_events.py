@@ -97,6 +97,13 @@ from .deployment_plan import (
     deployment_tempo_capability_for_unit,
     repair_deployment_plan,
 )
+from .orchestration_guardrails import (
+    COMMANDER_PLAN_BUILD_BUDGET_MS,
+    COMMANDER_REPAIR_BUDGET_MS,
+    DEPLOYMENT_PLAN_BUILD_BUDGET_MS,
+    DEPLOYMENT_REPAIR_BUDGET_MS,
+    GENERAL_PLAN_BUILD_BUDGET_MS,
+)
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -248,6 +255,7 @@ class GameRuleEventService(GameServiceBase):
             metadata={
                 "limited_resource_policy_count": int(len(plan.limited_resource_policy)),
                 "transport_policy_count": int(len(plan.transport_policy)),
+                "plan_build_budget_ms": int(GENERAL_PLAN_BUILD_BUDGET_MS),
             },
         )
         return plan
@@ -278,6 +286,7 @@ class GameRuleEventService(GameServiceBase):
                 "unit_task_count": int(len(plan.unit_tasks)),
                 "transport_task_count": int(len(plan.transport_tasks)),
                 "tempo_capability_count": int(len(plan.tempo_capabilities)),
+                "plan_build_budget_ms": int(DEPLOYMENT_PLAN_BUILD_BUDGET_MS),
             },
         )
         return plan
@@ -396,6 +405,7 @@ class GameRuleEventService(GameServiceBase):
             "repair_count": int(repaired_plan.repair_count),
             "pre_dirty_flags": pre_flags.to_dict(),
             "post_dirty_flags": post_flags.to_dict(),
+            "repair_budget_ms": int(DEPLOYMENT_REPAIR_BUDGET_MS),
         }
         self.record_orchestration_audit_event(
             "deployment_plan_repaired",
@@ -453,6 +463,7 @@ class GameRuleEventService(GameServiceBase):
                 "unit_task_count": int(len(plan.unit_tasks)),
                 "target_priority_count": int(len(plan.priority_targets)),
                 "general_plan_id": str(general_plan.plan_id),
+                "plan_build_budget_ms": int(COMMANDER_PLAN_BUILD_BUDGET_MS),
             },
         )
         return plan
@@ -600,6 +611,7 @@ class GameRuleEventService(GameServiceBase):
             "repair_count": int(repaired_plan.invalidation.repair_count),
             "pre_dirty_flags": pre_flags.to_dict(),
             "post_dirty_flags": post_flags.to_dict(),
+            "repair_budget_ms": int(COMMANDER_REPAIR_BUDGET_MS),
         }
         self.record_orchestration_audit_event(
             "commander_plan_repaired",
