@@ -425,69 +425,95 @@ class ReplayStoreRecorder:
         actor_player_id = str(immediate_deltas.get("actor_player_id", "") or "")
         controller_kind = _player_controller_kind(game, actor_player_id)
         request_payload = _request_payload_from_decision_record(record)
+        request_blob = _pack_json(request_payload)
+        decision_record_blob = _pack_json(record)
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO decision_steps(
-                    decision_id,
-                    turn_id,
-                    phase,
-                    actor_player_id,
-                    controller_kind,
-                    decision_type,
-                    chosen_option_id,
-                    chosen_action_id,
-                    valid,
-                    wall_clock_ms,
-                    time_budget_ms,
-                    event_start_id,
-                    event_end_id,
-                    request_blob,
-                    decision_record_blob
-                )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
-                ON CONFLICT(decision_id) DO UPDATE SET
-                    decision_record_blob = excluded.decision_record_blob,
-                    chosen_action_id = CASE
-                        WHEN excluded.chosen_action_id != '' THEN excluded.chosen_action_id
-                        ELSE decision_steps.chosen_action_id
-                    END,
-                    valid = excluded.valid,
-                    wall_clock_ms = CASE
-                        WHEN excluded.wall_clock_ms > decision_steps.wall_clock_ms THEN excluded.wall_clock_ms
-                        ELSE decision_steps.wall_clock_ms
-                    END,
-                    time_budget_ms = COALESCE(decision_steps.time_budget_ms, excluded.time_budget_ms),
-                    request_blob = CASE
-                        WHEN decision_steps.request_blob IS NULL AND excluded.request_blob IS NOT NULL
-                            THEN excluded.request_blob
-                        ELSE decision_steps.request_blob
-                    END
-                """,
-                (
-                    decision_id,
-                    int(record.get("turn_id", 0) or 0),
-                    str(record.get("phase", "") or ""),
-                    actor_player_id,
-                    controller_kind,
-                    str(record.get("decision_type", "") or ""),
-                    "",
-                    str(record.get("chosen_action_id", "") or ""),
-                    1 if bool(record.get("valid", True)) else 0,
-                    int(record.get("wall_clock_ms", 0) or 0),
-                    (
-                        int(record.get("time_budget_ms", 0) or 0)
-                        if record.get("time_budget_ms", None) is not None
-                        else None
-                    ),
-                    _pack_json(request_payload),
-                    _pack_json(record),
-                ),
-            )
             row = conn.execute(
                 "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
                 (decision_id,),
             ).fetchone()
+            time_budget_ms = (
+                int(record.get("time_budget_ms", 0) or 0)
+                if record.get("time_budget_ms", None) is not None
+                else None
+            )
+            chosen_action_id = str(record.get("chosen_action_id", "") or "")
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO decision_steps(
+                        decision_id,
+                        turn_id,
+                        phase,
+                        actor_player_id,
+                        controller_kind,
+                        decision_type,
+                        chosen_option_id,
+                        chosen_action_id,
+                        valid,
+                        wall_clock_ms,
+                        time_budget_ms,
+                        event_start_id,
+                        event_end_id,
+                        request_blob,
+                        decision_record_blob
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                    """,
+                    (
+                        decision_id,
+                        int(record.get("turn_id", 0) or 0),
+                        str(record.get("phase", "") or ""),
+                        actor_player_id,
+                        controller_kind,
+                        str(record.get("decision_type", "") or ""),
+                        "",
+                        chosen_action_id,
+                        1 if bool(record.get("valid", True)) else 0,
+                        int(record.get("wall_clock_ms", 0) or 0),
+                        time_budget_ms,
+                        request_blob,
+                        decision_record_blob,
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
+                    (decision_id,),
+                ).fetchone()
+            else:
+                conn.execute(
+                    """
+                    UPDATE decision_steps
+                    SET
+                        decision_record_blob = ?,
+                        chosen_action_id = CASE
+                            WHEN ? != '' THEN ?
+                            ELSE chosen_action_id
+                        END,
+                        valid = ?,
+                        wall_clock_ms = CASE
+                            WHEN ? > wall_clock_ms THEN ?
+                            ELSE wall_clock_ms
+                        END,
+                        time_budget_ms = COALESCE(time_budget_ms, ?),
+                        request_blob = CASE
+                            WHEN request_blob IS NULL THEN ?
+                            ELSE request_blob
+                        END
+                    WHERE decision_id = ?
+                    """,
+                    (
+                        decision_record_blob,
+                        chosen_action_id,
+                        chosen_action_id,
+                        1 if bool(record.get("valid", True)) else 0,
+                        int(record.get("wall_clock_ms", 0) or 0),
+                        int(record.get("wall_clock_ms", 0) or 0),
+                        time_budget_ms,
+                        request_blob,
+                        decision_id,
+                    ),
+                )
         decision_idx = int(row["decision_idx"] or 0) if row is not None else 0
         self.last_decision_idx = max(self.last_decision_idx, decision_idx)
         return decision_idx
@@ -551,89 +577,129 @@ class ReplayStoreRecorder:
             or str(record.get("player_id", "") or "")
         )
         controller_kind = _player_controller_kind(game, actor_player_id)
+        decision_id = str(record.get("decision_id", "") or "")
+        decision_record_blob = _pack_json(record)
+        request_blob = _pack_json(request_payload) if request_payload is not None else None
+        time_budget_ms = (
+            int(record.get("time_budget_ms", 0) or 0)
+            if record.get("time_budget_ms", None) is not None
+            else None
+        )
+        event_start_value = int(event_start_id) if event_start_id is not None else None
+        event_end_value = int(event_end_id) if event_end_id is not None else None
+        chosen_option_id = str(getattr(result, "option_id", "") or "")
+        chosen_action_id = str(record.get("chosen_action_id", "") or "")
+        wall_clock_ms = int(record.get("wall_clock_ms", 0) or 0)
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO decision_steps(
-                    decision_id,
-                    turn_id,
-                    phase,
-                    actor_player_id,
-                    controller_kind,
-                    decision_type,
-                    chosen_option_id,
-                    chosen_action_id,
-                    valid,
-                    wall_clock_ms,
-                    time_budget_ms,
-                    event_start_id,
-                    event_end_id,
-                    request_blob,
-                    decision_record_blob
-                )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(decision_id) DO UPDATE SET
-                    event_start_id = CASE
-                        WHEN decision_steps.event_start_id IS NULL THEN excluded.event_start_id
-                        WHEN excluded.event_start_id IS NULL THEN decision_steps.event_start_id
-                        WHEN excluded.event_start_id < decision_steps.event_start_id THEN excluded.event_start_id
-                        ELSE decision_steps.event_start_id
-                    END,
-                    event_end_id = CASE
-                        WHEN decision_steps.event_end_id IS NULL THEN excluded.event_end_id
-                        WHEN excluded.event_end_id IS NULL THEN decision_steps.event_end_id
-                        WHEN excluded.event_end_id > decision_steps.event_end_id THEN excluded.event_end_id
-                        ELSE decision_steps.event_end_id
-                    END,
-                    request_blob = CASE
-                        WHEN excluded.request_blob IS NOT NULL THEN excluded.request_blob
-                        ELSE decision_steps.request_blob
-                    END,
-                    decision_record_blob = CASE
-                        WHEN excluded.decision_record_blob IS NOT NULL THEN excluded.decision_record_blob
-                        ELSE decision_steps.decision_record_blob
-                    END,
-                    chosen_option_id = CASE
-                        WHEN excluded.chosen_option_id != '' THEN excluded.chosen_option_id
-                        ELSE decision_steps.chosen_option_id
-                    END,
-                    chosen_action_id = CASE
-                        WHEN excluded.chosen_action_id != '' THEN excluded.chosen_action_id
-                        ELSE decision_steps.chosen_action_id
-                    END,
-                    valid = excluded.valid,
-                    wall_clock_ms = CASE
-                        WHEN excluded.wall_clock_ms > decision_steps.wall_clock_ms THEN excluded.wall_clock_ms
-                        ELSE decision_steps.wall_clock_ms
-                    END,
-                    time_budget_ms = COALESCE(decision_steps.time_budget_ms, excluded.time_budget_ms)
-                """,
-                (
-                    str(record.get("decision_id", "") or ""),
-                    int(record.get("turn_id", 0) or 0),
-                    str(record.get("phase", "") or ""),
-                    actor_player_id,
-                    controller_kind,
-                    str(record.get("decision_type", "") or ""),
-                    str(getattr(result, "option_id", "") or ""),
-                    str(record.get("chosen_action_id", "") or ""),
-                    1 if bool(record.get("valid", True)) else 0,
-                    int(record.get("wall_clock_ms", 0) or 0),
-                    (
-                        int(record.get("time_budget_ms", 0) or 0)
-                        if record.get("time_budget_ms", None) is not None
-                        else None
-                    ),
-                    int(event_start_id) if event_start_id is not None else None,
-                    int(event_end_id) if event_end_id is not None else None,
-                    _pack_json(request_payload) if request_payload is not None else None,
-                    _pack_json(record),
-                ),
-            )
             row = conn.execute(
                 "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
-                (str(record.get("decision_id", "") or ""),),
+                (decision_id,),
             ).fetchone()
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO decision_steps(
+                        decision_id,
+                        turn_id,
+                        phase,
+                        actor_player_id,
+                        controller_kind,
+                        decision_type,
+                        chosen_option_id,
+                        chosen_action_id,
+                        valid,
+                        wall_clock_ms,
+                        time_budget_ms,
+                        event_start_id,
+                        event_end_id,
+                        request_blob,
+                        decision_record_blob
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        decision_id,
+                        int(record.get("turn_id", 0) or 0),
+                        str(record.get("phase", "") or ""),
+                        actor_player_id,
+                        controller_kind,
+                        str(record.get("decision_type", "") or ""),
+                        chosen_option_id,
+                        chosen_action_id,
+                        1 if bool(record.get("valid", True)) else 0,
+                        wall_clock_ms,
+                        time_budget_ms,
+                        event_start_value,
+                        event_end_value,
+                        request_blob,
+                        decision_record_blob,
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
+                    (decision_id,),
+                ).fetchone()
+            else:
+                conn.execute(
+                    """
+                    UPDATE decision_steps
+                    SET
+                        event_start_id = CASE
+                            WHEN event_start_id IS NULL THEN ?
+                            WHEN ? IS NULL THEN event_start_id
+                            WHEN ? < event_start_id THEN ?
+                            ELSE event_start_id
+                        END,
+                        event_end_id = CASE
+                            WHEN event_end_id IS NULL THEN ?
+                            WHEN ? IS NULL THEN event_end_id
+                            WHEN ? > event_end_id THEN ?
+                            ELSE event_end_id
+                        END,
+                        request_blob = CASE
+                            WHEN ? IS NOT NULL THEN ?
+                            ELSE request_blob
+                        END,
+                        decision_record_blob = ?,
+                        chosen_option_id = CASE
+                            WHEN ? != '' THEN ?
+                            ELSE chosen_option_id
+                        END,
+                        chosen_action_id = CASE
+                            WHEN ? != '' THEN ?
+                            ELSE chosen_action_id
+                        END,
+                        valid = ?,
+                        wall_clock_ms = CASE
+                            WHEN ? > wall_clock_ms THEN ?
+                            ELSE wall_clock_ms
+                        END,
+                        time_budget_ms = COALESCE(time_budget_ms, ?)
+                    WHERE decision_id = ?
+                    """,
+                    (
+                        event_start_value,
+                        event_start_value,
+                        event_start_value,
+                        event_start_value,
+                        event_end_value,
+                        event_end_value,
+                        event_end_value,
+                        event_end_value,
+                        request_blob,
+                        request_blob,
+                        decision_record_blob,
+                        chosen_option_id,
+                        chosen_option_id,
+                        chosen_action_id,
+                        chosen_action_id,
+                        1 if bool(record.get("valid", True)) else 0,
+                        wall_clock_ms,
+                        wall_clock_ms,
+                        time_budget_ms,
+                        decision_id,
+                    ),
+                )
             decision_idx = int(row["decision_idx"] or 0) if row is not None else 0
         if decision_idx <= 0:
             raise RuntimeError("Failed to persist replay decision step.")
