@@ -103,6 +103,24 @@ def _should_attach_full_deployment_plan(game: object, context: dict[str, Any]) -
     return bool(getattr(game, "attach_full_deployment_plan_context", False))
 
 
+def _should_attach_full_deployment_order_bundle(game: object, context: dict[str, Any]) -> bool:
+    if bool(context.get("include_full_deployment_order_bundle", False)):
+        return True
+    return bool(getattr(game, "attach_full_deployment_order_bundle_context", False))
+
+
+def _should_attach_full_prebattle_order_bundle(game: object, context: dict[str, Any]) -> bool:
+    if bool(context.get("include_full_prebattle_order_bundle", False)):
+        return True
+    return bool(getattr(game, "attach_full_prebattle_order_bundle_context", False))
+
+
+def _should_attach_full_commander_order_bundle(game: object, context: dict[str, Any]) -> bool:
+    if bool(context.get("include_full_commander_order_bundle", False)):
+        return True
+    return bool(getattr(game, "attach_full_commander_order_bundle_context", False))
+
+
 def _is_deployment_plan_context(
     request: DecisionRequest,
     context: dict[str, Any],
@@ -146,12 +164,21 @@ def attach_ai_orchestration_context(
     attach_full_battle_round_plan = _should_attach_full_battle_round_plan(game, updated)
     attach_full_general_plan = _should_attach_full_general_plan(game, updated)
     attach_full_deployment_plan = _should_attach_full_deployment_plan(game, updated)
+    attach_full_deployment_order_bundle = _should_attach_full_deployment_order_bundle(game, updated)
+    attach_full_prebattle_order_bundle = _should_attach_full_prebattle_order_bundle(game, updated)
+    attach_full_commander_order_bundle = _should_attach_full_commander_order_bundle(game, updated)
     if not attach_full_battle_round_plan:
         updated.pop("battle_round_plan", None)
     if not attach_full_general_plan:
         updated.pop("general_plan", None)
     if not attach_full_deployment_plan:
         updated.pop("deployment_plan", None)
+    if not attach_full_deployment_order_bundle:
+        updated.pop("deployment_order_bundle", None)
+    if not attach_full_prebattle_order_bundle:
+        updated.pop("prebattle_order_bundle", None)
+    if not attach_full_commander_order_bundle:
+        updated.pop("commander_order_bundle", None)
 
     requested_component = str(component_name or "")
     if requested_component in _STRATEGIC_CONTEXT_EXCLUDED_COMPONENTS:
@@ -167,6 +194,8 @@ def attach_ai_orchestration_context(
     get_tier2_bundle = getattr(game, "get_or_create_tier2_task_bundle", None)
     get_general_plan = getattr(game, "get_or_create_general_plan", None)
     get_deployment_plan = getattr(game, "get_or_create_deployment_plan", None)
+    get_deployment_order_bundle = getattr(game, "get_or_create_deployment_order_bundle", None)
+    get_prebattle_order_bundle = getattr(game, "get_or_create_prebattle_order_bundle", None)
     get_battle_round_plan = getattr(game, "get_or_create_battle_round_plan", None)
     if not callable(get_tier1_plan) or not callable(get_tier2_bundle):
         updated["compute_tier"] = _normalize_compute_tier(updated.get("compute_tier"))
@@ -175,6 +204,16 @@ def attach_ai_orchestration_context(
     plan = get_tier1_plan(player_id)
     tier2_bundle = get_tier2_bundle(player_id)
     general_plan = get_general_plan(player_id) if callable(get_general_plan) else None
+    deployment_order_bundle = (
+        get_deployment_order_bundle(player_id)
+        if callable(get_deployment_order_bundle) and _is_deployment_plan_context(request, updated, requested_component)
+        else None
+    )
+    prebattle_order_bundle = (
+        get_prebattle_order_bundle(player_id)
+        if callable(get_prebattle_order_bundle) and _is_deployment_plan_context(request, updated, requested_component)
+        else None
+    )
     deployment_plan = (
         get_deployment_plan(player_id)
         if callable(get_deployment_plan) and _is_deployment_plan_context(request, updated, requested_component)
@@ -197,8 +236,18 @@ def attach_ai_orchestration_context(
         updated["battle_round_plan_id"] = battle_round_plan.plan_id
     if general_plan is not None and "general_plan_id" not in updated:
         updated["general_plan_id"] = general_plan.plan_id
+    if deployment_order_bundle is not None and "deployment_order_bundle_id" not in updated:
+        updated["deployment_order_bundle_id"] = deployment_order_bundle.order_bundle_id
+    if prebattle_order_bundle is not None and "prebattle_order_bundle_id" not in updated:
+        updated["prebattle_order_bundle_id"] = prebattle_order_bundle.order_bundle_id
     if deployment_plan is not None and "deployment_plan_id" not in updated:
         updated["deployment_plan_id"] = deployment_plan.plan_id
+    if battle_round_plan is not None:
+        commander_order_bundle_id = str(
+            dict(getattr(battle_round_plan, "metadata", {}) or {}).get("commander_order_bundle_id", "") or ""
+        )
+        if commander_order_bundle_id and "commander_order_bundle_id" not in updated:
+            updated["commander_order_bundle_id"] = commander_order_bundle_id
     if "turn_plan" not in updated:
         updated["turn_plan"] = plan.to_dict()
     if general_plan is not None and "general_plan" not in updated and attach_full_general_plan:
@@ -206,11 +255,31 @@ def attach_ai_orchestration_context(
     if deployment_plan is not None and "deployment_plan" not in updated and attach_full_deployment_plan:
         updated["deployment_plan"] = deployment_plan.to_dict()
     if (
+        deployment_order_bundle is not None
+        and "deployment_order_bundle" not in updated
+        and attach_full_deployment_order_bundle
+    ):
+        updated["deployment_order_bundle"] = deployment_order_bundle.to_dict()
+    if (
+        prebattle_order_bundle is not None
+        and "prebattle_order_bundle" not in updated
+        and attach_full_prebattle_order_bundle
+    ):
+        updated["prebattle_order_bundle"] = prebattle_order_bundle.to_dict()
+    if (
         battle_round_plan is not None
         and "battle_round_plan" not in updated
         and attach_full_battle_round_plan
     ):
         updated["battle_round_plan"] = battle_round_plan.to_dict()
+    if (
+        battle_round_plan is not None
+        and "commander_order_bundle" not in updated
+        and attach_full_commander_order_bundle
+    ):
+        commander_order_bundle = dict(getattr(battle_round_plan, "metadata", {}) or {}).get("commander_order_bundle")
+        if isinstance(commander_order_bundle, dict) and commander_order_bundle:
+            updated["commander_order_bundle"] = dict(commander_order_bundle)
     if deployment_dirty_flags is not None and "deployment_dirty_flags" not in updated:
         updated["deployment_dirty_flags"] = deployment_dirty_flags.to_dict()
     if deployment_dirty_flags is not None and "deployment_replan_scope" not in updated:
@@ -317,6 +386,19 @@ def attach_ai_orchestration_context(
         fight_assignment = dict(getattr(battle_round_plan.fight_plan, "unit_fight_assignments", {}) or {}).get(unit_id)
         if fight_assignment is not None and "commander_fight_assignment" not in updated:
             updated["commander_fight_assignment"] = fight_assignment.to_dict()
+        commander_order_bundle = dict(getattr(battle_round_plan, "metadata", {}) or {}).get("commander_order_bundle")
+        if isinstance(commander_order_bundle, dict):
+            resource_authorizations = dict(commander_order_bundle.get("resource_authorizations", {}) or {})
+            unit_resource_authorizations = [
+                dict(authorization)
+                for authorization in resource_authorizations.values()
+                if str(dict(authorization).get("owner_unit_id", "") or "") == unit_id
+            ]
+            if unit_resource_authorizations and "commander_resource_authorizations" not in updated:
+                updated["commander_resource_authorizations"] = sorted(
+                    unit_resource_authorizations,
+                    key=lambda item: str(dict(item).get("resource_id", "")),
+                )
 
     if deployment_plan is not None and unit_id:
         deployment_task = dict(getattr(deployment_plan, "unit_tasks", {}) or {}).get(unit_id)
@@ -352,6 +434,16 @@ def attach_ai_orchestration_context(
                     break
         if transport_task is not None and "transport_deployment_task" not in updated:
             updated["transport_deployment_task"] = transport_task.to_dict()
+    if prebattle_order_bundle is not None and unit_id:
+        scout_order = dict(getattr(prebattle_order_bundle, "scout_orders", {}) or {}).get(unit_id)
+        if scout_order is not None and "scout_move_order" not in updated:
+            updated["scout_move_order"] = scout_order.to_dict()
+        infiltrate_order = dict(getattr(prebattle_order_bundle, "infiltrate_orders", {}) or {}).get(unit_id)
+        if infiltrate_order is not None and "infiltrate_deployment_order" not in updated:
+            updated["infiltrate_deployment_order"] = infiltrate_order.to_dict()
+        screen_order = dict(getattr(prebattle_order_bundle, "prebattle_screen_orders", {}) or {}).get(unit_id)
+        if screen_order is not None and "prebattle_screen_order" not in updated:
+            updated["prebattle_screen_order"] = screen_order.to_dict()
 
     if deployment_plan is not None and str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_NEXT_DEPLOY_UNIT:
         candidate_unit_ids = sorted(
@@ -418,7 +510,10 @@ def attach_ai_orchestration_context(
             for key in (
                 "general_plan_id",
                 "deployment_plan_id",
+                "deployment_order_bundle_id",
+                "prebattle_order_bundle_id",
                 "battle_round_plan_id",
+                "commander_order_bundle_id",
                 "unit_battle_task",
                 "unit_deployment_task",
                 "commander_movement_task",
@@ -431,11 +526,15 @@ def attach_ai_orchestration_context(
                 "deployment_tempo_capability",
                 "scout_projection",
                 "infiltrate_projection",
+                "scout_move_order",
+                "infiltrate_deployment_order",
+                "prebattle_screen_order",
                 "preferred_target_unit_ids",
                 "preferred_declarations",
                 "target_fire_plan_summary",
                 "general_limited_resource_policy",
                 "general_cp_policy",
+                "commander_resource_authorizations",
                 "commander_candidate_charge_assignments",
                 "commander_candidate_fight_assignments",
             )
@@ -458,6 +557,9 @@ def attach_ai_orchestration_context(
                 "full_general_plan_attached": "general_plan" in updated,
                 "full_deployment_plan_attached": "deployment_plan" in updated,
                 "full_battle_round_plan_attached": "battle_round_plan" in updated,
+                "full_deployment_order_bundle_attached": "deployment_order_bundle" in updated,
+                "full_prebattle_order_bundle_attached": "prebattle_order_bundle" in updated,
+                "full_commander_order_bundle_attached": "commander_order_bundle" in updated,
                 **context_payload_guardrail_report(updated),
             },
         )

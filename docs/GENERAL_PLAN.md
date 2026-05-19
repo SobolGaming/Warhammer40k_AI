@@ -17,7 +17,9 @@ actions, or mutate state.
   `game.attach_full_general_plan_context` is true.
 - A caller-provided `general_plan` payload is stripped unless that audit/debug
   opt-in is active.
-- Rankers do not consume General policy yet.
+- General policy is compiled by `strategic_intent_compiler.py` into
+  `DeploymentOrderBundle`, `PreBattleOrderBundle`, and
+  `CommanderOrderBundle` before lower plans materialize local slices.
 
 ## Plan Shape
 
@@ -63,6 +65,10 @@ These directives are high-level strategic metadata. The commander can later use
 them to choose battle-round tasks, preserve late-game scoring units, and decide
 when to commit scarce resources.
 
+PR14 adds a compiler normalization step: each round directive becomes a
+`RoundCommanderDirective` with posture budgets for aggression, exposure, trade,
+resources, CP reserve, preservation, and primary phase focus.
+
 ## Transport Doctrine
 
 `TransportDoctrine` is a high-level General policy for transport units. It owns:
@@ -76,6 +82,10 @@ when to commit scarce resources.
 The battle-round commander consumes this doctrine and emits local
 `TransportAssignment` slices. The General doctrine itself is still metadata; it
 does not make embark/disembark legal, force choices, or alter ranker scores.
+
+The compiler also maps transport doctrine through deployment and commander
+orders so transport delivery intent remains traceable from whole-game policy to
+setup and battle-round local slices.
 
 ## Non-Behavioral Boundary
 

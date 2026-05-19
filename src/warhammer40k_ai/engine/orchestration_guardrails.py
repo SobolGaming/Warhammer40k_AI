@@ -49,7 +49,14 @@ def context_payload_guardrail_report(
 ) -> dict[str, Any]:
     full_plan_keys = sorted(
         key
-        for key in ("general_plan", "deployment_plan", "battle_round_plan")
+        for key in (
+            "general_plan",
+            "deployment_plan",
+            "battle_round_plan",
+            "deployment_order_bundle",
+            "prebattle_order_bundle",
+            "commander_order_bundle",
+        )
         if key in dict(context or {})
     )
     payload_bytes = canonical_payload_size_bytes(dict(context or {}))
@@ -62,4 +69,3 @@ def context_payload_guardrail_report(
         "context_full_plan_keys": full_plan_keys,
         "context_cache_key_safe": bool(not full_plan_keys and payload_bytes <= int(warning_bytes)),
     }
-

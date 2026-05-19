@@ -20,6 +20,12 @@ from .orchestration_guardrails import (
     COMMANDER_REPAIR_BUDGET_MS,
     ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES,
 )
+from .strategic_intent_compiler import (
+    CommanderOrderBundle,
+    DeploymentOrderBundle,
+    PreBattleOrderBundle,
+    compile_general_intent_to_commander_orders,
+)
 from ..utility.entity_ids import get_entity_id
 
 
@@ -1793,6 +1799,7 @@ def _unit_battle_task(
     fight_intent: str,
     shooting_can_advance: bool = False,
     desired_weapon_bands: dict[str, float] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> UnitBattleTask:
     allowed_actions = [
         MOVEMENT_ACTION_ADVANCE,
@@ -1801,6 +1808,12 @@ def _unit_battle_task(
         MOVEMENT_ACTION_STATIONARY,
     ]
     forbidden_actions = [MOVEMENT_ACTION_ADVANCE] if role == ROLE_SHOOTING_FIRST and not shooting_can_advance else []
+    task_metadata = {
+        "assignment_source": "greedy_commander_assignment",
+        "tier2_task_type": task.task_type,
+        "shooting_can_advance": bool(shooting_can_advance),
+    }
+    task_metadata.update(dict(metadata or {}))
     return UnitBattleTask(
         unit_id=task.unit_id,
         role=role,
@@ -1816,11 +1829,7 @@ def _unit_battle_task(
         required_position_features=[],
         risk_budget=_risk_budget_for_tier(task.compute_tier),
         compute_tier=task.compute_tier,
-        metadata={
-            "assignment_source": "greedy_commander_assignment",
-            "tier2_task_type": task.task_type,
-            "shooting_can_advance": bool(shooting_can_advance),
-        },
+        metadata=task_metadata,
     )
 
 
@@ -1935,8 +1944,11 @@ def build_battle_round_plan(
     tier1_plan: Tier1Plan,
     tier2_bundle: Tier2TaskBundle,
     *,
+    general_plan: object | None = None,
     general_plan_id: str | None = None,
     general_transport_policy: dict[str, Any] | None = None,
+    deployment_orders: DeploymentOrderBundle | None = None,
+    prebattle_orders: PreBattleOrderBundle | None = None,
 ) -> BattleRoundPlan:
     player = _resolve_player(game, tier1_plan.player_id)
     if player is None:
@@ -1952,6 +1964,21 @@ def build_battle_round_plan(
         tier2_bundle=tier2_bundle,
         generation=generation,
     )
+    commander_orders: CommanderOrderBundle | None = None
+    if general_plan is not None:
+        commander_orders = compile_general_intent_to_commander_orders(
+            game,
+            general_plan,
+            deployment_orders,
+            prebattle_orders,
+            tier1_plan,
+            tier2_bundle,
+            analysis_snapshot,
+            battle_round=int(tier1_plan.battle_round),
+            player_id=str(tier1_plan.player_id),
+        )
+    commander_unit_orders = dict(getattr(commander_orders, "unit_orders", {}) or {})
+    commander_target_orders = dict(getattr(commander_orders, "target_orders", {}) or {})
     target_analysis_by_id = {
         str(target.target_unit_id): target
         for target in list(analysis_snapshot.target_analysis or [])
@@ -2006,6 +2033,13 @@ def build_battle_round_plan(
     for unit_id, task in sorted(tier2_bundle.tasks_by_unit_id.items(), key=lambda item: str(item[0])):
         uid = str(unit_id)
         role = unit_roles.get(uid, _task_role(task.task_type))
+        commander_unit_order = commander_unit_orders.get(uid)
+        if commander_unit_order is not None and bool(getattr(commander_unit_order, "preserve", False)):
+            commander_preserve_sources = set(
+                dict(getattr(commander_unit_order, "metadata", {}) or {}).get("source_intent_kinds", []) or []
+            )
+            if "general_preserve_directive" in commander_preserve_sources:
+                role = ROLE_PRESERVE
         unit_entries = matrix_by_unit.get(uid, [])
         shooting_entry = shooting_assignments.get(uid)
         charge_entry = charge_target_assignments.get(uid)
@@ -2050,6 +2084,12 @@ def build_battle_round_plan(
             fight_intent=fight_intent,
             shooting_can_advance=shooting_can_advance,
             desired_weapon_bands=desired_weapon_bands,
+            metadata={
+                "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
+                "commander_unit_order_id": uid if commander_unit_order is not None else "",
+                "commander_unit_order_preserve": bool(getattr(commander_unit_order, "preserve", False)),
+                "assignment_source": "strategic_intent_compiler_materialized",
+            },
         )
         unit_tasks[str(unit_id)] = battle_task
         expected_damage_by_target = {
@@ -2119,7 +2159,8 @@ def build_battle_round_plan(
             charge_staging_target_unit_id=charge_primary_target_id if intentionally_skip_shooting else None,
             metadata={
                 "commander_role": role,
-                "source": "greedy_commander_assignment",
+                "source": "strategic_intent_compiler_materialized",
+                "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
                 "shooting_can_advance": bool(shooting_can_advance),
                 "shooting_requires_stationary": bool(shooting_requires_stationary),
                 "weapon_trigger_band_count": int(len(shooting_trigger_bands)),
@@ -2137,7 +2178,8 @@ def build_battle_round_plan(
             allows_split_fire=True,
             metadata={
                 "commander_role": role,
-                "source": "greedy_commander_assignment",
+                "source": "strategic_intent_compiler_materialized",
+                "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
                 "shooting_can_advance": bool(shooting_can_advance),
                 "weapon_trigger_bands": shooting_trigger_bands,
                 "trigger_band_kinds": _sorted_strings(
@@ -2157,7 +2199,8 @@ def build_battle_round_plan(
             intentionally_skip_shooting=intentionally_skip_shooting,
             metadata={
                 "commander_role": role,
-                "source": "greedy_commander_assignment",
+                "source": "strategic_intent_compiler_materialized",
+                "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
             },
         )
         fight_assignments[str(unit_id)] = FightTargetAssignment(
@@ -2170,7 +2213,8 @@ def build_battle_round_plan(
             ),
             metadata={
                 "commander_role": role,
-                "source": "greedy_commander_assignment",
+                "source": "strategic_intent_compiler_materialized",
+                "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
             },
         )
 
@@ -2179,7 +2223,11 @@ def build_battle_round_plan(
             target_unit_id=target.target_unit_id,
             threat_score=target.threat_score,
             remaining_wounds_estimate=float(target.metadata.get("remaining_wounds_estimate", 0.0) or 0.0),
-            desired_kill_probability=0.75,
+            desired_kill_probability=float(
+                getattr(commander_target_orders.get(str(target.target_unit_id)), "desired_kill_probability", 0.75)
+                if commander_target_orders.get(str(target.target_unit_id)) is not None
+                else 0.75
+            ),
             committed_expected_damage=float(committed_damage.get(str(target.target_unit_id), 0.0) or 0.0),
             committed_kill_probability=_clamp(
                 float(committed_damage.get(str(target.target_unit_id), 0.0) or 0.0)
@@ -2188,14 +2236,21 @@ def build_battle_round_plan(
             assigned_unit_ids=target_assigned_units.get(str(target.target_unit_id), []),
             overkill_limit=COMMANDER_ASSIGNMENT_OVERKILL_LIMIT,
             metadata={
-                "assignment_source": "greedy_commander_assignment",
+                "assignment_source": "strategic_intent_compiler_materialized",
                 "priority_kind": target.priority_kind,
+                "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
+                "commander_target_intent": str(
+                    getattr(commander_target_orders.get(str(target.target_unit_id)), "intent", "") or ""
+                ),
             },
         )
         for target in priority_targets
     }
 
-    posture = str(tier1_plan.risk_posture.aggression).strip().upper()
+    posture = (
+        str(getattr(getattr(commander_orders, "directive", None), "posture", "") or "").strip().upper()
+        or str(tier1_plan.risk_posture.aggression).strip().upper()
+    )
     return BattleRoundPlan(
         plan_id=f"{tier1_plan.plan_id}:battle_round",
         player_id=str(tier1_plan.player_id),
@@ -2225,6 +2280,10 @@ def build_battle_round_plan(
             "general_plan_id": str(general_plan_id or ""),
             "tier1_plan_id": tier1_plan.plan_id,
             "tier2_plan_id": tier2_bundle.plan_id,
+            "deployment_order_bundle_id": str(getattr(deployment_orders, "order_bundle_id", "") or ""),
+            "prebattle_order_bundle_id": str(getattr(prebattle_orders, "order_bundle_id", "") or ""),
+            "commander_order_bundle_id": str(getattr(commander_orders, "order_bundle_id", "") or ""),
+            "commander_order_bundle": commander_orders.to_dict() if commander_orders is not None else {},
             "general_transport_policy_count": int(len(dict(general_transport_policy or {}))),
             "analysis_snapshot": analysis_snapshot.to_dict(),
             "performance_guardrails": {

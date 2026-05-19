@@ -9,6 +9,10 @@ from .orchestration_guardrails import (
     DEPLOYMENT_REPAIR_BUDGET_MS,
     ORCHESTRATION_CONTEXT_PAYLOAD_WARNING_BYTES,
 )
+from .strategic_intent_compiler import (
+    DeploymentOrderBundle,
+    compile_general_intent_to_deployment_orders,
+)
 from ..utility.entity_ids import get_entity_id
 
 
@@ -732,6 +736,8 @@ def _known_attachments(units: list[object]) -> dict[str, str]:
             root = get_root()
         if root is None:
             root = getattr(unit, "attached_to", None)
+        if root is None:
+            continue
         root_id = _entity_id(root)
         if root_id and root_id != unit_id:
             attachments[unit_id] = root_id
@@ -1144,6 +1150,149 @@ def _transport_deployment_tasks(transport_policy: dict[str, object]) -> dict[str
     return tasks
 
 
+def _materialize_deployment_unit_orders(
+    unit_tasks: dict[str, UnitDeploymentTask],
+    deployment_orders: DeploymentOrderBundle,
+) -> dict[str, UnitDeploymentTask]:
+    materialized = dict(unit_tasks)
+    for unit_id, order in dict(deployment_orders.unit_orders or {}).items():
+        uid = str(unit_id)
+        existing = materialized.get(uid)
+        metadata = dict(getattr(existing, "metadata", {}) or {}) if existing is not None else {}
+        metadata.update(dict(order.metadata or {}))
+        metadata["deployment_order_bundle_id"] = str(deployment_orders.order_bundle_id)
+        tempo_order = dict(deployment_orders.tempo_orders or {}).get(uid)
+        materialized[uid] = UnitDeploymentTask(
+            unit_id=uid,
+            role=str(order.role),
+            preferred_regions=_sorted_strings(order.preferred_region_ids),
+            forbidden_regions=_sorted_strings(order.forbidden_region_ids),
+            needs_obscuring=bool(order.needs_obscuring),
+            avoid_alpha_exposure=bool(order.avoid_alpha_exposure),
+            preserve_for_late_game=bool(order.preserve_for_late_game),
+            supports_transport_plan=bool(order.supports_transport_plan),
+            go_first_value=float(order.go_first_value),
+            go_second_safety=float(order.go_second_safety),
+            tactical_flexibility=float(order.tactical_flexibility),
+            deployment_sequence_priority=float(order.deployment_sequence_priority),
+            preferred_drop_window=str(order.preferred_drop_window),
+            has_scout=bool(getattr(tempo_order, "has_scout", False)),
+            has_infiltrate=bool(getattr(tempo_order, "has_infiltrate", False)),
+            scout_lane_targets=_sorted_strings(getattr(tempo_order, "scout_lane_target_ids", [])),
+            infiltrate_screen_regions=_sorted_strings(getattr(tempo_order, "infiltrate_screen_region_ids", [])),
+            counter_scout_regions=_sorted_strings(getattr(tempo_order, "counter_scout_region_ids", [])),
+            no_mans_land_pressure_regions=_sorted_strings(
+                getattr(tempo_order, "no_mans_land_pressure_region_ids", [])
+            ),
+            metadata=metadata,
+        )
+    return materialized
+
+
+def _materialize_deployment_tempo_orders(
+    tempo_capabilities: dict[str, DeploymentTempoCapability],
+    deployment_orders: DeploymentOrderBundle,
+) -> dict[str, DeploymentTempoCapability]:
+    materialized = dict(tempo_capabilities)
+    for unit_id, order in dict(deployment_orders.tempo_orders or {}).items():
+        uid = str(unit_id)
+        materialized[uid] = DeploymentTempoCapability(
+            unit_id=uid,
+            has_infiltrate=bool(order.has_infiltrate),
+            has_scout=bool(order.has_scout),
+            scout_distance_inches=float(order.scout_distance_inches),
+            forward_deploy_distance_class="infiltrate" if order.has_infiltrate else "deployment_zone",
+            blocks_enemy_scout_lanes=bool(order.blocks_enemy_scout_lanes),
+            screens_enemy_infiltrate=bool(order.screens_enemy_infiltrate),
+            early_drop_priority=float(order.early_drop_priority),
+            late_drop_priority=float(order.late_drop_priority),
+            reveal_risk=float(order.reveal_risk),
+            metadata={
+                **dict(order.metadata or {}),
+                "deployment_order_bundle_id": str(deployment_orders.order_bundle_id),
+                "scout_lane_target_ids": _sorted_strings(order.scout_lane_target_ids),
+                "counter_scout_region_ids": _sorted_strings(order.counter_scout_region_ids),
+                "infiltrate_screen_region_ids": _sorted_strings(order.infiltrate_screen_region_ids),
+            },
+        )
+    return materialized
+
+
+def _materialize_scout_projection_orders(
+    scout_projections: dict[str, ScoutProjection],
+    deployment_orders: DeploymentOrderBundle,
+) -> dict[str, ScoutProjection]:
+    materialized = dict(scout_projections)
+    for unit_id, order in dict(deployment_orders.scout_projection_orders or {}).items():
+        uid = str(unit_id)
+        materialized[uid] = ScoutProjection(
+            unit_id=uid,
+            deployment_region_id=str(order.deployment_region_id),
+            scout_distance_inches=float(order.scout_distance_inches),
+            projected_regions_after_scout=_sorted_strings(order.projected_region_ids_after_scout),
+            can_reach_cover=bool(order.can_reach_cover),
+            can_threaten_objective_ids=_sorted_strings(order.can_threaten_objective_ids),
+            can_screen_lane_ids=_sorted_strings(order.can_screen_lane_ids),
+            exposure_if_go_second=float(order.exposure_if_go_second),
+            value_if_go_first=float(order.value_if_go_first),
+            value_if_go_second=float(order.value_if_go_second),
+            metadata={
+                **dict(order.metadata or {}),
+                "deployment_order_bundle_id": str(deployment_orders.order_bundle_id),
+            },
+        )
+    return materialized
+
+
+def _materialize_infiltrate_projection_orders(
+    infiltrate_projections: dict[str, InfiltrateProjection],
+    deployment_orders: DeploymentOrderBundle,
+) -> dict[str, InfiltrateProjection]:
+    materialized = dict(infiltrate_projections)
+    for unit_id, order in dict(deployment_orders.infiltrate_projection_orders or {}).items():
+        uid = str(unit_id)
+        materialized[uid] = InfiltrateProjection(
+            unit_id=uid,
+            infiltrate_region_id=str(order.infiltrate_region_id),
+            blocks_enemy_scout_lane_ids=_sorted_strings(order.blocks_enemy_scout_lane_ids),
+            screens_objective_ids=_sorted_strings(order.screens_objective_ids),
+            denies_enemy_forward_regions=_sorted_strings(order.denies_enemy_forward_region_ids),
+            preserves_own_scout_lane_ids=_sorted_strings(order.preserves_own_scout_lane_ids),
+            exposure_if_go_second=float(order.exposure_if_go_second),
+            counter_deploy_value=float(order.counter_deploy_value),
+            metadata={
+                **dict(order.metadata or {}),
+                "deployment_order_bundle_id": str(deployment_orders.order_bundle_id),
+            },
+        )
+    return materialized
+
+
+def _materialize_transport_orders(
+    transport_tasks: dict[str, TransportDeploymentTask],
+    deployment_orders: DeploymentOrderBundle,
+) -> dict[str, TransportDeploymentTask]:
+    materialized = dict(transport_tasks)
+    for transport_id, order in dict(deployment_orders.transport_orders or {}).items():
+        tid = str(transport_id)
+        materialized[tid] = TransportDeploymentTask(
+            transport_unit_id=tid,
+            passenger_unit_ids=_sorted_strings(order.passenger_unit_ids),
+            initial_deployment_role=str(order.initial_deployment_role),
+            delivery_round=order.delivery_round,
+            delivery_region_ids=_sorted_strings(order.delivery_region_ids),
+            preserve_passengers=bool(order.preserve_passengers),
+            post_delivery_role=str(order.post_delivery_role),
+            metadata={
+                **dict(order.metadata or {}),
+                "deployment_order_bundle_id": str(deployment_orders.order_bundle_id),
+                "preferred_region_ids": _sorted_strings(order.preferred_region_ids),
+                "needs_obscuring": bool(order.needs_obscuring),
+            },
+        )
+    return materialized
+
+
 def _selected_mission_info(game: object) -> dict[str, Any]:
     selected = dict(getattr(game, "selected_mission_info", {}) or {})
     mission_id = str(
@@ -1291,8 +1440,10 @@ def build_deployment_plan(
     game: object,
     player_id: str,
     *,
+    general_plan: object | None = None,
     general_plan_id: str = "",
     general_transport_policy: dict[str, object] | None = None,
+    deployment_orders: DeploymentOrderBundle | None = None,
 ) -> DeploymentPlan:
     pid = str(player_id or "")
     if not pid:
@@ -1303,6 +1454,12 @@ def build_deployment_plan(
 
     game_map = getattr(game, "map", None)
     generation = int(getattr(game_map, "state_generation", 0) or 0)
+    if deployment_orders is None and general_plan is not None:
+        deployment_orders = compile_general_intent_to_deployment_orders(
+            game,
+            general_plan,
+            player_id=pid,
+        )
     mission_info = _selected_mission_info(game)
     first_turn_unknown = _first_turn_unknown(game)
     own_units = _player_units(player)
@@ -1357,7 +1514,17 @@ def build_deployment_plan(
     scout_projections = _scout_projections(tempo_capabilities, information_state)
     infiltrate_projections = _infiltrate_projections(tempo_capabilities, information_state)
     transport_tasks = _transport_deployment_tasks(transport_policy)
+    if deployment_orders is not None:
+        unit_tasks = _materialize_deployment_unit_orders(unit_tasks, deployment_orders)
+        tempo_capabilities = _materialize_deployment_tempo_orders(tempo_capabilities, deployment_orders)
+        scout_projections = _materialize_scout_projection_orders(scout_projections, deployment_orders)
+        infiltrate_projections = _materialize_infiltrate_projection_orders(
+            infiltrate_projections,
+            deployment_orders,
+        )
+        transport_tasks = _materialize_transport_orders(transport_tasks, deployment_orders)
     secondary_mode = str(mission_info["secondary_mode"])
+    deployment_order_bundle_id = str(getattr(deployment_orders, "order_bundle_id", "") or "")
     return DeploymentPlan(
         plan_id=f"deployment:{pid}:setup",
         player_id=pid,
@@ -1390,6 +1557,8 @@ def build_deployment_plan(
         metadata={
             "source": "deployment_commander_scaffold",
             "general_plan_id": str(general_plan_id),
+            "deployment_order_bundle_id": deployment_order_bundle_id,
+            "deployment_order_bundle": deployment_orders.to_dict() if deployment_orders is not None else {},
             "own_unit_count": int(len(own_units)),
             "enemy_unit_count": int(len(enemy_units)),
             "transport_task_count": int(len(transport_tasks)),

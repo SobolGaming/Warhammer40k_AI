@@ -499,8 +499,6 @@ Implemented behavior:
   decision context.
 - plan build and repair audit events include their configured budget values.
 
-## Remaining Roadmap
-
 ### PR 14 - Strategic Intent Compiler
 
 Formalize a side-effect-free compiler that translates `GeneralPlan` intent into
@@ -510,3 +508,24 @@ materialized into existing DeploymentPlan and BattleRoundPlan local slices.
 Implementation plan:
 
 - [docs/implementation/strategic_intent_compiler_pr14_plan.md](implementation/strategic_intent_compiler_pr14_plan.md)
+
+Implemented behavior:
+
+- added `strategic_intent_compiler.py` with deterministic dataclasses for
+  `DeploymentOrderBundle`, `PreBattleOrderBundle`, `CommanderOrderBundle`, and
+  their local order types.
+- `GeneralPlan` now compiles into deployment, pre-battle, and battle-round
+  order bundles before lower plans materialize local slices.
+- Deployment plans materialize deployment doctrine, unit orders, transport
+  orders, sequence orders, and Scout/Infiltrate tempo/projection orders.
+- Pre-battle bundles provide explicit Scout move, Infiltrate deployment, and
+  screen orders.
+- Battle-round plans materialize commander order provenance into target,
+  movement, shooting, charge, fight, resource, and transport metadata.
+- normal decision context remains slim: full order bundles are audit/debug-only.
+- legality, masks, validators, PathWitness generation, and mutation remain
+  owned by the engine.
+
+## Remaining Roadmap
+
+The next roadmap item has not been assigned yet.

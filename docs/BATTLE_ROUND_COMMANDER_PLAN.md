@@ -21,6 +21,10 @@ decision.
   General plan that owns long-horizon resource and transport doctrine.
 - `Game.get_or_create_deployment_plan(player_id)` returns the cached
   setup/deployment commander plan that owns uncertainty-aware initial posture.
+- `Game.get_or_create_deployment_order_bundle(player_id)` returns compiled
+  General-to-deployment intent.
+- `Game.get_or_create_prebattle_order_bundle(player_id)` returns compiled
+  Scout/Infiltrate/pre-battle intent.
 - `Game.get_commander_dirty_flags(player_id)` returns current repair pressure.
 - `Game.mark_commander_dirty(...)` records event-driven repair pressure.
 - `Game.clear_commander_dirty_flags(player_id, consumed_scope=...)` resets or
@@ -33,7 +37,10 @@ decision.
 - Command phase start prebuilds the plan for the active player.
 - `Game.request_decision(...)` attaches by default:
   - `general_plan_id`
+  - `deployment_order_bundle_id` for deployment/pre-battle contexts
+  - `prebattle_order_bundle_id` for deployment/pre-battle contexts
   - `battle_round_plan_id`
+  - `commander_order_bundle_id`
   - `commander_dirty_flags`
   - `commander_replan_scope`
   - `last_commander_phase_report` when one exists
@@ -53,6 +60,7 @@ decision.
     requests
   - `commander_candidate_fight_assignments` for fight-phase unit selection
     requests
+  - `commander_resource_authorizations` for unit-owned authorized resources
   - `general_limited_resource_policy` for resources relevant to the unit plus
     global CP/stratagem reserves
   - `general_cp_policy`
@@ -74,6 +82,9 @@ decision.
   audit/debug opt-in is active.
 - A caller-provided `deployment_plan` payload is stripped unless deployment
   audit/debug opt-in is active.
+- Full `deployment_order_bundle`, `prebattle_order_bundle`, and
+  `commander_order_bundle` payloads are attached only through explicit
+  audit/debug opt-in.
 - Dice, allocation, and `n/a` decisions still skip strategic context.
 
 ## Orchestration Audit Events
@@ -165,6 +176,12 @@ analysis input snapshot. It is built with the plan and includes:
 
 The snapshot is approximate planning metadata only. It does not create legal
 candidates, change masks, validate attacks, or mutate state.
+
+`metadata.commander_order_bundle_id` links the plan to the compiled
+`CommanderOrderBundle`. The battle-round plan materializes that bundle into
+existing priority target, unit task, movement, shooting, charge, fight, and
+transport assignment structures. Full compiler output remains audit/debug-only
+because the full battle-round plan is not attached in normal decision context.
 
 Weapon/ability trigger metadata is included in unit capability and unit-target
 matrix metadata when detected:

@@ -12,6 +12,10 @@ can order already-legal candidates against higher-level deployment intent.
 
 - `Game.get_or_create_deployment_plan(player_id)` returns a cached plan for the
   setup/deployment stage.
+- `Game.get_or_create_deployment_order_bundle(player_id)` returns the compiled
+  General-to-deployment order bundle that the plan materializes.
+- `Game.get_or_create_prebattle_order_bundle(player_id)` returns compiled
+  Scout/Infiltrate/pre-battle orders derived from deployment orders.
 - `Game.get_deployment_dirty_flags(player_id)` returns current deployment repair
   pressure.
 - `Game.mark_deployment_plan_dirty(...)` records variance such as revealed enemy
@@ -20,6 +24,8 @@ can order already-legal candidates against higher-level deployment intent.
   deployment plan and consumes matching dirty flags.
 - Deployment-related decision contexts receive by default:
   - `deployment_plan_id`
+  - `deployment_order_bundle_id`
+  - `prebattle_order_bundle_id`
   - `deployment_dirty_flags`
   - `deployment_replan_scope`
   - `unit_deployment_task` for unit-scoped deployment decisions
@@ -27,6 +33,8 @@ can order already-legal candidates against higher-level deployment intent.
     metadata when present
   - `scout_projection` / `infiltrate_projection` for matching forward
     deployment units when present
+  - `scout_move_order`, `infiltrate_deployment_order`, and
+    `prebattle_screen_order` for matching pre-battle units when present
   - `transport_deployment_task` for transports and planned passengers
   - `deployment_candidate_unit_tasks` and
     `deployment_candidate_tempo_capabilities` for next-unit deployment
@@ -36,6 +44,9 @@ can order already-legal candidates against higher-level deployment intent.
   `game.attach_full_deployment_plan_context` is true.
 - Caller-provided `deployment_plan` payloads are stripped unless that same
   audit/debug opt-in is active.
+- Full compiled order bundles are also audit/debug-only through
+  `include_full_deployment_order_bundle`,
+  `include_full_prebattle_order_bundle`, or matching game-level flags.
 
 Deployment context is attached only for setup/deployment decisions, including
 deployment zone choice, reserve declaration, next-unit selection, Scout moves,
@@ -66,8 +77,15 @@ Top-level fields:
 - `metadata`
 
 `metadata.general_plan_id` links the deployment plan to the active
-game-level General plan. General transport doctrine is consumed as planning
+game-level General plan. `metadata.deployment_order_bundle_id` links it to the
+compiled deployment orders. General transport doctrine is consumed as planning
 metadata only.
+
+The deployment plan materializes `DeploymentOrderBundle` into existing
+`DeploymentDoctrine`, `DeploymentInformationState`, `UnitDeploymentTask`,
+`TransportDeploymentTask`, Scout/Infiltrate tempo capability, projection, and
+contingency structures. The compiled bundle is retained only inside the full
+plan payload, which normal decision context does not attach.
 
 ## Information State
 

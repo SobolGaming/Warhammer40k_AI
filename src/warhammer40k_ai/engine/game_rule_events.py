@@ -104,6 +104,12 @@ from .orchestration_guardrails import (
     DEPLOYMENT_REPAIR_BUDGET_MS,
     GENERAL_PLAN_BUILD_BUDGET_MS,
 )
+from .strategic_intent_compiler import (
+    DeploymentOrderBundle,
+    PreBattleOrderBundle,
+    compile_deployment_to_prebattle_orders,
+    compile_general_intent_to_deployment_orders,
+)
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -260,6 +266,68 @@ class GameRuleEventService(GameServiceBase):
         )
         return plan
 
+    def get_or_create_deployment_order_bundle(self, player_id: str) -> DeploymentOrderBundle:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment order bundle requires player_id.")
+        if not hasattr(self, "_deployment_order_bundles") or not isinstance(self._deployment_order_bundles, dict):
+            self._deployment_order_bundles = {}
+        key = self._deployment_plan_key(pid)
+        existing = self._deployment_order_bundles.get(key)
+        if existing is not None:
+            return existing
+        general_plan = self.get_or_create_general_plan(pid)
+        bundle = compile_general_intent_to_deployment_orders(
+            self,
+            general_plan,
+            player_id=pid,
+        )
+        self._deployment_order_bundles[key] = bundle
+        self.record_orchestration_audit_event(
+            "deployment_orders_compiled",
+            player_id=pid,
+            plan_id=str(bundle.order_bundle_id),
+            metadata={
+                "general_plan_id": str(general_plan.plan_id),
+                "unit_order_count": int(len(bundle.unit_orders)),
+                "transport_order_count": int(len(bundle.transport_orders)),
+                "tempo_order_count": int(len(bundle.tempo_orders)),
+            },
+        )
+        return bundle
+
+    def get_or_create_prebattle_order_bundle(self, player_id: str) -> PreBattleOrderBundle:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Pre-battle order bundle requires player_id.")
+        if not hasattr(self, "_prebattle_order_bundles") or not isinstance(self._prebattle_order_bundles, dict):
+            self._prebattle_order_bundles = {}
+        key = self._deployment_plan_key(pid)
+        existing = self._prebattle_order_bundles.get(key)
+        if existing is not None:
+            return existing
+        general_plan = self.get_or_create_general_plan(pid)
+        deployment_orders = self.get_or_create_deployment_order_bundle(pid)
+        bundle = compile_deployment_to_prebattle_orders(
+            self,
+            general_plan,
+            deployment_orders,
+            player_id=pid,
+        )
+        self._prebattle_order_bundles[key] = bundle
+        self.record_orchestration_audit_event(
+            "prebattle_orders_compiled",
+            player_id=pid,
+            plan_id=str(bundle.order_bundle_id),
+            metadata={
+                "general_plan_id": str(general_plan.plan_id),
+                "deployment_order_bundle_id": str(deployment_orders.order_bundle_id),
+                "scout_order_count": int(len(bundle.scout_orders)),
+                "infiltrate_order_count": int(len(bundle.infiltrate_orders)),
+            },
+        )
+        return bundle
+
     def get_or_create_deployment_plan(self, player_id: str) -> DeploymentPlan:
         pid = str(player_id or "")
         if not pid:
@@ -271,11 +339,14 @@ class GameRuleEventService(GameServiceBase):
         if existing is not None:
             return existing
         general_plan = self.get_or_create_general_plan(pid)
+        deployment_orders = self.get_or_create_deployment_order_bundle(pid)
         plan = build_deployment_plan(
             self,
             pid,
+            general_plan=general_plan,
             general_plan_id=general_plan.plan_id,
             general_transport_policy=general_plan.transport_policy,
+            deployment_orders=deployment_orders,
         )
         self._deployment_plans[key] = plan
         self.record_orchestration_audit_event(
@@ -296,11 +367,14 @@ class GameRuleEventService(GameServiceBase):
         if not pid:
             raise ValueError("Deployment plan requires player_id.")
         general_plan = self.get_or_create_general_plan(pid)
+        deployment_orders = self.get_or_create_deployment_order_bundle(pid)
         return build_deployment_plan(
             self,
             pid,
+            general_plan=general_plan,
             general_plan_id=general_plan.plan_id,
             general_transport_policy=general_plan.transport_policy,
+            deployment_orders=deployment_orders,
         )
 
     def get_deployment_dirty_flags(self, player_id: str) -> DeploymentDirtyFlags:
@@ -341,6 +415,10 @@ class GameRuleEventService(GameServiceBase):
             severity=severity,
         )
         self._deployment_dirty_flags[self._deployment_plan_key(pid)] = flags
+        if hasattr(self, "_deployment_order_bundles") and isinstance(self._deployment_order_bundles, dict):
+            self._deployment_order_bundles.pop(self._deployment_plan_key(pid), None)
+        if hasattr(self, "_prebattle_order_bundles") and isinstance(self._prebattle_order_bundles, dict):
+            self._prebattle_order_bundles.pop(self._deployment_plan_key(pid), None)
         self.record_orchestration_audit_event(
             "deployment_plan_dirty_marked",
             player_id=pid,
@@ -447,12 +525,17 @@ class GameRuleEventService(GameServiceBase):
         tier1_plan = self.get_or_create_tier1_plan(pid)
         tier2_bundle = self.get_or_create_tier2_task_bundle(pid)
         general_plan = self.get_or_create_general_plan(pid)
+        deployment_orders = self.get_or_create_deployment_order_bundle(pid)
+        prebattle_orders = self.get_or_create_prebattle_order_bundle(pid)
         plan = build_battle_round_plan(
             self,
             tier1_plan,
             tier2_bundle,
+            general_plan=general_plan,
             general_plan_id=general_plan.plan_id,
             general_transport_policy=general_plan.transport_policy,
+            deployment_orders=deployment_orders,
+            prebattle_orders=prebattle_orders,
         )
         self._battle_round_plans[key] = plan
         self.record_orchestration_audit_event(
@@ -491,12 +574,17 @@ class GameRuleEventService(GameServiceBase):
             tier1_plan = self.get_or_create_tier1_plan(pid)
             tier2_bundle = self.get_or_create_tier2_task_bundle(pid)
         general_plan = self.get_or_create_general_plan(pid)
+        deployment_orders = self.get_or_create_deployment_order_bundle(pid)
+        prebattle_orders = self.get_or_create_prebattle_order_bundle(pid)
         return build_battle_round_plan(
             self,
             tier1_plan,
             tier2_bundle,
+            general_plan=general_plan,
             general_plan_id=general_plan.plan_id,
             general_transport_policy=general_plan.transport_policy,
+            deployment_orders=deployment_orders,
+            prebattle_orders=prebattle_orders,
         )
 
     def get_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:
