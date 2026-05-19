@@ -148,10 +148,12 @@ At `phase_end`, the commander records a compact `PhaseExecutionReport`:
 - `objective_reports`
 - `recommended_replan_scope`
 - `metadata.dirty_flags`
+- `metadata.repair` when the same phase start repaired the plan, including the
+  repair `scope`, `repair_count`, and pre/post dirty flag summaries.
 
-The first implementation records dirty-flag summaries only. Future executors can
-populate per-unit, per-target, and per-objective reports as they compare planned
-intent with actual execution outcomes.
+Phase reports remain compact. Future executors can populate per-unit,
+per-target, and per-objective reports as they compare planned intent with actual
+execution outcomes.
 
 ## Greedy Assignment Baseline
 
@@ -184,8 +186,15 @@ The first implementation is deliberately conservative:
 - movement tasks mirror Tier-2 target regions and commander phase intent.
 - fire, charge, and fight assignments are populated by the greedy commander
   assignment baseline.
-- dirty flags and phase reports are recorded from engine events.
-- no phase behavior changes consume or clear repair pressure yet.
+- dirty flags are recorded from engine events and consumed at phase-start repair
+  checkpoints.
+- phase-start repair scopes refresh only the matching subplan when possible, or
+  the phase/full-round plan when target, objective, CP, or full replan pressure
+  requires it.
+- phase reports record the current dirty state plus the most recent same-phase
+  repair scope and pre/post dirty state when a repair ran.
+- rankers still do not have to obey commander assignments; legality and
+  mutation remain owned by the existing engine validators.
 
 This establishes the stable data contract for later work where movement can
 score LoS/range/trigger-band enablement, shooting can try preferred

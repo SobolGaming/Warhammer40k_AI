@@ -66,8 +66,6 @@ Implementation notes:
   attached to decision context by default.
 - Unit-target entries are bounded by top-K target and unit limits.
 
-## Remaining
-
 ### PR 3 - Greedy Commander Assignment Planner
 
 Commit: `d2f3abc2 Add greedy commander assignments`
@@ -91,9 +89,25 @@ Implementation notes:
 
 ### PR 4 - Phase Checkpoint And Repair Loop
 
-Make dirty flags operational at phase boundaries. Add repair scopes, consume or
-downgrade flags after repair checkpoints, and preserve deterministic repair
-counts/phase reports.
+Commit: `Add commander phase repair checkpoints`
+
+Make dirty flags operational at phase boundaries. Phase-start checkpoints choose
+the narrowest applicable repair scope, refresh the relevant commander subplan,
+consume or retain dirty flags deterministically, increment repair counts only
+when a repair runs, and attach pre/post dirty summaries to phase reports.
+
+Implementation notes:
+
+- `unit_move_ended` can dirty shooting and charge, then Shooting phase start
+  repairs only the shooting scope and leaves charge dirty for Charge phase.
+- `charge_move_failed` can repair charge at Charge phase start and fight at
+  Fight phase start without full-round replanning.
+- target/objective/CP priority variance uses `phase` repair, while explicit
+  full-round variance rebuilds the battle-round plan and dependencies.
+- repeated phase-start calls are idempotent once the matching scope has been
+  consumed.
+
+## Remaining
 
 ### PR 5 - Movement Ranker Consumes Commander Movement Intent
 

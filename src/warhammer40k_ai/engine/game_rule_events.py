@@ -70,8 +70,17 @@ from .commander_plan import (
     BattleRoundPlan,
     CommanderDirtyFlags,
     PhaseExecutionReport,
+    REPLAN_SCOPE_CHARGE_ONLY,
+    REPLAN_SCOPE_FIGHT_ONLY,
+    REPLAN_SCOPE_FULL_ROUND,
+    REPLAN_SCOPE_MOVEMENT_ONLY,
+    REPLAN_SCOPE_NONE,
+    REPLAN_SCOPE_PHASE,
+    REPLAN_SCOPE_SHOOTING_ONLY,
     build_battle_round_plan,
     build_phase_execution_report,
+    consume_commander_dirty_flags,
+    repair_battle_round_plan,
 )
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
@@ -169,6 +178,30 @@ class GameRuleEventService(GameServiceBase):
         self._battle_round_plans[key] = plan
         return plan
 
+    def _build_fresh_battle_round_plan(
+        self,
+        player_id: str,
+        *,
+        rebuild_dependencies: bool = False,
+    ) -> BattleRoundPlan:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Battle-round commander plan requires player_id.")
+        key = self._tier1_plan_key(pid)
+        if rebuild_dependencies:
+            if not hasattr(self, "_tier1_turn_plans") or not isinstance(self._tier1_turn_plans, dict):
+                self._tier1_turn_plans = {}
+            if not hasattr(self, "_tier2_task_bundles") or not isinstance(self._tier2_task_bundles, dict):
+                self._tier2_task_bundles = {}
+            tier1_plan = build_heuristic_tier1_plan(self, pid)
+            self._tier1_turn_plans[key] = tier1_plan
+            tier2_bundle = build_tier2_task_bundle(self, tier1_plan)
+            self._tier2_task_bundles[key] = tier2_bundle
+        else:
+            tier1_plan = self.get_or_create_tier1_plan(pid)
+            tier2_bundle = self.get_or_create_tier2_task_bundle(pid)
+        return build_battle_round_plan(self, tier1_plan, tier2_bundle)
+
     def get_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:
         pid = str(player_id or "")
         if not pid:
@@ -215,13 +248,71 @@ class GameRuleEventService(GameServiceBase):
         self._commander_dirty_flags[self._tier1_plan_key(pid)] = flags
         return flags
 
-    def clear_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:
+    def clear_commander_dirty_flags(
+        self,
+        player_id: str,
+        consumed_scope: str | None = None,
+    ) -> CommanderDirtyFlags:
         pid = str(player_id or "")
         if not pid:
             raise ValueError("Commander dirty flags require player_id.")
-        flags = CommanderDirtyFlags()
+        if consumed_scope is None:
+            flags = CommanderDirtyFlags()
+        else:
+            flags = consume_commander_dirty_flags(
+                self.get_commander_dirty_flags(pid),
+                str(consumed_scope),
+            )
         self._commander_dirty_flags[self._tier1_plan_key(pid)] = flags
         return flags
+
+    def repair_commander_plan(
+        self,
+        player_id: str,
+        *,
+        scope: str,
+        phase_name: str = "",
+    ) -> dict[str, Any]:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Battle-round commander plan requires player_id.")
+        repair_scope = str(scope or REPLAN_SCOPE_NONE)
+        pre_flags = self.get_commander_dirty_flags(pid)
+        if repair_scope == REPLAN_SCOPE_NONE:
+            return {
+                "repaired": False,
+                "scope": REPLAN_SCOPE_NONE,
+                "phase_name": str(phase_name),
+                "pre_dirty_flags": pre_flags.to_dict(),
+                "post_dirty_flags": pre_flags.to_dict(),
+            }
+
+        existing_plan = self.get_or_create_battle_round_plan(pid)
+        fresh_plan = self._build_fresh_battle_round_plan(
+            pid,
+            rebuild_dependencies=repair_scope in {REPLAN_SCOPE_PHASE, REPLAN_SCOPE_FULL_ROUND},
+        )
+        repaired_plan = repair_battle_round_plan(existing_plan, fresh_plan, repair_scope)
+        if not hasattr(self, "_battle_round_plans") or not isinstance(self._battle_round_plans, dict):
+            self._battle_round_plans = {}
+        self._battle_round_plans[self._tier1_plan_key(pid)] = repaired_plan
+        post_flags = self.clear_commander_dirty_flags(pid, consumed_scope=repair_scope)
+        repair_report = {
+            "repaired": True,
+            "scope": repair_scope,
+            "phase_name": str(phase_name),
+            "plan_id": str(repaired_plan.plan_id),
+            "repair_count": int(repaired_plan.invalidation.repair_count),
+            "pre_dirty_flags": pre_flags.to_dict(),
+            "post_dirty_flags": post_flags.to_dict(),
+        }
+        if not hasattr(self, "_commander_last_repair_reports") or not isinstance(
+            self._commander_last_repair_reports,
+            dict,
+        ):
+            self._commander_last_repair_reports = {}
+        self._commander_last_repair_reports[self._tier1_plan_key(pid)] = repair_report
+        return repair_report
 
     def record_commander_phase_report(self, report: PhaseExecutionReport) -> None:
         player_id = str(report.player_id)
@@ -246,11 +337,22 @@ class GameRuleEventService(GameServiceBase):
     ) -> PhaseExecutionReport:
         plan = self.get_or_create_battle_round_plan(player_id)
         flags = self.get_commander_dirty_flags(player_id)
+        normalized_phase = self._commander_phase_name(phase_name)
+        repair_metadata = None
+        repair_reports = getattr(self, "_commander_last_repair_reports", {})
+        if isinstance(repair_reports, dict):
+            candidate = repair_reports.get(self._tier1_plan_key(player_id))
+            if (
+                isinstance(candidate, dict)
+                and self._commander_phase_name(candidate.get("phase_name")) == normalized_phase
+            ):
+                repair_metadata = candidate
         return build_phase_execution_report(
-            phase_name=phase_name,
+            phase_name=normalized_phase,
             player_id=player_id,
             plan=plan,
             dirty_flags=flags,
+            repair_metadata=repair_metadata,
         )
 
     def _install_default_event_subscribers(self) -> None:
@@ -277,6 +379,29 @@ class GameRuleEventService(GameServiceBase):
 
     def _commander_phase_name(self, phase: object) -> str:
         return str(getattr(phase, "name", "") or phase or "").strip().upper()
+
+    def _commander_repair_scope_for_phase(
+        self,
+        phase_name: str,
+        flags: CommanderDirtyFlags,
+    ) -> str:
+        if not flags.any_dirty():
+            return REPLAN_SCOPE_NONE
+        if flags.full_replan_required:
+            return REPLAN_SCOPE_FULL_ROUND
+        if flags.target_priorities_dirty or flags.objective_priorities_dirty or flags.cp_policy_dirty:
+            return REPLAN_SCOPE_PHASE
+
+        name = self._commander_phase_name(phase_name)
+        if "MOVEMENT" in name and flags.movement_plan_dirty:
+            return REPLAN_SCOPE_MOVEMENT_ONLY
+        if "SHOOTING" in name and flags.shooting_plan_dirty:
+            return REPLAN_SCOPE_SHOOTING_ONLY
+        if "CHARGE" in name and flags.charge_plan_dirty:
+            return REPLAN_SCOPE_CHARGE_ONLY
+        if "FIGHT" in name and flags.fight_plan_dirty:
+            return REPLAN_SCOPE_FIGHT_ONLY
+        return REPLAN_SCOPE_NONE
 
     def _commander_entity_id(self, entity: object) -> str:
         if entity is None:
@@ -339,8 +464,20 @@ class GameRuleEventService(GameServiceBase):
 
     def _on_commander_phase_start(self, player=None, phase=None, **_kwargs) -> None:
         player_id = str(getattr(player, "id", "") or "")
-        if player_id:
-            self.get_or_create_battle_round_plan(player_id)
+        if not player_id:
+            return
+        self.get_or_create_battle_round_plan(player_id)
+        phase_name = self._commander_phase_name(phase)
+        repair_scope = self._commander_repair_scope_for_phase(
+            phase_name,
+            self.get_commander_dirty_flags(player_id),
+        )
+        if repair_scope != REPLAN_SCOPE_NONE:
+            self.repair_commander_plan(
+                player_id,
+                scope=repair_scope,
+                phase_name=phase_name,
+            )
 
     def _on_commander_phase_end(self, player=None, phase=None, **_kwargs) -> None:
         player_id = str(getattr(player, "id", "") or "")

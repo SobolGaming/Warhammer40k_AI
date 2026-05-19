@@ -132,8 +132,9 @@ Headless mode resolves the same `DecisionRequest` objects as UI and network play
 
 Tier 1, Tier 2, and the battle-round commander plan are deterministic, cached context
 providers rather than independent player-facing decisions. They are created at Command
-phase start when possible, and lazily inside `Game.request_decision(...)` for any player
-decision that benefits from strategic or tactical context.
+phase start when possible, repaired at phase-start checkpoints when dirty flags
+require a scoped refresh, and lazily inside `Game.request_decision(...)` for any
+player decision that benefits from strategic or tactical context.
 
 ```mermaid
 flowchart TD

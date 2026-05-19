@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .tier1_plan import Tier1Plan
@@ -1781,7 +1781,11 @@ def build_phase_execution_report(
     player_id: str,
     plan: BattleRoundPlan,
     dirty_flags: CommanderDirtyFlags,
+    repair_metadata: dict[str, Any] | None = None,
 ) -> PhaseExecutionReport:
+    metadata: dict[str, Any] = {"dirty_flags": dirty_flags.to_dict()}
+    if repair_metadata is not None:
+        metadata["repair"] = _sorted_metadata(repair_metadata)
     return PhaseExecutionReport(
         phase_name=str(phase_name),
         player_id=str(player_id),
@@ -1791,5 +1795,117 @@ def build_phase_execution_report(
         target_reports=[],
         objective_reports=[],
         recommended_replan_scope=dirty_flags.recommended_replan_scope(),
-        metadata={"dirty_flags": dirty_flags.to_dict()},
+        metadata=metadata,
     )
+
+
+def consume_commander_dirty_flags(
+    flags: CommanderDirtyFlags,
+    consumed_scope: str,
+) -> CommanderDirtyFlags:
+    scope = str(consumed_scope or REPLAN_SCOPE_NONE)
+    if scope == REPLAN_SCOPE_NONE:
+        return flags
+
+    movement_plan_dirty = bool(flags.movement_plan_dirty)
+    shooting_plan_dirty = bool(flags.shooting_plan_dirty)
+    charge_plan_dirty = bool(flags.charge_plan_dirty)
+    fight_plan_dirty = bool(flags.fight_plan_dirty)
+    target_priorities_dirty = bool(flags.target_priorities_dirty)
+    objective_priorities_dirty = bool(flags.objective_priorities_dirty)
+    cp_policy_dirty = bool(flags.cp_policy_dirty)
+    full_replan_required = bool(flags.full_replan_required)
+
+    if scope in {REPLAN_SCOPE_FULL_ROUND, REPLAN_SCOPE_PHASE}:
+        movement_plan_dirty = False
+        shooting_plan_dirty = False
+        charge_plan_dirty = False
+        fight_plan_dirty = False
+        target_priorities_dirty = False
+        objective_priorities_dirty = False
+        cp_policy_dirty = False
+        full_replan_required = False
+    elif scope == REPLAN_SCOPE_MOVEMENT_ONLY:
+        movement_plan_dirty = False
+    elif scope == REPLAN_SCOPE_SHOOTING_ONLY:
+        shooting_plan_dirty = False
+    elif scope == REPLAN_SCOPE_CHARGE_ONLY:
+        charge_plan_dirty = False
+    elif scope == REPLAN_SCOPE_FIGHT_ONLY:
+        fight_plan_dirty = False
+
+    remaining = CommanderDirtyFlags(
+        movement_plan_dirty=movement_plan_dirty,
+        shooting_plan_dirty=shooting_plan_dirty,
+        charge_plan_dirty=charge_plan_dirty,
+        fight_plan_dirty=fight_plan_dirty,
+        target_priorities_dirty=target_priorities_dirty,
+        objective_priorities_dirty=objective_priorities_dirty,
+        cp_policy_dirty=cp_policy_dirty,
+        full_replan_required=full_replan_required,
+        reasons=_sorted_strings(flags.reasons),
+        max_severity=float(flags.max_severity),
+    )
+    if remaining.any_dirty():
+        return remaining
+    return CommanderDirtyFlags()
+
+
+def repair_battle_round_plan(
+    existing_plan: BattleRoundPlan,
+    fresh_plan: BattleRoundPlan,
+    repair_scope: str,
+) -> BattleRoundPlan:
+    scope = str(repair_scope or REPLAN_SCOPE_NONE)
+    if scope == REPLAN_SCOPE_NONE:
+        return existing_plan
+
+    repair_count = int(existing_plan.invalidation.repair_count) + 1
+    invalidation = PlanInvalidationState(
+        created_at_generation=(
+            int(fresh_plan.created_at_generation)
+            if scope == REPLAN_SCOPE_FULL_ROUND
+            else int(existing_plan.invalidation.created_at_generation)
+        ),
+        last_validated_generation=int(fresh_plan.created_at_generation),
+        invalidated=False,
+        reasons=[],
+        repair_count=repair_count,
+    )
+    metadata = _sorted_metadata(fresh_plan.metadata)
+    metadata["last_repair_count"] = int(repair_count)
+    metadata["last_repair_generation"] = int(fresh_plan.created_at_generation)
+    metadata["last_repair_scope"] = scope
+
+    if scope == REPLAN_SCOPE_FULL_ROUND:
+        return replace(
+            fresh_plan,
+            invalidation=invalidation,
+            metadata=metadata,
+        )
+
+    updates: dict[str, Any] = {
+        "invalidation": invalidation,
+        "metadata": metadata,
+    }
+    if scope == REPLAN_SCOPE_PHASE:
+        updates.update(
+            {
+                "priority_targets": fresh_plan.priority_targets,
+                "unit_tasks": fresh_plan.unit_tasks,
+                "movement_plan": fresh_plan.movement_plan,
+                "shooting_plan": fresh_plan.shooting_plan,
+                "charge_plan": fresh_plan.charge_plan,
+                "fight_plan": fresh_plan.fight_plan,
+            }
+        )
+    elif scope == REPLAN_SCOPE_MOVEMENT_ONLY:
+        updates["movement_plan"] = fresh_plan.movement_plan
+    elif scope == REPLAN_SCOPE_SHOOTING_ONLY:
+        updates["shooting_plan"] = fresh_plan.shooting_plan
+    elif scope == REPLAN_SCOPE_CHARGE_ONLY:
+        updates["charge_plan"] = fresh_plan.charge_plan
+    elif scope == REPLAN_SCOPE_FIGHT_ONLY:
+        updates["fight_plan"] = fresh_plan.fight_plan
+
+    return replace(existing_plan, **updates)

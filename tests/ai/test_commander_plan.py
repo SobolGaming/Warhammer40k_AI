@@ -112,6 +112,7 @@ class _Unit:
         self.id = unit_id
         self.name = unit_id
         self.deployed = True
+        self.alive = True
         self.keywords = list(keywords or [])
         self.faction_keywords = []
         self.models = [
@@ -135,7 +136,7 @@ class _Unit:
         return self
 
     def is_alive(self) -> bool:
-        return True
+        return bool(self.alive)
 
 
 class _Army:
@@ -556,3 +557,112 @@ def test_unit_destroyed_marks_target_priority_repair_for_relevant_plans() -> Non
     assert flags.target_priorities_dirty is True
     assert flags.status() == "major_variance"
     assert flags.recommended_replan_scope() == "phase"
+
+
+def test_shooting_phase_start_repairs_movement_variance_for_shooting_only() -> None:
+    game, player, unit = _build_game()
+    before_count = game.get_or_create_battle_round_plan(player.id).invalidation.repair_count
+
+    game.event_system.publish("unit_move_ended", unit=unit, action="normal_move")
+    game.event_system.publish(
+        "phase_start",
+        player=player,
+        phase=SimpleNamespace(name="SHOOTING_PHASE"),
+    )
+
+    flags = game.get_commander_dirty_flags(player.id)
+    repaired_plan = game.get_or_create_battle_round_plan(player.id)
+
+    assert repaired_plan.invalidation.repair_count == before_count + 1
+    assert flags.shooting_plan_dirty is False
+    assert flags.charge_plan_dirty is True
+    assert flags.recommended_replan_scope() == "charge_only"
+
+
+def test_charge_and_fight_phase_repairs_consume_failed_charge_variance() -> None:
+    game, player, unit = _build_game()
+    game.get_or_create_battle_round_plan(player.id)
+
+    game.event_system.publish("charge_move_failed", unit=unit)
+    game.event_system.publish(
+        "phase_start",
+        player=player,
+        phase=SimpleNamespace(name="CHARGE_PHASE"),
+    )
+    after_charge = game.get_or_create_battle_round_plan(player.id)
+    charge_flags = game.get_commander_dirty_flags(player.id)
+
+    assert after_charge.invalidation.repair_count == 1
+    assert charge_flags.charge_plan_dirty is False
+    assert charge_flags.fight_plan_dirty is True
+    assert charge_flags.status() == "major_variance"
+
+    game.event_system.publish(
+        "phase_start",
+        player=player,
+        phase=SimpleNamespace(name="FIGHT_PHASE"),
+    )
+    after_fight = game.get_or_create_battle_round_plan(player.id)
+    fight_flags = game.get_commander_dirty_flags(player.id)
+
+    assert after_fight.invalidation.repair_count == 2
+    assert fight_flags.any_dirty() is False
+
+
+def test_destroyed_target_phase_repair_removes_dead_target_assignments() -> None:
+    game, player, _unit = _build_game()
+    game.get_or_create_battle_round_plan(player.id)
+    target = game.players[1].army.units[1]
+    target.alive = False
+
+    game.event_system.publish("unit_destroyed", unit=target)
+    game.event_system.publish(
+        "phase_start",
+        player=player,
+        phase=SimpleNamespace(name="SHOOTING_PHASE"),
+    )
+
+    repaired = game.get_or_create_battle_round_plan(player.id).to_dict()
+    primary_targets = {
+        str(task.get("primary_target_unit_id", ""))
+        for task in repaired["unit_tasks"].values()
+        if str(task.get("primary_target_unit_id", ""))
+    }
+
+    assert "target:big" not in [target["target_unit_id"] for target in repaired["priority_targets"]]
+    assert "target:big" not in repaired["shooting_plan"]["target_fire_plans"]
+    assert "target:big" not in primary_targets
+    assert game.get_commander_dirty_flags(player.id).any_dirty() is False
+
+
+def test_commander_phase_start_repair_is_idempotent_for_consumed_scope() -> None:
+    game, player, unit = _build_game()
+    game.get_or_create_battle_round_plan(player.id)
+
+    game.event_system.publish("unit_move_ended", unit=unit, action="normal_move")
+    phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.event_system.publish("phase_start", player=player, phase=phase)
+    first_count = game.get_or_create_battle_round_plan(player.id).invalidation.repair_count
+
+    game.event_system.publish("phase_start", player=player, phase=phase)
+    second_count = game.get_or_create_battle_round_plan(player.id).invalidation.repair_count
+
+    assert first_count == 1
+    assert second_count == first_count
+
+
+def test_phase_report_records_repair_scope_and_pre_post_dirty_flags() -> None:
+    game, player, unit = _build_game()
+    game.get_or_create_battle_round_plan(player.id)
+
+    game.event_system.publish("unit_move_ended", unit=unit, action="normal_move")
+    phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.event_system.publish("phase_start", player=player, phase=phase)
+    game.event_system.publish("phase_end", player=player, phase=phase)
+    report = game.get_commander_phase_reports(player.id)[-1].to_dict()
+    repair = report["metadata"]["repair"]
+
+    assert repair["scope"] == "shooting_only"
+    assert repair["pre_dirty_flags"]["shooting_plan_dirty"] is True
+    assert repair["post_dirty_flags"]["shooting_plan_dirty"] is False
+    assert report["metadata"]["dirty_flags"]["charge_plan_dirty"] is True
