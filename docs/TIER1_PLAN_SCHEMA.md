@@ -8,10 +8,12 @@ Context keys:
 - `plan_id`
 - `turn_plan`
 - `battle_round_plan_id`
-- `battle_round_plan`
 - `commander_dirty_flags`
 - `commander_replan_scope`
 - `last_commander_phase_report`
+
+Audit/debug-only context keys:
+- `battle_round_plan`
 
 `turn_plan` fields:
 - `plan_id`
@@ -81,7 +83,8 @@ Heuristic baseline behavior:
 Runtime use:
 - The orchestrator may build or refresh this plan at Command phase start or lazily when a decision benefits from strategic context.
 - Lazy attachment is handled by `attach_ai_orchestration_context(...)` after rules, descriptor, and version-adapter context is attached and before time-budget decoration.
-- A cached `BattleRoundPlan` is built from the Tier-1 plan plus the Tier-2 task bundle and attached as cross-phase commander context.
+- A cached `BattleRoundPlan` is built from the Tier-1 plan plus the Tier-2 task bundle. Eligible requests receive `battle_round_plan_id`; unit-scoped requests receive the relevant local commander slices.
+- The full `battle_round_plan` dict is attached only when `request.context["include_full_battle_round_plan"]` or `game.attach_full_battle_round_plan_context` enables audit/debug payloads.
 - Event-driven commander dirty flags and the last phase report are attached so downstream rankers can detect stale or variance-affected plans without triggering a full replan.
 - Decision-specific rankers consume the plan through `request.context` when useful.
 - A local reaction, dice, allocation, or simple tool decision may route without consulting a fresh Tier-1 plan.

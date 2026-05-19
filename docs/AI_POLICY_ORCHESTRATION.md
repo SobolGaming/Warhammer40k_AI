@@ -144,7 +144,7 @@ flowchart TD
   E --> F["build_tier2_task_bundle maps units to task_type, compute_tier, MovementIntent, and CP reserve policy"]
   F --> G["Cache Tier2TaskBundle by battle_round and player_id"]
   G --> H["get_or_create_battle_round_plan(player_id) builds cross-phase commander context"]
-  H --> I["Game.request_decision injects turn_plan, battle_round_plan, dirty flags, score_window_state, opportunity_catalog, and cp_reserve_policy"]
+  H --> I["Game.request_decision injects turn_plan, battle_round_plan_id, dirty flags, score_window_state, opportunity_catalog, and cp_reserve_policy"]
   I --> J{"Decision has unit_id?"}
   J -->|"Yes"| K["Inject tier2_task, movement_intent, unit_battle_task, commander phase assignments, and compute_tier"]
   J -->|"No"| L["Use global strategic context only"]
@@ -360,7 +360,7 @@ Audit checklist:
 - For charge audits, inspect `DECLARE_CHARGE`, charge dice/reroll records, and the following charge `MOVE_UNIT` as one sequence.
 - For fight audits, inspect the stage-bearing `SELECT_UNIT`, `SELECT_FIGHT_TARGETS`, pile-in `MOVE_UNIT`, melee declaration/allocation records, melee attack resolution records, and consolidate `MOVE_UNIT` together.
 - For stratagem audits, inspect `SELECT_TOOL_ACTION` context fields such as `reactions_only`, `tool_action_signature`, `phase_name`, `limited_use_*`, and the triggering event context before judging Use versus Skip.
-- For strategic-flow audits, inspect `plan_id`, `turn_plan`, `battle_round_plan_id`, `battle_round_plan`, `commander_dirty_flags`, `commander_replan_scope`, `last_commander_phase_report`, `score_window_state`, `opportunity_catalog`, `cp_reserve_policy`, `tier2_task`, `movement_intent`, `unit_battle_task`, `commander_movement_task`, `commander_fire_assignment`, `commander_charge_assignment`, `commander_fight_assignment`, and `compute_tier` inside `request_context`; these explain which orchestration context was available when candidates were generated or scored.
+- For strategic-flow audits, inspect `plan_id`, `turn_plan`, `battle_round_plan_id`, `commander_dirty_flags`, `commander_replan_scope`, `last_commander_phase_report`, `score_window_state`, `opportunity_catalog`, `cp_reserve_policy`, `tier2_task`, `movement_intent`, `unit_battle_task`, `commander_movement_task`, `commander_fire_assignment`, `commander_charge_assignment`, `commander_fight_assignment`, and `compute_tier` inside `request_context`; these explain which orchestration context was available when candidates were generated or scored. The full `battle_round_plan` dict is present only when audit/debug payload attachment is explicitly enabled.
 - If the engine changes decision ordering, update these diagrams and the affected decision/replay docs in the same change.
 
 LLM-backed policy adapters are documented in `docs/LLM_POLICY_ADAPTER_RUNTIME.md`. They implement

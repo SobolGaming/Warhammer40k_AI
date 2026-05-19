@@ -26,6 +26,7 @@ Decision context integration:
 - `compute_tier` from Tier-2 task
 - `cp_reserve_policy` stub for downstream CP posture enforcement
 - `unit_battle_task` and phase-specific `commander_*` assignments from the cached `BattleRoundPlan`
+- `battle_round_plan_id`; the full `battle_round_plan` dict is audit/debug-only
 - `commander_dirty_flags` and `commander_replan_scope` for variance-aware local fallback/repair decisions
 
 Attachment rules:

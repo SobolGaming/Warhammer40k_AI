@@ -114,12 +114,46 @@ def test_commander_context_attaches_to_unit_scoped_decision() -> None:
     game.request_decision(request)
 
     assert request.context["battle_round_plan_id"].endswith(":battle_round")
-    assert request.context["battle_round_plan"]["plan_id"] == request.context["battle_round_plan_id"]
+    assert "battle_round_plan" not in request.context
     assert request.context["unit_battle_task"]["unit_id"] == unit.id
     assert request.context["commander_movement_task"]["unit_id"] == unit.id
     assert request.context["commander_fire_assignment"]["unit_id"] == unit.id
     assert request.context["commander_charge_assignment"]["unit_id"] == unit.id
     assert request.context["commander_fight_assignment"]["unit_id"] == unit.id
+
+
+def test_full_battle_round_plan_attaches_when_request_enables_audit_payload() -> None:
+    game, player, unit = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm?",
+        player_id=player.id,
+        options=[
+            DecisionOption.create("Yes", payload={"choice": True}),
+            DecisionOption.create("No", payload={"choice": False}),
+        ],
+        context={"unit_id": unit.id, "include_full_battle_round_plan": True},
+    )
+
+    game.request_decision(request)
+
+    assert (
+        request.context["battle_round_plan"]["plan_id"]
+        == request.context["battle_round_plan_id"]
+    )
+
+
+def test_full_battle_round_plan_attaches_when_game_enables_audit_payload() -> None:
+    game, player, unit = _build_game()
+    game.attach_full_battle_round_plan_context = True
+    request = _yes_no_request(player.id, unit.id)
+
+    game.request_decision(request)
+
+    assert (
+        request.context["battle_round_plan"]["plan_id"]
+        == request.context["battle_round_plan_id"]
+    )
 
 
 def test_command_phase_start_builds_battle_round_plan() -> None:

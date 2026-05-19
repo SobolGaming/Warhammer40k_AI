@@ -2,8 +2,9 @@
 
 `BattleRoundPlan` is the cross-phase commander context for one player in one
 battle round. It is built from the existing Tier-1 strategic plan and Tier-2
-task bundle, cached by `(battle_round, player_id)`, and attached to eligible
-decision contexts as serializable metadata.
+task bundle, cached by `(battle_round, player_id)`, and exposed to eligible
+decision contexts through stable identifiers plus unit-local serializable
+metadata.
 
 The plan is not a legality source. Tier 0 candidate generation, masks,
 validation, PathWitness generation, and command resolution remain authoritative.
@@ -20,9 +21,8 @@ decision.
   future repair implementation consumes it.
 - `Game.get_commander_phase_reports(player_id)` returns recent phase summaries.
 - Command phase start prebuilds the plan for the active player.
-- `Game.request_decision(...)` attaches:
+- `Game.request_decision(...)` attaches by default:
   - `battle_round_plan_id`
-  - `battle_round_plan`
   - `commander_dirty_flags`
   - `commander_replan_scope`
   - `last_commander_phase_report` when one exists
@@ -31,6 +31,9 @@ decision.
   - `commander_fire_assignment`
   - `commander_charge_assignment`
   - `commander_fight_assignment`
+- The full `battle_round_plan` payload is attached only for audit/debug
+  contexts, either when `request.context["include_full_battle_round_plan"]` is
+  true or when `game.attach_full_battle_round_plan_context` is true.
 - Dice, allocation, and `n/a` decisions still skip strategic context.
 
 ## Plan Shape

@@ -46,6 +46,14 @@ def _terrain_state_summary(game: object) -> dict[str, Any]:
     }
 
 
+def _should_attach_full_battle_round_plan(game: object, context: dict[str, Any]) -> bool:
+    """Return whether to attach the full commander plan payload for audit/debug."""
+
+    if bool(context.get("include_full_battle_round_plan", False)):
+        return True
+    return bool(getattr(game, "attach_full_battle_round_plan_context", False))
+
+
 def attach_ai_orchestration_context(
     game: object,
     request: DecisionRequest,
@@ -92,7 +100,11 @@ def attach_ai_orchestration_context(
         updated["battle_round_plan_id"] = battle_round_plan.plan_id
     if "turn_plan" not in updated:
         updated["turn_plan"] = plan.to_dict()
-    if battle_round_plan is not None and "battle_round_plan" not in updated:
+    if (
+        battle_round_plan is not None
+        and "battle_round_plan" not in updated
+        and _should_attach_full_battle_round_plan(game, updated)
+    ):
         updated["battle_round_plan"] = battle_round_plan.to_dict()
     if dirty_flags is not None and "commander_dirty_flags" not in updated:
         updated["commander_dirty_flags"] = dirty_flags.to_dict()
