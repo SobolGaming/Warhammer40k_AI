@@ -187,6 +187,13 @@ def default_ai_component_rankers() -> dict[str, DeterministicComponentRanker]:
                 METADATA_COVER_DELTA: 0.5,
                 METADATA_LOS_DELTA: 0.2,
                 METADATA_RESOURCE_DELTA: 0.2,
+                "commander_task_alignment": 2.2,
+                "commander_required_los_satisfied": 0.8,
+                "commander_desired_range_band_satisfied": 0.7,
+                "commander_charge_lane_score": 0.6,
+                "commander_future_phase_ev": 0.3,
+                "commander_action_violation": -3.0,
+                "commander_plan_stale_penalty": -0.8,
             },
         ),
         "shooting_ranker": _weights(

@@ -107,14 +107,32 @@ Implementation notes:
 - repeated phase-start calls are idempotent once the matching scope has been
   consumed.
 
-## Remaining
-
 ### PR 5 - Movement Ranker Consumes Commander Movement Intent
 
-Score movement endpoints against planned target, LoS, desired range band, charge
-staging, stationary posture, advance eligibility, intentional shooting
-ineligibility, and risk budget. Movement legality remains PathWitness/validator
-owned.
+Commit: `Let movement ranker consume commander intent`
+
+Score movement actions/endpoints against commander movement intent without
+changing candidate generation, masks, PathWitness generation, or authoritative
+movement validation.
+
+Implementation notes:
+
+- semantic movement metadata now includes `commander_task_alignment`,
+  `commander_action_violation`, LoS/range-band satisfaction, charge-lane score,
+  intentional shooting-ineligible staging, future-phase EV, and stale-plan
+  penalty.
+- the movement ranker weights those commander fields after normal semantic
+  projection fields, so commander intent can break ties or steer among legal
+  candidates.
+- shooting-first units penalize Advance when it would make shooting ineligible;
+  melee-first units can reward Advance when the commander intentionally accepts
+  shooting ineligibility for charge staging.
+- dirty movement/phase/full-round commander scopes reduce commander alignment
+  so stale plans give way to local movement scoring.
+- forbidden movement actions receive negative commander score only; they are not
+  masked illegal by this layer.
+
+## Remaining
 
 ### PR 6 - Shooting Executes Commander Fire Assignments
 

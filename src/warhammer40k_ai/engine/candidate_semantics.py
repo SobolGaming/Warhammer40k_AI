@@ -18,6 +18,7 @@ from .decision_kinds import (
     DECISION_PICK_TERRAIN_FEATURE,
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_FIGHT_TARGETS,
+    DECISION_SELECT_MOVEMENT_ACTION,
     DECISION_SELECT_UNIT,
     DECISION_SELECT_TARGET_MODEL,
     DECISION_SPLIT_ATTACKS,
@@ -40,6 +41,7 @@ SEMANTIC_NUMERIC_KEYS = (
 _MOVEMENT_DECISION_TYPES = frozenset(
     (
         DECISION_MOVE_UNIT,
+        DECISION_SELECT_MOVEMENT_ACTION,
     )
 )
 
@@ -226,6 +228,277 @@ def _extract_resource_cost(
             if key in source:
                 return max(0.0, _safe_float(source.get(key), 0.0))
     return 0.0
+
+
+def _dictish(value: object) -> dict[str, Any]:
+    return dict(value or {}) if isinstance(value, dict) else {}
+
+
+def _string_set(value: object) -> set[str]:
+    if isinstance(value, (list, tuple, set)):
+        return {str(item) for item in value if str(item)}
+    if value is None:
+        return set()
+    text = str(value)
+    return {text} if text else set()
+
+
+def _normalized_movement_action(value: object) -> str:
+    action = str(value or "").strip().lower()
+    aliases = {
+        "normal": "move",
+        "normal_move": "move",
+        "remain_stationary": "stationary",
+        "stationary": "stationary",
+        "advance": "advance",
+        "fall_back": "fall_back",
+        "fallback": "fall_back",
+        "move": "move",
+    }
+    return aliases.get(action, action)
+
+
+def _candidate_movement_action(params: Mapping[str, Any], metadata: Mapping[str, Any]) -> str:
+    for source in (params, metadata):
+        for key in (
+            "action_type",
+            "planned_movement_type",
+            "movement_type",
+            "desired_action",
+            "action",
+        ):
+            action = _normalized_movement_action(source.get(key))
+            if action:
+                return action
+    kind = str(metadata.get("candidate_kind", "") or "").strip().lower()
+    for suffix in ("advance", "fall_back", "stationary", "move"):
+        if suffix in kind:
+            return _normalized_movement_action(suffix)
+    return ""
+
+
+def _visible_unit_ids(params: Mapping[str, Any], metadata: Mapping[str, Any]) -> set[str] | None:
+    for source in (metadata, params):
+        for key in (
+            "visible_target_unit_ids",
+            "los_to_unit_ids",
+            "line_of_sight_unit_ids",
+            "commander_los_to_unit_ids",
+        ):
+            if key in source:
+                return _string_set(source.get(key))
+    return None
+
+
+def _candidate_supports_required_los(
+    *,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    required_unit_ids: list[str],
+) -> bool | None:
+    if not required_unit_ids:
+        return None
+    explicit = metadata.get("commander_required_los_satisfied")
+    if explicit is not None:
+        return bool(explicit)
+    visible = _visible_unit_ids(params, metadata)
+    if visible is None:
+        return None
+    return set(required_unit_ids).issubset(visible)
+
+
+def _range_by_target(params: Mapping[str, Any], metadata: Mapping[str, Any]) -> dict[str, float]:
+    ranges: dict[str, float] = {}
+    for source in (metadata, params):
+        for key in (
+            "range_to_unit_inches_by_id",
+            "distance_to_unit_inches_by_id",
+            "target_range_inches_by_id",
+            "target_distance_inches_by_id",
+        ):
+            raw = source.get(key)
+            if not isinstance(raw, dict):
+                continue
+            for target_id, distance in sorted(raw.items(), key=lambda item: str(item[0])):
+                ranges[str(target_id)] = _safe_float(distance, 0.0)
+    return ranges
+
+
+def _candidate_satisfies_range_bands(
+    *,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    desired_range_bands: list[dict[str, Any]],
+) -> bool | None:
+    if not desired_range_bands:
+        return None
+    explicit = metadata.get("commander_desired_range_band_satisfied")
+    if explicit is not None:
+        return bool(explicit)
+    ranges = _range_by_target(params, metadata)
+    if not ranges:
+        return None
+    for band in desired_range_bands:
+        target_id = str(band.get("target_unit_id", "") or "")
+        if not target_id or target_id not in ranges:
+            continue
+        distance = float(ranges[target_id])
+        minimum = band.get("minimum_inches")
+        maximum = band.get("maximum_inches")
+        if minimum is not None and distance < _safe_float(minimum, 0.0):
+            continue
+        if maximum is not None and distance > _safe_float(maximum, 0.0):
+            continue
+        return True
+    return False
+
+
+def _charge_lane_score(
+    *,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    target_unit_id: str,
+) -> float:
+    if not target_unit_id:
+        return 0.0
+    explicit = metadata.get("commander_charge_lane_score")
+    if explicit is not None:
+        return _clamp(_safe_float(explicit, 0.0), low=0.0, high=1.0)
+    for source in (metadata, params):
+        for key in (
+            "charge_staging_target_unit_ids",
+            "near_charge_target_unit_ids",
+            "engaged_target_unit_ids",
+        ):
+            if target_unit_id in _string_set(source.get(key)):
+                return 1.0
+    distance = _range_by_target(params, metadata).get(target_unit_id)
+    if distance is None:
+        return 0.0
+    return _clamp((12.0 - float(distance)) / 12.0, low=0.0, high=1.0)
+
+
+def _commander_plan_stale(context: Mapping[str, Any]) -> bool:
+    scope = str(context.get("commander_replan_scope", "") or "").strip().lower()
+    if scope in {"movement_only", "phase", "full_round"}:
+        return True
+    dirty = _dictish(context.get("commander_dirty_flags"))
+    return bool(
+        dirty.get("movement_plan_dirty", False)
+        or dirty.get("objective_priorities_dirty", False)
+        or dirty.get("full_replan_required", False)
+    )
+
+
+def _commander_movement_metadata(
+    *,
+    params: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    movement_task = _dictish(context.get("commander_movement_task"))
+    unit_task = _dictish(context.get("unit_battle_task"))
+    fire_assignment = _dictish(context.get("commander_fire_assignment"))
+    charge_assignment = _dictish(context.get("commander_charge_assignment"))
+    if not any((movement_task, unit_task, fire_assignment, charge_assignment)):
+        return {}
+
+    action = _candidate_movement_action(params, metadata)
+    desired_action = _normalized_movement_action(movement_task.get("desired_action"))
+    forbidden_actions = {
+        _normalized_movement_action(value)
+        for value in list(unit_task.get("forbidden_movement_actions", []) or [])
+        if _normalized_movement_action(value)
+    }
+    required_los_ids = [
+        str(value)
+        for value in list(movement_task.get("required_los_to_unit_ids", []) or [])
+        if str(value)
+    ]
+    desired_range_bands = [
+        dict(value)
+        for value in list(movement_task.get("desired_range_bands", []) or [])
+        if isinstance(value, dict)
+    ]
+    avoid_shooting_ineligible = bool(movement_task.get("avoid_becoming_shooting_ineligible", False))
+    accept_shooting_ineligible = bool(movement_task.get("intentionally_accept_shooting_ineligible", False))
+    charge_target_id = str(
+        movement_task.get("charge_staging_target_unit_id")
+        or charge_assignment.get("primary_target_unit_id")
+        or ""
+    )
+    fire_target_id = str(fire_assignment.get("primary_target_unit_id") or "")
+
+    alignment = 0.0
+    action_violation = 0.0
+    if desired_action and action:
+        alignment += 0.4 if action == desired_action else -0.15
+    if action and action in forbidden_actions:
+        action_violation = 1.0
+        alignment -= 0.8
+    intentional_ineligible = 1.0 if accept_shooting_ineligible and action == "advance" else 0.0
+    if avoid_shooting_ineligible and action == "advance" and not accept_shooting_ineligible:
+        action_violation = 1.0
+        alignment -= 0.8
+    if intentional_ineligible:
+        alignment += 0.55
+
+    los_satisfied = _candidate_supports_required_los(
+        params=params,
+        metadata=metadata,
+        required_unit_ids=required_los_ids,
+    )
+    if los_satisfied is True:
+        alignment += 0.4
+    elif los_satisfied is False:
+        alignment -= 0.25
+
+    range_satisfied = _candidate_satisfies_range_bands(
+        params=params,
+        metadata=metadata,
+        desired_range_bands=desired_range_bands,
+    )
+    if range_satisfied is True:
+        alignment += 0.35
+    elif range_satisfied is False:
+        alignment -= 0.15
+
+    charge_lane = _charge_lane_score(
+        params=params,
+        metadata=metadata,
+        target_unit_id=charge_target_id,
+    )
+    if charge_lane > 0.0:
+        alignment += 0.35 * charge_lane
+
+    expected_damage = 0.0
+    damage_by_target = _dictish(fire_assignment.get("expected_damage_by_target"))
+    if fire_target_id:
+        expected_damage = _safe_float(damage_by_target.get(fire_target_id), 0.0)
+        if fire_target_id in required_los_ids:
+            alignment += 0.1
+    desired_charge_probability = _safe_float(charge_assignment.get("desired_charge_probability"), 0.0)
+    future_phase_ev = _clamp(
+        expected_damage / 8.0 + desired_charge_probability + intentional_ineligible * 0.35,
+        low=0.0,
+        high=3.0,
+    )
+    alignment += min(0.25, future_phase_ev * 0.1)
+
+    stale = _commander_plan_stale(context)
+    if stale:
+        alignment *= 0.25
+
+    return {
+        "commander_task_alignment": _round6(_clamp(alignment, low=-2.0, high=2.0)),
+        "commander_action_violation": _round6(action_violation),
+        "commander_required_los_satisfied": 1.0 if los_satisfied is True else 0.0,
+        "commander_desired_range_band_satisfied": 1.0 if range_satisfied is True else 0.0,
+        "commander_charge_lane_score": _round6(charge_lane),
+        "commander_intentional_shooting_ineligible": _round6(intentional_ineligible),
+        "commander_future_phase_ev": _round6(future_phase_ev),
+        "commander_plan_stale_penalty": 1.0 if stale else 0.0,
+    }
 
 
 def _text_blob(*sources: Mapping[str, Any]) -> str:
@@ -1003,6 +1276,14 @@ def normalize_candidate_semantic_metadata(
             metadata_data[key] = computed_value
         else:
             metadata_data[key] = _safe_float(metadata_data.get(key), computed_value)
+    if projection_kind == "movement":
+        metadata_data.update(
+            _commander_movement_metadata(
+                params=dict(params or {}),
+                metadata=metadata_data,
+                context=context_data,
+            )
+        )
     metadata_data["semantic_projection_kind"] = str(projection_kind)
     metadata_data["rules_provenance_refs"] = _rules_provenance_refs(
         metadata_data,

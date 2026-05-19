@@ -110,6 +110,9 @@ Strategic context is skipped for `n/a`, `dice_policy`, and
 attach only when the request context contains a `unit_id` that matches a task in
 the current bundle. Global commander dirty flags, recommended replan scope, and
 the last phase report attach with the battle-round plan when available.
+Movement semantic normalization consumes unit-local commander context to add
+alignment metadata; the movement ranker may use that metadata to order legal
+candidates, but it does not create legality or bypass masks.
 `compute_tier` uses the matching Tier-2 task first, then an existing valid
 engine-provided value, then `P1`; valid values are `P0`, `P1`, and `P2`.
 

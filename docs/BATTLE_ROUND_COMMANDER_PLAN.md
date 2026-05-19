@@ -176,6 +176,31 @@ These assignments are planning metadata. Rankers are not required to consume
 them yet, and the engine remains the only source of legal candidates, masks,
 validation, PathWitness artifacts, and state mutation.
 
+## Movement Consumption Baseline
+
+Movement rankers now consume commander movement intent as scoring metadata only.
+Semantic normalization adds commander fields to movement candidates:
+
+- `commander_task_alignment`
+- `commander_action_violation`
+- `commander_required_los_satisfied`
+- `commander_desired_range_band_satisfied`
+- `commander_charge_lane_score`
+- `commander_intentional_shooting_ineligible`
+- `commander_future_phase_ev`
+- `commander_plan_stale_penalty`
+
+The movement ranker weights these fields to prefer legal candidates that match
+the unit's current commander task. This can penalize Advance for shooting-first
+units, reward intentional Advance staging for melee-first units, reward
+candidate-provided LoS/range-band satisfaction, and reduce commander influence
+when movement/phase/full-round repair pressure says the plan is stale.
+
+This does not generate new movement candidates, mask forbidden actions, bypass
+validation, or alter PathWitness requirements. If commander intent is stale,
+impossible, or unsupported by candidate metadata, existing local semantic
+movement scoring remains the fallback.
+
 ## Current Baseline
 
 The first implementation is deliberately conservative:
@@ -193,8 +218,8 @@ The first implementation is deliberately conservative:
   requires it.
 - phase reports record the current dirty state plus the most recent same-phase
   repair scope and pre/post dirty state when a repair ran.
-- rankers still do not have to obey commander assignments; legality and
-  mutation remain owned by the existing engine validators.
+- movement rankers can now score legal candidates against commander intent, but
+  legality and mutation remain owned by the existing engine validators.
 
 This establishes the stable data contract for later work where movement can
 score LoS/range/trigger-band enablement, shooting can try preferred
