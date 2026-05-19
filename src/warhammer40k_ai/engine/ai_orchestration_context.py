@@ -4,8 +4,16 @@ from typing import Any
 
 from .ai_policy_orchestrator import (
     COMPONENT_ALLOCATION_RANKER,
+    COMPONENT_DEPLOYMENT_RANKER,
     COMPONENT_DICE_POLICY,
     COMPONENT_NO_AI,
+)
+from .decision_kinds import (
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_DECLARE_RESERVES,
+    DECISION_MOVE_UNIT,
+    DECISION_SCOUT_MOVE,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from .decisions import DecisionRequest
 
@@ -62,6 +70,38 @@ def _should_attach_full_general_plan(game: object, context: dict[str, Any]) -> b
     return bool(getattr(game, "attach_full_general_plan_context", False))
 
 
+def _should_attach_full_deployment_plan(game: object, context: dict[str, Any]) -> bool:
+    """Return whether to attach the full deployment plan payload for audit/debug."""
+
+    if bool(context.get("include_full_deployment_plan", False)):
+        return True
+    return bool(getattr(game, "attach_full_deployment_plan_context", False))
+
+
+def _is_deployment_plan_context(
+    request: DecisionRequest,
+    context: dict[str, Any],
+    component_name: str,
+) -> bool:
+    if str(component_name or "") == COMPONENT_DEPLOYMENT_RANKER:
+        return True
+    decision_type = str(getattr(request, "decision_type", "") or "")
+    if decision_type in {
+        DECISION_CHOOSE_DEPLOYMENT_ZONE,
+        DECISION_DECLARE_RESERVES,
+        DECISION_SELECT_NEXT_DEPLOY_UNIT,
+        DECISION_SCOUT_MOVE,
+    }:
+        return True
+    if decision_type == DECISION_MOVE_UNIT and str(context.get("placement_kind", "") or "").strip().lower() == "deployment":
+        return True
+    phase_blob = " ".join(
+        str(context.get(key, "") or "").strip().upper()
+        for key in ("phase", "phase_name", "phase_step", "selection_purpose", "placement_kind")
+    )
+    return bool("DEPLOY" in phase_blob or "SETUP" in phase_blob)
+
+
 def attach_ai_orchestration_context(
     game: object,
     request: DecisionRequest,
@@ -80,10 +120,13 @@ def attach_ai_orchestration_context(
     updated = dict(ctx or {})
     attach_full_battle_round_plan = _should_attach_full_battle_round_plan(game, updated)
     attach_full_general_plan = _should_attach_full_general_plan(game, updated)
+    attach_full_deployment_plan = _should_attach_full_deployment_plan(game, updated)
     if not attach_full_battle_round_plan:
         updated.pop("battle_round_plan", None)
     if not attach_full_general_plan:
         updated.pop("general_plan", None)
+    if not attach_full_deployment_plan:
+        updated.pop("deployment_plan", None)
 
     requested_component = str(component_name or "")
     if requested_component in _STRATEGIC_CONTEXT_EXCLUDED_COMPONENTS:
@@ -98,6 +141,7 @@ def attach_ai_orchestration_context(
     get_tier1_plan = getattr(game, "get_or_create_tier1_plan", None)
     get_tier2_bundle = getattr(game, "get_or_create_tier2_task_bundle", None)
     get_general_plan = getattr(game, "get_or_create_general_plan", None)
+    get_deployment_plan = getattr(game, "get_or_create_deployment_plan", None)
     get_battle_round_plan = getattr(game, "get_or_create_battle_round_plan", None)
     if not callable(get_tier1_plan) or not callable(get_tier2_bundle):
         updated["compute_tier"] = _normalize_compute_tier(updated.get("compute_tier"))
@@ -106,9 +150,20 @@ def attach_ai_orchestration_context(
     plan = get_tier1_plan(player_id)
     tier2_bundle = get_tier2_bundle(player_id)
     general_plan = get_general_plan(player_id) if callable(get_general_plan) else None
+    deployment_plan = (
+        get_deployment_plan(player_id)
+        if callable(get_deployment_plan) and _is_deployment_plan_context(request, updated, requested_component)
+        else None
+    )
     battle_round_plan = get_battle_round_plan(player_id) if callable(get_battle_round_plan) else None
     get_dirty_flags = getattr(game, "get_commander_dirty_flags", None)
     dirty_flags = get_dirty_flags(player_id) if callable(get_dirty_flags) else None
+    get_deployment_dirty_flags = getattr(game, "get_deployment_dirty_flags", None)
+    deployment_dirty_flags = (
+        get_deployment_dirty_flags(player_id)
+        if callable(get_deployment_dirty_flags) and deployment_plan is not None
+        else None
+    )
     get_phase_reports = getattr(game, "get_commander_phase_reports", None)
     phase_reports = get_phase_reports(player_id) if callable(get_phase_reports) else []
     if "plan_id" not in updated:
@@ -117,16 +172,24 @@ def attach_ai_orchestration_context(
         updated["battle_round_plan_id"] = battle_round_plan.plan_id
     if general_plan is not None and "general_plan_id" not in updated:
         updated["general_plan_id"] = general_plan.plan_id
+    if deployment_plan is not None and "deployment_plan_id" not in updated:
+        updated["deployment_plan_id"] = deployment_plan.plan_id
     if "turn_plan" not in updated:
         updated["turn_plan"] = plan.to_dict()
     if general_plan is not None and "general_plan" not in updated and attach_full_general_plan:
         updated["general_plan"] = general_plan.to_dict()
+    if deployment_plan is not None and "deployment_plan" not in updated and attach_full_deployment_plan:
+        updated["deployment_plan"] = deployment_plan.to_dict()
     if (
         battle_round_plan is not None
         and "battle_round_plan" not in updated
         and attach_full_battle_round_plan
     ):
         updated["battle_round_plan"] = battle_round_plan.to_dict()
+    if deployment_dirty_flags is not None and "deployment_dirty_flags" not in updated:
+        updated["deployment_dirty_flags"] = deployment_dirty_flags.to_dict()
+    if deployment_dirty_flags is not None and "deployment_replan_scope" not in updated:
+        updated["deployment_replan_scope"] = deployment_dirty_flags.recommended_replan_scope()
     if dirty_flags is not None and "commander_dirty_flags" not in updated:
         updated["commander_dirty_flags"] = dirty_flags.to_dict()
     if dirty_flags is not None and "commander_replan_scope" not in updated:
@@ -198,6 +261,24 @@ def attach_ai_orchestration_context(
         fight_assignment = dict(getattr(battle_round_plan.fight_plan, "unit_fight_assignments", {}) or {}).get(unit_id)
         if fight_assignment is not None and "commander_fight_assignment" not in updated:
             updated["commander_fight_assignment"] = fight_assignment.to_dict()
+
+    if deployment_plan is not None and unit_id:
+        deployment_task = dict(getattr(deployment_plan, "unit_tasks", {}) or {}).get(unit_id)
+        if deployment_task is not None and "unit_deployment_task" not in updated:
+            updated["unit_deployment_task"] = deployment_task.to_dict()
+        transport_tasks = dict(getattr(deployment_plan, "transport_tasks", {}) or {})
+        transport_task = transport_tasks.get(unit_id)
+        if transport_task is None:
+            for candidate in transport_tasks.values():
+                passenger_ids = {
+                    str(passenger_id)
+                    for passenger_id in list(getattr(candidate, "passenger_unit_ids", []) or [])
+                }
+                if unit_id in passenger_ids:
+                    transport_task = candidate
+                    break
+        if transport_task is not None and "transport_deployment_task" not in updated:
+            updated["transport_deployment_task"] = transport_task.to_dict()
 
     updated["compute_tier"] = _normalize_compute_tier(
         task_compute_tier if task_compute_tier is not None else updated.get("compute_tier")

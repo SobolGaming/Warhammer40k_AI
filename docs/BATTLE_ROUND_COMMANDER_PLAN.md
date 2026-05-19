@@ -1,9 +1,11 @@
 # Battle-Round Commander Plan
 
 `BattleRoundPlan` is the cross-phase commander context for one player in one
-battle round. It is built from the existing Tier-1 strategic plan, Tier-2 task
-bundle, and active game-level `GeneralPlan`, cached by `(battle_round,
-player_id)`, and exposed to eligible decision contexts through stable
+battle round. It sits below the game-level `GeneralPlan` and the setup-level
+`DeploymentPlan`, and above the phase rankers. It is built from the existing
+Tier-1 strategic plan, Tier-2 task bundle, and active game-level `GeneralPlan`,
+cached by `(battle_round, player_id)`, and exposed to eligible decision
+contexts through stable
 identifiers plus unit-local serializable metadata.
 
 The plan is not a legality source. Tier 0 candidate generation, masks,
@@ -17,6 +19,8 @@ decision.
 - `Game.get_or_create_battle_round_plan(player_id)` returns the cached plan.
 - `Game.get_or_create_general_plan(player_id)` returns the cached game-level
   General plan that owns long-horizon resource and transport doctrine.
+- `Game.get_or_create_deployment_plan(player_id)` returns the cached
+  setup/deployment commander plan that owns uncertainty-aware initial posture.
 - `Game.get_commander_dirty_flags(player_id)` returns current repair pressure.
 - `Game.mark_commander_dirty(...)` records event-driven repair pressure.
 - `Game.clear_commander_dirty_flags(player_id)` resets repair pressure after a
@@ -43,10 +47,17 @@ decision.
 - The full `general_plan` payload follows the same audit/debug rule via
   `request.context["include_full_general_plan"]` or
   `game.attach_full_general_plan_context`.
+- Deployment decisions follow the same slim-context rule via
+  `deployment_plan_id` and unit-local deployment slices. The full
+  `deployment_plan` payload is attached only through
+  `request.context["include_full_deployment_plan"]` or
+  `game.attach_full_deployment_plan_context`.
 - A caller-provided `battle_round_plan` payload is stripped unless the same
   audit/debug opt-in is active, including for decisions that skip strategic
   context.
 - A caller-provided `general_plan` payload is stripped unless the same
+  audit/debug opt-in is active.
+- A caller-provided `deployment_plan` payload is stripped unless deployment
   audit/debug opt-in is active.
 - Dice, allocation, and `n/a` decisions still skip strategic context.
 

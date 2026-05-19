@@ -9,6 +9,8 @@ below is the durable reference for future "PR N" work.
 The long-horizon orchestration stack is:
 
 - `GeneralPlan`: game-level / multi-battle-round strategist.
+- `DeploymentPlan`: setup/deployment commander for uncertainty-aware initial
+  positioning.
 - `BattleRoundPlan`: battle-round / phase commander orchestrator.
 - phase rankers: local legal-candidate executors.
 - engine: legality, masks, validation, PathWitness artifacts, and mutation
@@ -21,6 +23,11 @@ late-game preservation, and primary push/trading/staging rounds.
 The Commander answers current battle-round questions: priority targets, unit
 tasks, movement/shooting/charge/fight subplans, transport execution for the
 current round, dirty-flag repair, and phase reports.
+
+The Deployment Commander answers setup questions: deployment posture when first
+turn is unknown, which units hide/screen/stage/reserve, how transport doctrine
+maps to initial placement, and when enemy drops or reserve declarations should
+dirty the remaining-drop plan.
 
 Rankers execute legal candidates locally. They may consume General/Commander
 metadata for ordering, but they do not create legality or mutate state.
@@ -275,65 +282,78 @@ Implemented behavior:
 - masked candidates remain unavailable, and unsupported/stale transport metadata
   falls back to existing local semantic movement scoring.
 
-## Remaining
+### PR 7 - DeploymentPlan / DeploymentCommander Scaffold
 
-### PR 7 - Shooting Executes Commander Fire Assignments And General Resource Policy
+Add a non-behavior-changing deployment commander between `GeneralPlan` and
+`BattleRoundPlan`.
 
-Make `DECLARE_SHOTS` try commander preferred targets/declarations first, validate
-through existing legal candidate paths, fall back when stale or illegal, and
-update target commitments after each shooting resolution. Shooting should also
-consume General limited-resource policy for one-shot weapons and once-per-battle
-offensive effects.
+Implemented data model:
 
-Acceptance criteria:
+- `DeploymentPlan`
+- `DeploymentInformationState`
+- `DeploymentDoctrine`
+- `UnitDeploymentTask`
+- `TransportDeploymentTask`
+- `DeploymentContingencyBranch`
+- `DeploymentDirtyFlags`
+- `DeploymentPhaseReport`
 
-- planned targets/declarations are tried first but never bypass validation.
-- dead or unreachable planned targets fall back legally.
-- overkill guard redirects later shooters after target destruction or projected
-  damage saturation.
-- one-shot / once-per-battle resources are used only when General policy
-  authorizes them.
-- local fallback remains deterministic when General/Commander policy is absent.
+Implemented behavior:
 
-### PR 8 - Charge And Fight Consume Commander Assignments
+- `Game.get_or_create_deployment_plan(player_id)` caches a deterministic,
+  serializable setup plan.
+- `Game.mark_deployment_plan_dirty(...)`,
+  `Game.get_deployment_dirty_flags(...)`, and
+  `Game.repair_deployment_plan(...)` provide the dirty/repair scaffold.
+- deployment-related request contexts receive `deployment_plan_id`,
+  `deployment_dirty_flags`, `deployment_replan_scope`,
+  `unit_deployment_task`, and `transport_deployment_task` local slices.
+- full `deployment_plan` payload is audit/debug-only via
+  `include_full_deployment_plan` or
+  `game.attach_full_deployment_plan_context`.
+- high-value shooters receive hide/obscuring deployment posture when first turn
+  is unknown.
+- screen units receive forward screen posture.
+- transport deployment tasks link General transport doctrine to passengers.
+- enemy deployment and reserve declaration events dirty the remaining-drop /
+  information-state plan.
+- deployment legality, candidate generation, masks, and rankers are unchanged.
 
-Make charge/fight target selection prefer commander assignments while preserving
-existing charge/fight legality and fallback behavior. General posture/resource
-constraints can influence whether melee assets are preserved, traded, or
-committed.
+## Remaining Roadmap
 
-### PR 9 - Weapon And Ability Trigger-Band Planner
+### PR 8 - Deployment Ranker Consumes Deployment Commander Intent
 
-Extract and model trigger bands such as Melta, Rapid Fire, Assault, Heavy,
-Torrent, Pistol, half-range unit abilities, advance-and-charge, and
-fall-back-and-shoot as planning metadata. This should feed both General
-whole-game resource timing and Commander current-round movement/fire planning.
+Score legal deployment candidates against go-first value, go-second safety,
+obscuring/exposure, objective access, tactical-secondary flexibility,
+screening, reserve denial, transport delivery support, and revealed enemy
+deployment response. No legality changes.
 
-### PR 10 - General/Commander Telemetry And Audit Tooling
+### PR 9 - Shooting Executes Commander Fire Assignments And General Resource Policy
 
-Add structured General and Commander events/counters:
+Make `DECLARE_SHOTS` try commander preferred fire assignments first while
+honoring existing legal target/profile validation. Consume General
+limited-resource policy for one-shot weapons, once-per-battle offensive effects,
+and CP/stratagem reserves.
 
-- `general_plan_built`
-- `general_resource_authorized`
-- `general_resource_spent`
-- `commander_plan_repaired`
-- `commander_assignment_used`
-- `commander_assignment_fallback`
-- `transport_plan_used`
-- `transport_plan_fallback`
-- context payload size, hit rates, fallback rates, and repair timing.
+### PR 10 - Charge/Fight Consume Commander Assignments
 
-### PR 11 - Performance Guardrails And Cache Hardening
+Charge and Fight rankers prefer commander charge/fight targets when legal,
+fallback when stale or impossible, and report failed-charge / target-death
+variance back to the commander repair loop.
 
-Add budgets/top-K constraints and representative performance checks so commander
-and General planning stay bounded and improve later phase work without bloating
-default cache keys.
+### PR 11 - Weapon And Ability Trigger-Band Planner
 
-Performance counters should include:
+Model cross-phase trigger bands such as Melta half range, Rapid Fire,
+Assault, Heavy, Torrent, Pistol, advance-and-charge, fall-back-and-shoot, and
+once-per-battle timing metadata.
 
-- `general_plan_build_ms`
-- `commander_plan_build_ms`
-- `repair_ms`
-- `context_payload_bytes`
-- movement candidate reduction.
-- shooting validation reduction.
+### PR 12 - General/Commander/Deployment Telemetry And Audit Tooling
+
+Add structured audit events and counters for General, Deployment, and
+BattleRound commander plan build/repair/use/fallback behavior.
+
+### PR 13 - Performance Guardrails And Cache Hardening
+
+Add bounded top-K planning budgets, context payload size checks, cache-key
+guardrails, and phase-work reduction metrics across deployment, movement,
+shooting, charge, and fight.

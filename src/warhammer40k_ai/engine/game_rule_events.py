@@ -83,6 +83,19 @@ from .commander_plan import (
     repair_battle_round_plan,
 )
 from .general_plan import GeneralPlan, build_general_plan
+from .deployment_plan import (
+    DEPLOYMENT_REPLAN_SCOPE_FULL_DEPLOYMENT,
+    DEPLOYMENT_REPLAN_SCOPE_NONE,
+    DEPLOYMENT_REPLAN_SCOPE_REMAINING_DROPS,
+    DEPLOYMENT_REPLAN_SCOPE_RESERVES_ONLY,
+    DEPLOYMENT_REPLAN_SCOPE_TRANSPORT_ONLY,
+    DeploymentDirtyFlags,
+    DeploymentPhaseReport,
+    DeploymentPlan,
+    build_deployment_plan,
+    consume_deployment_dirty_flags,
+    repair_deployment_plan,
+)
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -137,6 +150,9 @@ class GameRuleEventService(GameServiceBase):
     def _general_plan_key(self, player_id: str) -> str:
         return str(player_id or "")
 
+    def _deployment_plan_key(self, player_id: str) -> str:
+        return str(player_id or "")
+
     def get_or_create_tier1_plan(self, player_id: str) -> Tier1Plan:
         pid = str(player_id or "")
         if not pid:
@@ -179,6 +195,152 @@ class GameRuleEventService(GameServiceBase):
         plan = build_general_plan(self, pid)
         self._general_plans[key] = plan
         return plan
+
+    def get_or_create_deployment_plan(self, player_id: str) -> DeploymentPlan:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment plan requires player_id.")
+        if not hasattr(self, "_deployment_plans") or not isinstance(self._deployment_plans, dict):
+            self._deployment_plans = {}
+        key = self._deployment_plan_key(pid)
+        existing = self._deployment_plans.get(key)
+        if existing is not None:
+            return existing
+        general_plan = self.get_or_create_general_plan(pid)
+        plan = build_deployment_plan(
+            self,
+            pid,
+            general_plan_id=general_plan.plan_id,
+            general_transport_policy=general_plan.transport_policy,
+        )
+        self._deployment_plans[key] = plan
+        return plan
+
+    def _build_fresh_deployment_plan(self, player_id: str) -> DeploymentPlan:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment plan requires player_id.")
+        general_plan = self.get_or_create_general_plan(pid)
+        return build_deployment_plan(
+            self,
+            pid,
+            general_plan_id=general_plan.plan_id,
+            general_transport_policy=general_plan.transport_policy,
+        )
+
+    def get_deployment_dirty_flags(self, player_id: str) -> DeploymentDirtyFlags:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment dirty flags require player_id.")
+        if not hasattr(self, "_deployment_dirty_flags") or not isinstance(self._deployment_dirty_flags, dict):
+            self._deployment_dirty_flags = {}
+        key = self._deployment_plan_key(pid)
+        flags = self._deployment_dirty_flags.get(key)
+        if flags is None:
+            flags = DeploymentDirtyFlags()
+            self._deployment_dirty_flags[key] = flags
+        return flags
+
+    def mark_deployment_plan_dirty(
+        self,
+        player_id: str,
+        *,
+        remaining_drops_dirty: bool = False,
+        enemy_information_dirty: bool = False,
+        transport_plan_dirty: bool = False,
+        reserve_plan_dirty: bool = False,
+        full_replan_required: bool = False,
+        reason: str = "",
+        severity: float = 0.0,
+    ) -> DeploymentDirtyFlags:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment dirty flags require player_id.")
+        flags = self.get_deployment_dirty_flags(pid).marked(
+            remaining_drops_dirty=remaining_drops_dirty,
+            enemy_information_dirty=enemy_information_dirty,
+            transport_plan_dirty=transport_plan_dirty,
+            reserve_plan_dirty=reserve_plan_dirty,
+            full_replan_required=full_replan_required,
+            reason=reason,
+            severity=severity,
+        )
+        self._deployment_dirty_flags[self._deployment_plan_key(pid)] = flags
+        return flags
+
+    def clear_deployment_dirty_flags(
+        self,
+        player_id: str,
+        consumed_scope: str | None = None,
+    ) -> DeploymentDirtyFlags:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment dirty flags require player_id.")
+        if consumed_scope is None:
+            flags = DeploymentDirtyFlags()
+        else:
+            flags = consume_deployment_dirty_flags(
+                self.get_deployment_dirty_flags(pid),
+                str(consumed_scope),
+            )
+        self._deployment_dirty_flags[self._deployment_plan_key(pid)] = flags
+        return flags
+
+    def repair_deployment_plan(
+        self,
+        player_id: str,
+        *,
+        scope: str,
+        phase_name: str = "DEPLOYMENT",
+    ) -> dict[str, Any]:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Deployment plan requires player_id.")
+        repair_scope = str(scope or DEPLOYMENT_REPLAN_SCOPE_NONE)
+        pre_flags = self.get_deployment_dirty_flags(pid)
+        if repair_scope == DEPLOYMENT_REPLAN_SCOPE_NONE:
+            return {
+                "repaired": False,
+                "scope": DEPLOYMENT_REPLAN_SCOPE_NONE,
+                "phase_name": str(phase_name),
+                "pre_dirty_flags": pre_flags.to_dict(),
+                "post_dirty_flags": pre_flags.to_dict(),
+            }
+        existing_plan = self.get_or_create_deployment_plan(pid)
+        fresh_plan = self._build_fresh_deployment_plan(pid)
+        repaired_plan = repair_deployment_plan(existing_plan, fresh_plan, repair_scope)
+        if not hasattr(self, "_deployment_plans") or not isinstance(self._deployment_plans, dict):
+            self._deployment_plans = {}
+        self._deployment_plans[self._deployment_plan_key(pid)] = repaired_plan
+        post_flags = self.clear_deployment_dirty_flags(pid, consumed_scope=repair_scope)
+        return {
+            "repaired": True,
+            "scope": repair_scope,
+            "phase_name": str(phase_name),
+            "plan_id": str(repaired_plan.plan_id),
+            "repair_count": int(repaired_plan.repair_count),
+            "pre_dirty_flags": pre_flags.to_dict(),
+            "post_dirty_flags": post_flags.to_dict(),
+        }
+
+    def build_deployment_phase_report(
+        self,
+        player_id: str,
+        phase_name: str = "DEPLOYMENT",
+    ) -> DeploymentPhaseReport:
+        plan = self.get_or_create_deployment_plan(player_id)
+        flags = self.get_deployment_dirty_flags(player_id)
+        return DeploymentPhaseReport(
+            phase_name=str(phase_name or "DEPLOYMENT").strip().upper(),
+            player_id=str(player_id),
+            plan_id=str(plan.plan_id),
+            status=flags.status(),
+            recommended_replan_scope=flags.recommended_replan_scope(),
+            metadata={
+                "dirty_flags": flags.to_dict(),
+                "repair_count": int(plan.repair_count),
+            },
+        )
 
     def get_or_create_battle_round_plan(self, player_id: str) -> BattleRoundPlan:
         pid = str(player_id or "")
@@ -393,6 +555,7 @@ class GameRuleEventService(GameServiceBase):
         registry.apply(self)
         self.rule_registry = registry
         self._install_commander_orchestration_subscribers()
+        self._install_deployment_commander_subscribers()
 
     def _install_commander_orchestration_subscribers(self) -> None:
         event_system = getattr(self, "event_system", None)
@@ -408,6 +571,15 @@ class GameRuleEventService(GameServiceBase):
         event_system.subscribe_group(group, "unit_shooting_resolved", self._on_commander_unit_shooting_resolved)
         event_system.subscribe_group(group, "fight_attacks_resolved", self._on_commander_fight_attacks_resolved)
         event_system.subscribe_group(group, "objective_control_changed", self._on_commander_objective_control_changed)
+
+    def _install_deployment_commander_subscribers(self) -> None:
+        event_system = getattr(self, "event_system", None)
+        if event_system is None:
+            return
+        group = "deployment_commander"
+        event_system.subscribe_group(group, "unit_deployed", self._on_deployment_unit_deployed)
+        event_system.subscribe_group(group, "deployment_unit_deployed", self._on_deployment_unit_deployed)
+        event_system.subscribe_group(group, "deployment_reserves_declared", self._on_deployment_reserves_declared)
 
     def _commander_phase_name(self, phase: object) -> str:
         return str(getattr(phase, "name", "") or phase or "").strip().upper()
@@ -457,6 +629,56 @@ class GameRuleEventService(GameServiceBase):
             if unit in list(getattr(candidate_army, "units", []) or []):
                 return str(getattr(candidate_player, "id", "") or "")
         return ""
+
+    def _deployment_plan_player_ids(self) -> list[str]:
+        plans = getattr(self, "_deployment_plans", {})
+        player_ids = {
+            str(player_id)
+            for player_id, _plan in dict(plans or {}).items()
+            if str(player_id)
+        }
+        if player_ids:
+            return sorted(player_ids)
+        return sorted(
+            str(getattr(player, "id", "") or "")
+            for player in list(getattr(self, "players", []) or [])
+            if str(getattr(player, "id", "") or "")
+        )
+
+    def _on_deployment_unit_deployed(self, unit=None, player=None, **_kwargs) -> None:
+        owner_id = str(getattr(player, "id", "") or "") or self._commander_unit_owner_player_id(unit)
+        unit_id = self._commander_entity_id(unit)
+        for player_id in self._deployment_plan_player_ids():
+            if not player_id:
+                continue
+            if player_id == owner_id:
+                self.mark_deployment_plan_dirty(
+                    player_id,
+                    remaining_drops_dirty=True,
+                    reason=f"own_unit_deployed:{unit_id}",
+                    severity=0.2,
+                )
+                continue
+            self.mark_deployment_plan_dirty(
+                player_id,
+                remaining_drops_dirty=True,
+                enemy_information_dirty=True,
+                reason=f"enemy_unit_deployed:{unit_id}",
+                severity=0.55,
+            )
+
+    def _on_deployment_reserves_declared(self, player=None, **_kwargs) -> None:
+        owner_id = str(getattr(player, "id", "") or "")
+        for player_id in self._deployment_plan_player_ids():
+            if not player_id:
+                continue
+            self.mark_deployment_plan_dirty(
+                player_id,
+                reserve_plan_dirty=True,
+                enemy_information_dirty=bool(owner_id and owner_id != player_id),
+                reason=f"deployment_reserves_declared:{owner_id}",
+                severity=0.35 if owner_id == player_id else 0.55,
+            )
 
     def _commander_all_current_plan_player_ids(self) -> list[str]:
         plans = getattr(self, "_battle_round_plans", {})

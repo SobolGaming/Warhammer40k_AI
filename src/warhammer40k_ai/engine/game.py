@@ -68,6 +68,7 @@ from .commander_plan import (
     CommanderDirtyFlags,
     PhaseExecutionReport,
 )
+from .deployment_plan import DeploymentDirtyFlags, DeploymentPlan
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -278,6 +279,8 @@ class Game(metaclass=GameFacadeMeta):
         self._battle_round_plans: dict[tuple[int, str], BattleRoundPlan] = {}
         self._commander_dirty_flags: dict[tuple[int, str], CommanderDirtyFlags] = {}
         self._commander_phase_reports: dict[tuple[int, str], list[PhaseExecutionReport]] = {}
+        self._deployment_plans: dict[str, DeploymentPlan] = {}
+        self._deployment_dirty_flags: dict[str, DeploymentDirtyFlags] = {}
         self.time_manager = TimeManager()
         self.path_witness_store = PathWitnessStore()
         self.objectives = []
