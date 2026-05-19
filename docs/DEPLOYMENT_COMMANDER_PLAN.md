@@ -23,6 +23,10 @@ can order already-legal candidates against higher-level deployment intent.
   - `deployment_dirty_flags`
   - `deployment_replan_scope`
   - `unit_deployment_task` for unit-scoped deployment decisions
+  - `deployment_tempo_capability` for unit-scoped Scout/Infiltrate tempo
+    metadata when present
+  - `scout_projection` / `infiltrate_projection` for matching forward
+    deployment units when present
   - `transport_deployment_task` for transports and planned passengers
 - The full `deployment_plan` payload is audit/debug-only. It is attached only
   when `request.context["include_full_deployment_plan"]` or
@@ -49,6 +53,9 @@ Top-level fields:
 - `information_state`
 - `doctrine`
 - `unit_tasks`
+- `tempo_capabilities`
+- `scout_projections`
+- `infiltrate_projections`
 - `transport_tasks`
 - `contingency_branches`
 - `dirty_flags`
@@ -68,6 +75,11 @@ metadata only.
 - own/enemy reserve unit ids
 - own/enemy embarked unit ids
 - known enemy attachment relationships
+- known enemy Scout / Infiltrate capable unit ids
+- unplaced own Scout / Infiltrate capable unit ids
+- contested forward regions
+- Scout lane metadata
+- Infiltrate deny-zone metadata
 - compact terrain/objective counts
 
 This is uncertainty-aware. The plan records known mission, map, terrain,
@@ -90,15 +102,63 @@ secondary draws as uncertain.
 - `go_first_value`
 - `go_second_safety`
 - `tactical_flexibility`
+- `deployment_sequence_priority`
+- `preferred_drop_window`
+- `has_scout`
+- `has_infiltrate`
+- `scout_lane_targets`
+- `infiltrate_screen_regions`
+- `counter_scout_regions`
+- `no_mans_land_pressure_regions`
 
 The initial scaffold uses conservative heuristics:
 
 - high-value shooting units hide behind obscuring when first turn is unknown.
 - Scout/infiltration/screen units receive forward screen and reserve-denial
-  posture.
+  posture, plus early-drop tempo metadata.
 - reserve units receive reserve-pool and late-game preservation posture.
 - embarked or planned passenger units receive transported posture.
 - transports receive staging posture plus a transport deployment task.
+
+## Deployment Tempo
+
+PR7B models Scout and Infiltrate as deployment-order-sensitive capabilities.
+The scaffold does not choose a unit or placement yet; it exposes deterministic
+metadata for PR8 ranking.
+
+`DeploymentTempoCapability` records:
+
+- `has_scout`
+- `has_infiltrate`
+- `scout_distance_inches`
+- `forward_deploy_distance_class`
+- `blocks_enemy_scout_lanes`
+- `screens_enemy_infiltrate`
+- `early_drop_priority`
+- `late_drop_priority`
+- `reveal_risk`
+
+Scout units also receive a `ScoutProjection` with:
+
+- forward deployment-zone edge region
+- projected post-Scout cover regions
+- lane screening ids
+- objective pressure ids
+- go-first value, go-second value, and go-second exposure
+
+Infiltrate units receive an `InfiltrateProjection` with:
+
+- forward counter-Scout screen region
+- blocked enemy Scout lanes
+- screened objectives
+- denied enemy forward regions
+- preserved own Scout lanes
+- counter-deploy value and go-second exposure
+
+The information state tracks enemy Scout and Infiltrate capabilities so
+remaining own drops can react after enemy reveals. Enemy Scout pressure raises
+own Infiltrate counter-Scout priority; enemy Infiltrate pressure marks Scout
+lanes as blocked and reduces Scout early-drop value.
 
 ## Transport Tasks
 
@@ -137,6 +197,10 @@ The scaffold subscribes to deployment reveal events:
 
 - `unit_deployed` / `deployment_unit_deployed`: dirty remaining own drops, and
   dirty enemy information when the deployed unit belongs to the opponent.
+- `enemy_scout_deployed` and `enemy_infiltrate_deployed`: dirty remaining own
+  drops and enemy information with higher tempo variance severity.
+- `deployment_region_contested` and `scout_lane_blocked`: dirty remaining own
+  drops when forward space or Scout lanes are contested.
 - `deployment_reserves_declared`: dirty reserve planning and enemy information
   for opposing declarations.
 

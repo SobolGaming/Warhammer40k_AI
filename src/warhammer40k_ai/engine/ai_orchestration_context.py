@@ -266,6 +266,23 @@ def attach_ai_orchestration_context(
         deployment_task = dict(getattr(deployment_plan, "unit_tasks", {}) or {}).get(unit_id)
         if deployment_task is not None and "unit_deployment_task" not in updated:
             updated["unit_deployment_task"] = deployment_task.to_dict()
+        tempo_capability = dict(getattr(deployment_plan, "tempo_capabilities", {}) or {}).get(unit_id)
+        tempo_capability_is_forward = bool(
+            getattr(tempo_capability, "has_scout", False)
+            or getattr(tempo_capability, "has_infiltrate", False)
+        )
+        if (
+            tempo_capability is not None
+            and tempo_capability_is_forward
+            and "deployment_tempo_capability" not in updated
+        ):
+            updated["deployment_tempo_capability"] = tempo_capability.to_dict()
+        scout_projection = dict(getattr(deployment_plan, "scout_projections", {}) or {}).get(unit_id)
+        if scout_projection is not None and "scout_projection" not in updated:
+            updated["scout_projection"] = scout_projection.to_dict()
+        infiltrate_projection = dict(getattr(deployment_plan, "infiltrate_projections", {}) or {}).get(unit_id)
+        if infiltrate_projection is not None and "infiltrate_projection" not in updated:
+            updated["infiltrate_projection"] = infiltrate_projection.to_dict()
         transport_tasks = dict(getattr(deployment_plan, "transport_tasks", {}) or {})
         transport_task = transport_tasks.get(unit_id)
         if transport_task is None:

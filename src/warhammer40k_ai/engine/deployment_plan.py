@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -24,6 +25,22 @@ DEPLOYMENT_ROLE_SCORE = "score"
 DEPLOYMENT_ROLE_COUNTERPUNCH = "counterpunch"
 DEPLOYMENT_ROLE_RESERVE = "reserve"
 DEPLOYMENT_ROLE_TRANSPORTED = "transported"
+
+DROP_WINDOW_EARLY = "early"
+DROP_WINDOW_MIDDLE = "middle"
+DROP_WINDOW_LATE = "late"
+DROP_WINDOW_ANY = "any"
+
+DEFAULT_SCOUT_LANES = (
+    "left_no_mans_land_lane",
+    "center_no_mans_land_lane",
+    "right_no_mans_land_lane",
+)
+DEFAULT_FORWARD_REGIONS = (
+    "left_forward_screen",
+    "center_forward_screen",
+    "right_forward_screen",
+)
 
 
 def _sorted_strings(values: list[object] | tuple[object, ...] | set[object] | None) -> list[str]:
@@ -145,6 +162,13 @@ class DeploymentInformationState:
     own_embarked_unit_ids: list[str] = field(default_factory=list)
     enemy_embarked_unit_ids: list[str] = field(default_factory=list)
     known_enemy_attachments: dict[str, str] = field(default_factory=dict)
+    enemy_scout_unit_ids_known: list[str] = field(default_factory=list)
+    enemy_infiltrate_unit_ids_known: list[str] = field(default_factory=list)
+    own_scout_unit_ids_unplaced: list[str] = field(default_factory=list)
+    own_infiltrate_unit_ids_unplaced: list[str] = field(default_factory=list)
+    contested_forward_regions: list[str] = field(default_factory=list)
+    scout_lanes: dict[str, Any] = field(default_factory=dict)
+    infiltrate_deny_zones: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -164,6 +188,13 @@ class DeploymentInformationState:
                     key=lambda item: str(item[0]),
                 )
             },
+            "enemy_scout_unit_ids_known": _sorted_strings(self.enemy_scout_unit_ids_known),
+            "enemy_infiltrate_unit_ids_known": _sorted_strings(self.enemy_infiltrate_unit_ids_known),
+            "own_scout_unit_ids_unplaced": _sorted_strings(self.own_scout_unit_ids_unplaced),
+            "own_infiltrate_unit_ids_unplaced": _sorted_strings(self.own_infiltrate_unit_ids_unplaced),
+            "contested_forward_regions": _sorted_strings(self.contested_forward_regions),
+            "scout_lanes": _sorted_metadata(self.scout_lanes),
+            "infiltrate_deny_zones": _sorted_metadata(self.infiltrate_deny_zones),
             "metadata": _sorted_metadata(self.metadata),
         }
 
@@ -189,6 +220,92 @@ class DeploymentDoctrine:
 
 
 @dataclass(frozen=True)
+class DeploymentTempoCapability:
+    unit_id: str
+    has_infiltrate: bool = False
+    has_scout: bool = False
+    scout_distance_inches: float = 0.0
+    forward_deploy_distance_class: str = "deployment_zone"
+    blocks_enemy_scout_lanes: bool = False
+    screens_enemy_infiltrate: bool = False
+    early_drop_priority: float = 0.0
+    late_drop_priority: float = 0.0
+    reveal_risk: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "unit_id": str(self.unit_id),
+            "has_infiltrate": bool(self.has_infiltrate),
+            "has_scout": bool(self.has_scout),
+            "scout_distance_inches": float(self.scout_distance_inches),
+            "forward_deploy_distance_class": str(self.forward_deploy_distance_class),
+            "blocks_enemy_scout_lanes": bool(self.blocks_enemy_scout_lanes),
+            "screens_enemy_infiltrate": bool(self.screens_enemy_infiltrate),
+            "early_drop_priority": float(self.early_drop_priority),
+            "late_drop_priority": float(self.late_drop_priority),
+            "reveal_risk": float(self.reveal_risk),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class ScoutProjection:
+    unit_id: str
+    deployment_region_id: str
+    scout_distance_inches: float
+    projected_regions_after_scout: list[str] = field(default_factory=list)
+    can_reach_cover: bool = False
+    can_threaten_objective_ids: list[str] = field(default_factory=list)
+    can_screen_lane_ids: list[str] = field(default_factory=list)
+    exposure_if_go_second: float = 0.0
+    value_if_go_first: float = 0.0
+    value_if_go_second: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "unit_id": str(self.unit_id),
+            "deployment_region_id": str(self.deployment_region_id),
+            "scout_distance_inches": float(self.scout_distance_inches),
+            "projected_regions_after_scout": _sorted_strings(self.projected_regions_after_scout),
+            "can_reach_cover": bool(self.can_reach_cover),
+            "can_threaten_objective_ids": _sorted_strings(self.can_threaten_objective_ids),
+            "can_screen_lane_ids": _sorted_strings(self.can_screen_lane_ids),
+            "exposure_if_go_second": float(self.exposure_if_go_second),
+            "value_if_go_first": float(self.value_if_go_first),
+            "value_if_go_second": float(self.value_if_go_second),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class InfiltrateProjection:
+    unit_id: str
+    infiltrate_region_id: str
+    blocks_enemy_scout_lane_ids: list[str] = field(default_factory=list)
+    screens_objective_ids: list[str] = field(default_factory=list)
+    denies_enemy_forward_regions: list[str] = field(default_factory=list)
+    preserves_own_scout_lane_ids: list[str] = field(default_factory=list)
+    exposure_if_go_second: float = 0.0
+    counter_deploy_value: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "unit_id": str(self.unit_id),
+            "infiltrate_region_id": str(self.infiltrate_region_id),
+            "blocks_enemy_scout_lane_ids": _sorted_strings(self.blocks_enemy_scout_lane_ids),
+            "screens_objective_ids": _sorted_strings(self.screens_objective_ids),
+            "denies_enemy_forward_regions": _sorted_strings(self.denies_enemy_forward_regions),
+            "preserves_own_scout_lane_ids": _sorted_strings(self.preserves_own_scout_lane_ids),
+            "exposure_if_go_second": float(self.exposure_if_go_second),
+            "counter_deploy_value": float(self.counter_deploy_value),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
 class UnitDeploymentTask:
     unit_id: str
     role: str
@@ -201,6 +318,14 @@ class UnitDeploymentTask:
     go_first_value: float = 0.0
     go_second_safety: float = 0.0
     tactical_flexibility: float = 0.0
+    deployment_sequence_priority: float = 0.0
+    preferred_drop_window: str = DROP_WINDOW_ANY
+    has_scout: bool = False
+    has_infiltrate: bool = False
+    scout_lane_targets: list[str] = field(default_factory=list)
+    infiltrate_screen_regions: list[str] = field(default_factory=list)
+    counter_scout_regions: list[str] = field(default_factory=list)
+    no_mans_land_pressure_regions: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -216,6 +341,14 @@ class UnitDeploymentTask:
             "go_first_value": float(self.go_first_value),
             "go_second_safety": float(self.go_second_safety),
             "tactical_flexibility": float(self.tactical_flexibility),
+            "deployment_sequence_priority": float(self.deployment_sequence_priority),
+            "preferred_drop_window": str(self.preferred_drop_window),
+            "has_scout": bool(self.has_scout),
+            "has_infiltrate": bool(self.has_infiltrate),
+            "scout_lane_targets": _sorted_strings(self.scout_lane_targets),
+            "infiltrate_screen_regions": _sorted_strings(self.infiltrate_screen_regions),
+            "counter_scout_regions": _sorted_strings(self.counter_scout_regions),
+            "no_mans_land_pressure_regions": _sorted_strings(self.no_mans_land_pressure_regions),
             "metadata": _sorted_metadata(self.metadata),
         }
 
@@ -305,6 +438,9 @@ class DeploymentPlan:
     information_state: DeploymentInformationState
     doctrine: DeploymentDoctrine
     unit_tasks: dict[str, UnitDeploymentTask] = field(default_factory=dict)
+    tempo_capabilities: dict[str, DeploymentTempoCapability] = field(default_factory=dict)
+    scout_projections: dict[str, ScoutProjection] = field(default_factory=dict)
+    infiltrate_projections: dict[str, InfiltrateProjection] = field(default_factory=dict)
     transport_tasks: dict[str, TransportDeploymentTask] = field(default_factory=dict)
     contingency_branches: list[DeploymentContingencyBranch] = field(default_factory=list)
     dirty_flags: DeploymentDirtyFlags = field(default_factory=DeploymentDirtyFlags)
@@ -326,6 +462,18 @@ class DeploymentPlan:
             "unit_tasks": {
                 str(unit_id): task.to_dict()
                 for unit_id, task in sorted(self.unit_tasks.items(), key=lambda item: str(item[0]))
+            },
+            "tempo_capabilities": {
+                str(unit_id): capability.to_dict()
+                for unit_id, capability in sorted(self.tempo_capabilities.items(), key=lambda item: str(item[0]))
+            },
+            "scout_projections": {
+                str(unit_id): projection.to_dict()
+                for unit_id, projection in sorted(self.scout_projections.items(), key=lambda item: str(item[0]))
+            },
+            "infiltrate_projections": {
+                str(unit_id): projection.to_dict()
+                for unit_id, projection in sorted(self.infiltrate_projections.items(), key=lambda item: str(item[0]))
             },
             "transport_tasks": {
                 str(unit_id): task.to_dict()
@@ -389,6 +537,128 @@ def _unit_keywords(unit: object) -> set[str]:
 
 def _unit_name(unit: object) -> str:
     return str(getattr(unit, "name", "") or getattr(unit, "id", "") or getattr(unit, "_id", "") or "").lower()
+
+
+def _unit_flag_from_method(unit: object, method_name: str) -> bool:
+    method = getattr(unit, method_name, None)
+    if not callable(method):
+        return False
+    value = method()
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return False
+        return bool(value[0])
+    return bool(value)
+
+
+def _keyword_contains(keywords: set[str], token: str) -> bool:
+    needle = str(token or "").strip().upper()
+    return any(keyword == needle or keyword.startswith(f"{needle} ") for keyword in keywords)
+
+
+def _scout_distance_from_text(values: list[str]) -> float:
+    for value in values:
+        match = re.search(r"SCOUTS?\s*(\d+(?:\.\d+)?)", str(value or "").upper())
+        if match is not None:
+            return _floatish(match.group(1), 6.0)
+    return 6.0
+
+
+def _unit_scout_capability(unit: object) -> tuple[bool, float]:
+    method = getattr(unit, "has_scout", None)
+    if callable(method):
+        value = method()
+        if isinstance(value, (list, tuple)):
+            has_scout = bool(value[0]) if value else False
+            distance = _floatish(value[1], 0.0) if len(value) > 1 else 0.0
+            if has_scout:
+                return True, max(0.0, distance)
+        elif bool(value):
+            return True, max(0.0, _floatish(getattr(unit, "scout_move_distance", 6.0), 6.0))
+    if _unit_flag_from_method(unit, "has_scout_move"):
+        return True, max(0.0, _floatish(getattr(unit, "scout_move_distance", 6.0), 6.0))
+    explicit_distance = _floatish(getattr(unit, "scout_move_distance", 0.0), 0.0)
+    if explicit_distance > 0.0:
+        return True, explicit_distance
+
+    keywords = _unit_keywords(unit)
+    keyword_values = _sorted_strings(list(keywords))
+    name = _unit_name(unit).upper()
+    if _keyword_contains(keywords, "SCOUT") or _keyword_contains(keywords, "SCOUTS") or "SCOUT" in name:
+        return True, _scout_distance_from_text(keyword_values + [name])
+    return False, 0.0
+
+
+def _unit_has_infiltrate(unit: object) -> bool:
+    if _unit_flag_from_method(unit, "has_infiltrate"):
+        return True
+    keywords = _unit_keywords(unit)
+    name = _unit_name(unit)
+    return bool(
+        _keyword_contains(keywords, "INFILTRATOR")
+        or _keyword_contains(keywords, "INFILTRATORS")
+        or "infiltrat" in name
+    )
+
+
+def deployment_tempo_capability_for_unit(
+    unit: object,
+    *,
+    enemy_scout_pressure: bool = False,
+    enemy_infiltrate_pressure: bool = False,
+    first_turn_unknown: bool = False,
+) -> DeploymentTempoCapability:
+    """Build deterministic deployment-tempo metadata for one unit.
+
+    This is intentionally approximate and non-authoritative. It exposes
+    deployment-order pressure to future rankers without changing legality.
+    """
+
+    unit_id = _entity_id(unit)
+    has_scout, scout_distance = _unit_scout_capability(unit)
+    has_infiltrate = _unit_has_infiltrate(unit)
+
+    early_priority = 0.0
+    late_priority = 0.0
+    if has_infiltrate:
+        early_priority += 2.0
+        if enemy_scout_pressure:
+            early_priority += 1.0
+        early_priority += 0.8
+    if has_scout:
+        early_priority += 1.5
+        early_priority += 0.8
+        if enemy_infiltrate_pressure:
+            early_priority -= 0.7
+    if not has_scout and not has_infiltrate:
+        late_priority += 0.25
+
+    reveal_risk = 0.0
+    if first_turn_unknown and has_scout:
+        reveal_risk += 0.25
+    if first_turn_unknown and has_infiltrate:
+        reveal_risk += 0.35
+    if enemy_infiltrate_pressure and has_scout:
+        reveal_risk += 0.15
+
+    return DeploymentTempoCapability(
+        unit_id=unit_id,
+        has_infiltrate=has_infiltrate,
+        has_scout=has_scout,
+        scout_distance_inches=scout_distance,
+        forward_deploy_distance_class="infiltrate" if has_infiltrate else "deployment_zone",
+        blocks_enemy_scout_lanes=has_infiltrate,
+        screens_enemy_infiltrate=bool(has_infiltrate or has_scout),
+        early_drop_priority=max(0.0, early_priority),
+        late_drop_priority=max(0.0, late_priority),
+        reveal_risk=round(max(0.0, reveal_risk), 6),
+        metadata={
+            "source": "deployment_tempo_scaffold",
+            "enemy_scout_pressure": bool(enemy_scout_pressure),
+            "enemy_infiltrate_pressure": bool(enemy_infiltrate_pressure),
+            "first_turn_unknown": bool(first_turn_unknown),
+        },
+    )
 
 
 def _is_transport_unit(unit: object) -> bool:
@@ -547,15 +817,139 @@ def _passenger_transport_lookup(transport_policy: dict[str, object]) -> dict[str
     return lookup
 
 
+def _contested_forward_regions(enemy_tempo_capabilities: dict[str, DeploymentTempoCapability]) -> list[str]:
+    enemy_forward_pressure = any(
+        capability.has_scout or capability.has_infiltrate
+        for capability in dict(enemy_tempo_capabilities or {}).values()
+    )
+    return _sorted_strings(DEFAULT_FORWARD_REGIONS if enemy_forward_pressure else [])
+
+
+def _scout_lanes_metadata(enemy_tempo_capabilities: dict[str, DeploymentTempoCapability]) -> dict[str, Any]:
+    enemy_scout_count = sum(
+        1 for capability in dict(enemy_tempo_capabilities or {}).values() if capability.has_scout
+    )
+    enemy_infiltrate_count = sum(
+        1 for capability in dict(enemy_tempo_capabilities or {}).values() if capability.has_infiltrate
+    )
+    blocked = bool(enemy_infiltrate_count > 0)
+    lanes: dict[str, Any] = {}
+    for idx, lane_id in enumerate(DEFAULT_SCOUT_LANES):
+        lanes[str(lane_id)] = {
+            "lane_id": str(lane_id),
+            "sequence_index": int(idx),
+            "enemy_scout_pressure": float(enemy_scout_count),
+            "enemy_infiltrate_block_penalty": 0.35 if blocked else 0.0,
+            "blocked_by_enemy_infiltrate": blocked,
+        }
+    return lanes
+
+
+def _infiltrate_deny_zone_metadata(enemy_tempo_capabilities: dict[str, DeploymentTempoCapability]) -> dict[str, Any]:
+    enemy_scout_count = sum(
+        1 for capability in dict(enemy_tempo_capabilities or {}).values() if capability.has_scout
+    )
+    enemy_infiltrate_count = sum(
+        1 for capability in dict(enemy_tempo_capabilities or {}).values() if capability.has_infiltrate
+    )
+    zones: dict[str, Any] = {}
+    for idx, region_id in enumerate(DEFAULT_FORWARD_REGIONS):
+        zones[str(region_id)] = {
+            "region_id": str(region_id),
+            "sequence_index": int(idx),
+            "enemy_scout_pressure": float(enemy_scout_count),
+            "enemy_infiltrate_pressure": float(enemy_infiltrate_count),
+            "counter_scout_value": round(0.35 + min(1.0, enemy_scout_count * 0.4), 6),
+        }
+    return zones
+
+
+def _scout_projections(
+    tempo_capabilities: dict[str, DeploymentTempoCapability],
+    information_state: DeploymentInformationState,
+) -> dict[str, ScoutProjection]:
+    lane_ids = _sorted_strings(list(dict(information_state.scout_lanes or {}).keys()) or list(DEFAULT_SCOUT_LANES))
+    blocked_lane_count = sum(
+        1
+        for lane in dict(information_state.scout_lanes or {}).values()
+        if bool(dict(lane or {}).get("blocked_by_enemy_infiltrate", False))
+    )
+    projections: dict[str, ScoutProjection] = {}
+    for unit_id, capability in sorted(dict(tempo_capabilities or {}).items(), key=lambda item: str(item[0])):
+        if not capability.has_scout:
+            continue
+        exposure = float(capability.reveal_risk) + min(0.35, blocked_lane_count * 0.1)
+        projections[str(unit_id)] = ScoutProjection(
+            unit_id=str(unit_id),
+            deployment_region_id="deployment_zone_forward_edge",
+            scout_distance_inches=float(capability.scout_distance_inches),
+            projected_regions_after_scout=[
+                f"{lane_id}:post_scout_cover"
+                for lane_id in lane_ids
+            ],
+            can_reach_cover=True,
+            can_threaten_objective_ids=["midfield_objective"],
+            can_screen_lane_ids=lane_ids,
+            exposure_if_go_second=round(exposure, 6),
+            value_if_go_first=round(0.65 + min(0.4, len(lane_ids) * 0.08), 6),
+            value_if_go_second=round(max(0.15, 0.55 - exposure), 6),
+            metadata={
+                "source": "deployment_tempo_scaffold",
+                "blocked_lane_count": int(blocked_lane_count),
+            },
+        )
+    return projections
+
+
+def _infiltrate_projections(
+    tempo_capabilities: dict[str, DeploymentTempoCapability],
+    information_state: DeploymentInformationState,
+) -> dict[str, InfiltrateProjection]:
+    scout_lane_ids = _sorted_strings(
+        list(dict(information_state.scout_lanes or {}).keys()) or list(DEFAULT_SCOUT_LANES)
+    )
+    forward_regions = _sorted_strings(information_state.contested_forward_regions or list(DEFAULT_FORWARD_REGIONS))
+    enemy_scout_count = len(_sorted_strings(information_state.enemy_scout_unit_ids_known))
+    projections: dict[str, InfiltrateProjection] = {}
+    for unit_id, capability in sorted(dict(tempo_capabilities or {}).items(), key=lambda item: str(item[0])):
+        if not capability.has_infiltrate:
+            continue
+        projections[str(unit_id)] = InfiltrateProjection(
+            unit_id=str(unit_id),
+            infiltrate_region_id="forward_counter_scout_screen",
+            blocks_enemy_scout_lane_ids=scout_lane_ids,
+            screens_objective_ids=["midfield_objective"],
+            denies_enemy_forward_regions=forward_regions,
+            preserves_own_scout_lane_ids=scout_lane_ids,
+            exposure_if_go_second=float(capability.reveal_risk),
+            counter_deploy_value=round(0.8 + min(1.2, enemy_scout_count * 0.45), 6),
+            metadata={
+                "source": "deployment_tempo_scaffold",
+                "enemy_scout_count": int(enemy_scout_count),
+            },
+        )
+    return projections
+
+
 def _unit_deployment_task(
     unit: object,
     *,
     first_turn_unknown: bool,
     passenger_transport_by_unit: dict[str, str],
+    tempo_capability: DeploymentTempoCapability | None = None,
+    information_state: DeploymentInformationState | None = None,
 ) -> UnitDeploymentTask:
     unit_id = _entity_id(unit)
     keywords = _unit_keywords(unit)
     name = _unit_name(unit)
+    capability = tempo_capability or deployment_tempo_capability_for_unit(
+        unit,
+        first_turn_unknown=first_turn_unknown,
+    )
+    state = information_state or DeploymentInformationState()
+    scout_lanes = _sorted_strings(list(dict(state.scout_lanes or {}).keys()) or list(DEFAULT_SCOUT_LANES))
+    forward_regions = _sorted_strings(state.contested_forward_regions or list(DEFAULT_FORWARD_REGIONS))
+    infiltrate_regions = _sorted_strings(list(dict(state.infiltrate_deny_zones or {}).keys()) or list(DEFAULT_FORWARD_REGIONS))
     shooting = _unit_mode_output(unit, "ranged")
     melee = _unit_mode_output(unit, "melee")
     wounds = _unit_wounds_estimate(unit)
@@ -569,6 +963,11 @@ def _unit_deployment_task(
         "wounds_estimate": round(float(wounds), 6),
         "objective_control_estimate": round(float(oc), 6),
         "points_estimate": round(float(points), 6),
+        "has_scout": bool(capability.has_scout),
+        "has_infiltrate": bool(capability.has_infiltrate),
+        "deployment_tempo_early_drop_priority": round(float(capability.early_drop_priority), 6),
+        "deployment_tempo_late_drop_priority": round(float(capability.late_drop_priority), 6),
+        "deployment_reveal_risk": round(float(capability.reveal_risk), 6),
     }
 
     if _unit_is_in_reserves(unit):
@@ -616,19 +1015,51 @@ def _unit_deployment_task(
             tactical_flexibility=0.6,
             metadata=metadata,
         )
-    if keywords.intersection({"SCOUT", "SCOUTS", "INFILTRATOR", "INFILTRATORS"}) or "screen" in name or "scout" in name:
+    if (
+        capability.has_scout
+        or capability.has_infiltrate
+        or keywords.intersection({"SCOUT", "SCOUTS", "INFILTRATOR", "INFILTRATORS"})
+        or "screen" in name
+        or "scout" in name
+    ):
+        preferred_regions = ["forward_screen", "reserve_denial_lane"]
+        preferred_regions.extend(forward_regions if capability.has_infiltrate else [])
+        preferred_regions.extend(["deployment_zone_forward_edge"] if capability.has_scout else [])
+        enemy_infiltrate_blocks = any(
+            bool(dict(lane or {}).get("blocked_by_enemy_infiltrate", False))
+            for lane in dict(state.scout_lanes or {}).values()
+        )
+        sequence_priority = float(capability.early_drop_priority)
+        if capability.has_infiltrate and state.enemy_scout_unit_ids_known:
+            sequence_priority += 0.35
+        if capability.has_scout and enemy_infiltrate_blocks:
+            sequence_priority = max(0.0, sequence_priority - 0.25)
+        uncertainty_risk = float(capability.reveal_risk)
         return UnitDeploymentTask(
             unit_id=unit_id,
             role=DEPLOYMENT_ROLE_SCREEN,
-            preferred_regions=["forward_screen", "reserve_denial_lane"],
+            preferred_regions=preferred_regions,
             forbidden_regions=["backfield_idle"],
             needs_obscuring=False,
-            avoid_alpha_exposure=False,
+            avoid_alpha_exposure=bool(first_turn_unknown and uncertainty_risk >= 0.25),
             preserve_for_late_game=False,
             go_first_value=0.65,
-            go_second_safety=0.45,
+            go_second_safety=max(0.15, round(0.45 - min(0.25, uncertainty_risk), 6)),
             tactical_flexibility=0.75,
-            metadata=metadata,
+            deployment_sequence_priority=round(sequence_priority, 6),
+            preferred_drop_window=DROP_WINDOW_EARLY if sequence_priority >= 1.0 else DROP_WINDOW_ANY,
+            has_scout=bool(capability.has_scout),
+            has_infiltrate=bool(capability.has_infiltrate),
+            scout_lane_targets=scout_lanes if capability.has_scout else [],
+            infiltrate_screen_regions=infiltrate_regions if capability.has_infiltrate else [],
+            counter_scout_regions=forward_regions if capability.has_infiltrate else [],
+            no_mans_land_pressure_regions=forward_regions if capability.has_scout or capability.has_infiltrate else [],
+            metadata={
+                **metadata,
+                "first_turn_uncertainty_risk": round(uncertainty_risk, 6),
+                "enemy_infiltrate_blocks_scout_lane": bool(enemy_infiltrate_blocks),
+                "enemy_scout_pressure_known": bool(state.enemy_scout_unit_ids_known),
+            },
         )
     high_value_shooter = bool(shooting >= max(6.0, melee * 1.25) or points >= 120.0)
     if first_turn_unknown and high_value_shooter:
@@ -753,11 +1184,20 @@ def _first_turn_unknown(game: object) -> bool:
     return True
 
 
-def _information_state(game: object, player_id: str, own_units: list[object], enemy_units: list[object]) -> DeploymentInformationState:
+def _information_state(
+    game: object,
+    player_id: str,
+    own_units: list[object],
+    enemy_units: list[object],
+    *,
+    own_tempo_capabilities: dict[str, DeploymentTempoCapability],
+    enemy_tempo_capabilities: dict[str, DeploymentTempoCapability],
+) -> DeploymentInformationState:
     own = _split_deployment_state(own_units)
     enemy = _split_deployment_state(enemy_units)
     terrain_features = list(getattr(getattr(game, "map", None), "terrain_features", []) or [])
     objectives = list(getattr(game, "objectives", []) or [])
+    own_unplaced_ids = set(_sorted_strings(own["unplaced"]))
     return DeploymentInformationState(
         own_deployed_unit_ids=own["deployed"],
         enemy_deployed_unit_ids=enemy["deployed"],
@@ -768,10 +1208,46 @@ def _information_state(game: object, player_id: str, own_units: list[object], en
         own_embarked_unit_ids=own["embarked"],
         enemy_embarked_unit_ids=enemy["embarked"],
         known_enemy_attachments=_known_attachments(enemy_units),
+        enemy_scout_unit_ids_known=[
+            unit_id
+            for unit_id, capability in sorted(
+                dict(enemy_tempo_capabilities or {}).items(),
+                key=lambda item: str(item[0]),
+            )
+            if capability.has_scout
+        ],
+        enemy_infiltrate_unit_ids_known=[
+            unit_id
+            for unit_id, capability in sorted(
+                dict(enemy_tempo_capabilities or {}).items(),
+                key=lambda item: str(item[0]),
+            )
+            if capability.has_infiltrate
+        ],
+        own_scout_unit_ids_unplaced=[
+            unit_id
+            for unit_id, capability in sorted(
+                dict(own_tempo_capabilities or {}).items(),
+                key=lambda item: str(item[0]),
+            )
+            if unit_id in own_unplaced_ids and capability.has_scout
+        ],
+        own_infiltrate_unit_ids_unplaced=[
+            unit_id
+            for unit_id, capability in sorted(
+                dict(own_tempo_capabilities or {}).items(),
+                key=lambda item: str(item[0]),
+            )
+            if unit_id in own_unplaced_ids and capability.has_infiltrate
+        ],
+        contested_forward_regions=_contested_forward_regions(enemy_tempo_capabilities),
+        scout_lanes=_scout_lanes_metadata(enemy_tempo_capabilities),
+        infiltrate_deny_zones=_infiltrate_deny_zone_metadata(enemy_tempo_capabilities),
         metadata={
             "player_id": str(player_id),
             "terrain_feature_count": int(len(terrain_features)),
             "objective_count": int(len(objectives)),
+            "deployment_tempo_source": "scaffold",
         },
     )
 
@@ -828,15 +1304,53 @@ def build_deployment_plan(
     enemy_units = _opponent_units(game, pid)
     transport_policy = dict(general_transport_policy or {})
     passenger_transport_by_unit = _passenger_transport_lookup(transport_policy)
+    enemy_tempo_capabilities = {
+        _entity_id(unit): deployment_tempo_capability_for_unit(
+            unit,
+            first_turn_unknown=first_turn_unknown,
+        )
+        for unit in enemy_units
+        if _entity_id(unit)
+    }
+    enemy_scout_pressure = any(
+        capability.has_scout
+        for capability in dict(enemy_tempo_capabilities or {}).values()
+    )
+    enemy_infiltrate_pressure = any(
+        capability.has_infiltrate
+        for capability in dict(enemy_tempo_capabilities or {}).values()
+    )
+    tempo_capabilities = {
+        _entity_id(unit): deployment_tempo_capability_for_unit(
+            unit,
+            enemy_scout_pressure=enemy_scout_pressure,
+            enemy_infiltrate_pressure=enemy_infiltrate_pressure,
+            first_turn_unknown=first_turn_unknown,
+        )
+        for unit in own_units
+        if _entity_id(unit)
+    }
+    information_state = _information_state(
+        game,
+        pid,
+        own_units,
+        enemy_units,
+        own_tempo_capabilities=tempo_capabilities,
+        enemy_tempo_capabilities=enemy_tempo_capabilities,
+    )
     unit_tasks = {
         _entity_id(unit): _unit_deployment_task(
             unit,
             first_turn_unknown=first_turn_unknown,
             passenger_transport_by_unit=passenger_transport_by_unit,
+            tempo_capability=tempo_capabilities.get(_entity_id(unit)),
+            information_state=information_state,
         )
         for unit in own_units
         if _entity_id(unit)
     }
+    scout_projections = _scout_projections(tempo_capabilities, information_state)
+    infiltrate_projections = _infiltrate_projections(tempo_capabilities, information_state)
     transport_tasks = _transport_deployment_tasks(transport_policy)
     secondary_mode = str(mission_info["secondary_mode"])
     return DeploymentPlan(
@@ -848,7 +1362,7 @@ def build_deployment_plan(
         terrain_layout_id=str(mission_info["terrain_layout_id"]),
         first_turn_unknown=first_turn_unknown,
         secondary_mode=secondary_mode,
-        information_state=_information_state(game, pid, own_units, enemy_units),
+        information_state=information_state,
         doctrine=DeploymentDoctrine(
             go_first_posture="stage_alpha_lanes",
             go_second_posture="hide_and_counterpunch" if first_turn_unknown else "known_turn_order",
@@ -861,6 +1375,9 @@ def build_deployment_plan(
             },
         ),
         unit_tasks=unit_tasks,
+        tempo_capabilities=tempo_capabilities,
+        scout_projections=scout_projections,
+        infiltrate_projections=infiltrate_projections,
         transport_tasks=transport_tasks,
         contingency_branches=_contingency_branches(first_turn_unknown, secondary_mode),
         dirty_flags=DeploymentDirtyFlags(),
@@ -871,6 +1388,9 @@ def build_deployment_plan(
             "own_unit_count": int(len(own_units)),
             "enemy_unit_count": int(len(enemy_units)),
             "transport_task_count": int(len(transport_tasks)),
+            "tempo_capability_count": int(len(tempo_capabilities)),
+            "scout_projection_count": int(len(scout_projections)),
+            "infiltrate_projection_count": int(len(infiltrate_projections)),
         },
     )
 

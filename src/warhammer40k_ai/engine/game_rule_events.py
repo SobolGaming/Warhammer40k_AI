@@ -94,6 +94,7 @@ from .deployment_plan import (
     DeploymentPlan,
     build_deployment_plan,
     consume_deployment_dirty_flags,
+    deployment_tempo_capability_for_unit,
     repair_deployment_plan,
 )
 from .time_manager import TimeManager
@@ -579,6 +580,12 @@ class GameRuleEventService(GameServiceBase):
         group = "deployment_commander"
         event_system.subscribe_group(group, "unit_deployed", self._on_deployment_unit_deployed)
         event_system.subscribe_group(group, "deployment_unit_deployed", self._on_deployment_unit_deployed)
+        event_system.subscribe_group(group, "own_unit_deployed", self._on_deployment_unit_deployed)
+        event_system.subscribe_group(group, "enemy_unit_deployed", self._on_deployment_unit_deployed)
+        event_system.subscribe_group(group, "enemy_scout_deployed", self._on_deployment_enemy_scout_deployed)
+        event_system.subscribe_group(group, "enemy_infiltrate_deployed", self._on_deployment_enemy_infiltrate_deployed)
+        event_system.subscribe_group(group, "deployment_region_contested", self._on_deployment_region_contested)
+        event_system.subscribe_group(group, "scout_lane_blocked", self._on_deployment_scout_lane_blocked)
         event_system.subscribe_group(group, "deployment_reserves_declared", self._on_deployment_reserves_declared)
 
     def _commander_phase_name(self, phase: object) -> str:
@@ -648,6 +655,7 @@ class GameRuleEventService(GameServiceBase):
     def _on_deployment_unit_deployed(self, unit=None, player=None, **_kwargs) -> None:
         owner_id = str(getattr(player, "id", "") or "") or self._commander_unit_owner_player_id(unit)
         unit_id = self._commander_entity_id(unit)
+        tempo_capability = deployment_tempo_capability_for_unit(unit) if unit is not None else None
         for player_id in self._deployment_plan_player_ids():
             if not player_id:
                 continue
@@ -659,12 +667,86 @@ class GameRuleEventService(GameServiceBase):
                     severity=0.2,
                 )
                 continue
+            severity = 0.55
+            reason = f"enemy_unit_deployed:{unit_id}"
+            if tempo_capability is not None and tempo_capability.has_infiltrate:
+                severity = 0.65
+                reason = f"enemy_infiltrate_deployed:{unit_id}"
+            elif tempo_capability is not None and tempo_capability.has_scout:
+                severity = 0.6
+                reason = f"enemy_scout_deployed:{unit_id}"
             self.mark_deployment_plan_dirty(
                 player_id,
                 remaining_drops_dirty=True,
                 enemy_information_dirty=True,
-                reason=f"enemy_unit_deployed:{unit_id}",
-                severity=0.55,
+                reason=reason,
+                severity=severity,
+            )
+
+    def _on_deployment_enemy_scout_deployed(self, unit=None, player=None, lane_id: object = "", **_kwargs) -> None:
+        owner_id = str(getattr(player, "id", "") or "") or self._commander_unit_owner_player_id(unit)
+        unit_id = self._commander_entity_id(unit)
+        lane = str(lane_id or "").strip()
+        suffix = f":{lane}" if lane else ""
+        for player_id in self._deployment_plan_player_ids():
+            if not player_id or player_id == owner_id:
+                continue
+            self.mark_deployment_plan_dirty(
+                player_id,
+                remaining_drops_dirty=True,
+                enemy_information_dirty=True,
+                reason=f"enemy_scout_deployed:{unit_id}{suffix}",
+                severity=0.6,
+            )
+
+    def _on_deployment_enemy_infiltrate_deployed(
+        self,
+        unit=None,
+        player=None,
+        region_id: object = "",
+        **_kwargs,
+    ) -> None:
+        owner_id = str(getattr(player, "id", "") or "") or self._commander_unit_owner_player_id(unit)
+        unit_id = self._commander_entity_id(unit)
+        region = str(region_id or "").strip()
+        suffix = f":{region}" if region else ""
+        for player_id in self._deployment_plan_player_ids():
+            if not player_id or player_id == owner_id:
+                continue
+            self.mark_deployment_plan_dirty(
+                player_id,
+                remaining_drops_dirty=True,
+                enemy_information_dirty=True,
+                reason=f"enemy_infiltrate_deployed:{unit_id}{suffix}",
+                severity=0.65,
+            )
+
+    def _on_deployment_region_contested(self, player=None, region_id: object = "", **_kwargs) -> None:
+        owner_id = str(getattr(player, "id", "") or "")
+        region = str(region_id or "unknown_region").strip()
+        for player_id in self._deployment_plan_player_ids():
+            if not player_id or player_id == owner_id:
+                continue
+            self.mark_deployment_plan_dirty(
+                player_id,
+                remaining_drops_dirty=True,
+                enemy_information_dirty=True,
+                reason=f"deployment_region_contested:{region}",
+                severity=0.45,
+            )
+
+    def _on_deployment_scout_lane_blocked(self, player=None, lane_id: object = "", **_kwargs) -> None:
+        owner_id = str(getattr(player, "id", "") or "")
+        lane = str(lane_id or "unknown_lane").strip()
+        for player_id in self._deployment_plan_player_ids():
+            if not player_id or player_id == owner_id:
+                continue
+            self.mark_deployment_plan_dirty(
+                player_id,
+                remaining_drops_dirty=True,
+                enemy_information_dirty=True,
+                reason=f"scout_lane_blocked:{lane}",
+                severity=0.6,
             )
 
     def _on_deployment_reserves_declared(self, player=None, **_kwargs) -> None:

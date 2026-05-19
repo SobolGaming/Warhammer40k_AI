@@ -319,6 +319,37 @@ Implemented behavior:
   information-state plan.
 - deployment legality, candidate generation, masks, and rankers are unchanged.
 
+### PR 7B - Deployment Tempo Scaffold
+
+Add order-sensitive deployment metadata for Scout and Infiltrate without
+changing deployment choices.
+
+Implemented data model:
+
+- `DeploymentTempoCapability`
+- `ScoutProjection`
+- `InfiltrateProjection`
+- deployment-tempo fields on `UnitDeploymentTask`
+- Scout/Infiltrate known-unit, lane, and deny-zone fields on
+  `DeploymentInformationState`
+
+Implemented behavior:
+
+- Scout units receive early-drop priority, Scout lane targets, No Man's Land
+  pressure regions, and projected post-Scout cover/lane/objective metadata.
+- Infiltrate units receive early-drop priority, counter-Scout regions,
+  Infiltrate screen regions, forward denial metadata, and counter-deploy
+  projections.
+- enemy Scout presence raises own Infiltrate counter-Scout priority.
+- enemy Infiltrate presence marks Scout lanes as blocked and reduces Scout
+  early-drop value.
+- first-turn-unknown forward tempo units carry reveal/exposure risk metadata.
+- deployment request contexts receive slim local
+  `deployment_tempo_capability`, `scout_projection`, and
+  `infiltrate_projection` slices when applicable.
+- full `deployment_plan` payload remains audit/debug-only.
+- deployment legality, candidate generation, masks, and rankers are unchanged.
+
 ## Remaining Roadmap
 
 ### PR 8 - Deployment Ranker Consumes Deployment Commander Intent
@@ -326,7 +357,19 @@ Implemented behavior:
 Score legal deployment candidates against go-first value, go-second safety,
 obscuring/exposure, objective access, tactical-secondary flexibility,
 screening, reserve denial, transport delivery support, and revealed enemy
-deployment response. No legality changes.
+deployment response. PR8 should also consume deployment tempo metadata for both
+drop order and placement:
+
+- Scout units should deploy early when viable lanes exist.
+- Infiltrate units should deploy early to block enemy Scout or forward staging
+  lanes.
+- Scout placement should prefer No Man's Land border staging with post-Scout
+  cover and objective access.
+- Scout placement should avoid lanes blocked by enemy Infiltrate.
+- Infiltrate placement should prefer regions that screen enemy Scout movement.
+- first-turn-unknown exposed Scout/Infiltrate placements should be penalized.
+
+No legality changes.
 
 ### PR 9 - Shooting Executes Commander Fire Assignments And General Resource Policy
 
