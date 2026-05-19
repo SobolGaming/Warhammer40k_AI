@@ -13,6 +13,7 @@ Schema:
 
 Design note:
 - `objective_targets` can exist as a late-bound execution field inside Tier 0 and Tier 2, but it is not the primary strategic abstraction.
+- Cross-phase commander context is exposed separately as `unit_battle_task` and `commander_movement_task`. Movement rankers may use those fields to score future shooting/charge/fight enablement, but movement legality still comes from the normal movement validator and PathWitness contract.
 
 Move candidate metadata includes:
 - Movement-phase `SELECT_MOVEMENT_ACTION` candidates are endpoint-aware for headless

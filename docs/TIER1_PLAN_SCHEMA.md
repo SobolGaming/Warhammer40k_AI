@@ -7,6 +7,11 @@ is a reusable context artifact, not a required parent decision for every ranker.
 Context keys:
 - `plan_id`
 - `turn_plan`
+- `battle_round_plan_id`
+- `battle_round_plan`
+- `commander_dirty_flags`
+- `commander_replan_scope`
+- `last_commander_phase_report`
 
 `turn_plan` fields:
 - `plan_id`
@@ -76,6 +81,10 @@ Heuristic baseline behavior:
 Runtime use:
 - The orchestrator may build or refresh this plan at Command phase start or lazily when a decision benefits from strategic context.
 - Lazy attachment is handled by `attach_ai_orchestration_context(...)` after rules, descriptor, and version-adapter context is attached and before time-budget decoration.
+- A cached `BattleRoundPlan` is built from the Tier-1 plan plus the Tier-2 task bundle and attached as cross-phase commander context.
+- Event-driven commander dirty flags and the last phase report are attached so downstream rankers can detect stale or variance-affected plans without triggering a full replan.
 - Decision-specific rankers consume the plan through `request.context` when useful.
 - A local reaction, dice, allocation, or simple tool decision may route without consulting a fresh Tier-1 plan.
 - The engine remains authoritative for legality, masks, candidate generation, and state mutation.
+
+See `docs/BATTLE_ROUND_COMMANDER_PLAN.md` for the cross-phase commander plan schema.

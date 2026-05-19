@@ -63,6 +63,11 @@ from .ruleset import RulesetBundle
 from .version_adapter import ensure_version_adapter_boundary
 from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
 from .tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle
+from .commander_plan import (
+    BattleRoundPlan,
+    CommanderDirtyFlags,
+    PhaseExecutionReport,
+)
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -270,6 +275,9 @@ class Game(metaclass=GameFacadeMeta):
         self.decision_record_store = DecisionRecordStore(self)
         self._tier1_turn_plans: dict[tuple[int, str], Tier1Plan] = {}
         self._tier2_task_bundles: dict[tuple[int, str], Tier2TaskBundle] = {}
+        self._battle_round_plans: dict[tuple[int, str], BattleRoundPlan] = {}
+        self._commander_dirty_flags: dict[tuple[int, str], CommanderDirtyFlags] = {}
+        self._commander_phase_reports: dict[tuple[int, str], list[PhaseExecutionReport]] = {}
         self.time_manager = TimeManager()
         self.path_witness_store = PathWitnessStore()
         self.objectives = []

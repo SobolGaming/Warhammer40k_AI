@@ -62,8 +62,8 @@ declares each gameplay component and keeps the older matchup/playbook components
 tournament evaluation and mustering workflows.
 
 The orchestration layer may invoke `strategic_planner` and `tactical_orchestrator` to
-produce reusable context, but those components are not mandatory runtime parents for every
-decision. A reaction decision, dice decision, or local allocation decision can route
+produce reusable context, including the cached battle-round commander plan, but those
+components are not mandatory runtime parents for every decision. A reaction decision, dice decision, or local allocation decision can route
 directly to the relevant ranker while still preserving the same legality, mask, fallback,
 and telemetry contracts.
 
@@ -106,10 +106,12 @@ Request context is assembled in this order:
 10. queue the decision
 
 Strategic context is skipped for `n/a`, `dice_policy`, and
-`allocation_ranker`. Tier-2 task context attaches only when the request context
-contains a `unit_id` that matches a task in the current bundle. `compute_tier`
-uses the matching Tier-2 task first, then an existing valid engine-provided value,
-then `P1`; valid values are `P0`, `P1`, and `P2`.
+`allocation_ranker`. Tier-2 task context and battle-round commander unit context
+attach only when the request context contains a `unit_id` that matches a task in
+the current bundle. Global commander dirty flags, recommended replan scope, and
+the last phase report attach with the battle-round plan when available.
+`compute_tier` uses the matching Tier-2 task first, then an existing valid
+engine-provided value, then `P1`; valid values are `P0`, `P1`, and `P2`.
 
 ## Fallback Policy
 
@@ -128,10 +130,10 @@ Routing is deterministic:
 
 Headless mode resolves the same `DecisionRequest` objects as UI and network play. The controller can rank candidates, but legality, mutation, follow-up decisions, and telemetry stay inside the authoritative engine path.
 
-Tier 1 and Tier 2 are deterministic, cached context providers rather than independent
-player-facing decisions. They are created at Command phase start when possible, and lazily
-inside `Game.request_decision(...)` for any player decision that benefits from strategic
-or tactical context.
+Tier 1, Tier 2, and the battle-round commander plan are deterministic, cached context
+providers rather than independent player-facing decisions. They are created at Command
+phase start when possible, and lazily inside `Game.request_decision(...)` for any player
+decision that benefits from strategic or tactical context.
 
 ```mermaid
 flowchart TD
@@ -141,16 +143,17 @@ flowchart TD
   D --> E["get_or_create_tier2_task_bundle(player_id)"]
   E --> F["build_tier2_task_bundle maps units to task_type, compute_tier, MovementIntent, and CP reserve policy"]
   F --> G["Cache Tier2TaskBundle by battle_round and player_id"]
-  G --> H["Game.request_decision injects turn_plan, score_window_state, opportunity_catalog, and cp_reserve_policy"]
-  H --> I{"Decision has unit_id?"}
-  I -->|"Yes"| J["Inject tier2_task, movement_intent, and compute_tier for that unit"]
-  I -->|"No"| K["Use global strategic context only"]
-  J --> L["Candidate generators and semantic metadata consume the strategic context"]
-  K --> L
-  L --> M["AIPolicyOrchestrator maps the request to a decision-specific ranker"]
-  M --> N["Ranker orders legal candidates only"]
-  N --> O["DecisionRecord preserves plan/task context with chosen_action_id and outcome"]
-  O --> P["State mutation affects future requests; next battle-round cache rebuild reflects new state"]
+  G --> H["get_or_create_battle_round_plan(player_id) builds cross-phase commander context"]
+  H --> I["Game.request_decision injects turn_plan, battle_round_plan, dirty flags, score_window_state, opportunity_catalog, and cp_reserve_policy"]
+  I --> J{"Decision has unit_id?"}
+  J -->|"Yes"| K["Inject tier2_task, movement_intent, unit_battle_task, commander phase assignments, and compute_tier"]
+  J -->|"No"| L["Use global strategic context only"]
+  K --> M["Candidate generators and semantic metadata consume the strategic context"]
+  L --> M
+  M --> N["AIPolicyOrchestrator maps the request to a decision-specific ranker"]
+  N --> O["Ranker orders legal candidates only"]
+  O --> P["DecisionRecord preserves plan/task context with chosen_action_id and outcome"]
+  P --> Q["State mutation affects future requests; next battle-round cache rebuild reflects new state"]
 ```
 
 ```mermaid
@@ -357,7 +360,7 @@ Audit checklist:
 - For charge audits, inspect `DECLARE_CHARGE`, charge dice/reroll records, and the following charge `MOVE_UNIT` as one sequence.
 - For fight audits, inspect the stage-bearing `SELECT_UNIT`, `SELECT_FIGHT_TARGETS`, pile-in `MOVE_UNIT`, melee declaration/allocation records, melee attack resolution records, and consolidate `MOVE_UNIT` together.
 - For stratagem audits, inspect `SELECT_TOOL_ACTION` context fields such as `reactions_only`, `tool_action_signature`, `phase_name`, `limited_use_*`, and the triggering event context before judging Use versus Skip.
-- For strategic-flow audits, inspect `plan_id`, `turn_plan`, `score_window_state`, `opportunity_catalog`, `cp_reserve_policy`, `tier2_task`, `movement_intent`, and `compute_tier` inside `request_context`; these explain which orchestration context was available when candidates were generated or scored.
+- For strategic-flow audits, inspect `plan_id`, `turn_plan`, `battle_round_plan_id`, `battle_round_plan`, `commander_dirty_flags`, `commander_replan_scope`, `last_commander_phase_report`, `score_window_state`, `opportunity_catalog`, `cp_reserve_policy`, `tier2_task`, `movement_intent`, `unit_battle_task`, `commander_movement_task`, `commander_fire_assignment`, `commander_charge_assignment`, `commander_fight_assignment`, and `compute_tier` inside `request_context`; these explain which orchestration context was available when candidates were generated or scored.
 - If the engine changes decision ordering, update these diagrams and the affected decision/replay docs in the same change.
 
 LLM-backed policy adapters are documented in `docs/LLM_POLICY_ADAPTER_RUNTIME.md`. They implement

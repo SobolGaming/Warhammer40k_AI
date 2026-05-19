@@ -66,6 +66,13 @@ from .ruleset import RulesetBundle
 from .version_adapter import ensure_version_adapter_boundary
 from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
 from .tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle
+from .commander_plan import (
+    BattleRoundPlan,
+    CommanderDirtyFlags,
+    PhaseExecutionReport,
+    build_battle_round_plan,
+    build_phase_execution_report,
+)
 from .time_manager import TimeManager
 from .deployment_intent import DeploymentIntent
 from .deployment_solver import generate_deployment_candidates
@@ -146,11 +153,303 @@ class GameRuleEventService(GameServiceBase):
         self._tier2_task_bundles[key] = bundle
         return bundle
 
+    def get_or_create_battle_round_plan(self, player_id: str) -> BattleRoundPlan:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Battle-round commander plan requires player_id.")
+        if not hasattr(self, "_battle_round_plans") or not isinstance(self._battle_round_plans, dict):
+            self._battle_round_plans = {}
+        key = self._tier1_plan_key(pid)
+        existing = self._battle_round_plans.get(key)
+        if existing is not None:
+            return existing
+        tier1_plan = self.get_or_create_tier1_plan(pid)
+        tier2_bundle = self.get_or_create_tier2_task_bundle(pid)
+        plan = build_battle_round_plan(self, tier1_plan, tier2_bundle)
+        self._battle_round_plans[key] = plan
+        return plan
+
+    def get_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Commander dirty flags require player_id.")
+        if not hasattr(self, "_commander_dirty_flags") or not isinstance(self._commander_dirty_flags, dict):
+            self._commander_dirty_flags = {}
+        key = self._tier1_plan_key(pid)
+        flags = self._commander_dirty_flags.get(key)
+        if flags is None:
+            flags = CommanderDirtyFlags()
+            self._commander_dirty_flags[key] = flags
+        return flags
+
+    def mark_commander_dirty(
+        self,
+        player_id: str,
+        *,
+        movement_plan_dirty: bool = False,
+        shooting_plan_dirty: bool = False,
+        charge_plan_dirty: bool = False,
+        fight_plan_dirty: bool = False,
+        target_priorities_dirty: bool = False,
+        objective_priorities_dirty: bool = False,
+        cp_policy_dirty: bool = False,
+        full_replan_required: bool = False,
+        reason: str = "",
+        severity: float = 0.0,
+    ) -> CommanderDirtyFlags:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Commander dirty flags require player_id.")
+        flags = self.get_commander_dirty_flags(pid).marked(
+            movement_plan_dirty=movement_plan_dirty,
+            shooting_plan_dirty=shooting_plan_dirty,
+            charge_plan_dirty=charge_plan_dirty,
+            fight_plan_dirty=fight_plan_dirty,
+            target_priorities_dirty=target_priorities_dirty,
+            objective_priorities_dirty=objective_priorities_dirty,
+            cp_policy_dirty=cp_policy_dirty,
+            full_replan_required=full_replan_required,
+            reason=reason,
+            severity=severity,
+        )
+        self._commander_dirty_flags[self._tier1_plan_key(pid)] = flags
+        return flags
+
+    def clear_commander_dirty_flags(self, player_id: str) -> CommanderDirtyFlags:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Commander dirty flags require player_id.")
+        flags = CommanderDirtyFlags()
+        self._commander_dirty_flags[self._tier1_plan_key(pid)] = flags
+        return flags
+
+    def record_commander_phase_report(self, report: PhaseExecutionReport) -> None:
+        player_id = str(report.player_id)
+        if not hasattr(self, "_commander_phase_reports") or not isinstance(self._commander_phase_reports, dict):
+            self._commander_phase_reports = {}
+        key = self._tier1_plan_key(player_id)
+        reports = list(self._commander_phase_reports.get(key, []) or [])
+        reports.append(report)
+        self._commander_phase_reports[key] = reports[-32:]
+
+    def get_commander_phase_reports(self, player_id: str) -> list[PhaseExecutionReport]:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Commander phase reports require player_id.")
+        reports = getattr(self, "_commander_phase_reports", {})
+        return list(dict(reports or {}).get(self._tier1_plan_key(pid), []) or [])
+
+    def build_commander_phase_execution_report(
+        self,
+        player_id: str,
+        phase_name: str,
+    ) -> PhaseExecutionReport:
+        plan = self.get_or_create_battle_round_plan(player_id)
+        flags = self.get_commander_dirty_flags(player_id)
+        return build_phase_execution_report(
+            phase_name=phase_name,
+            player_id=player_id,
+            plan=plan,
+            dirty_flags=flags,
+        )
+
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
         registry = RuleRegistry(build_default_rule_providers())
         registry.apply(self)
         self.rule_registry = registry
+        self._install_commander_orchestration_subscribers()
+
+    def _install_commander_orchestration_subscribers(self) -> None:
+        event_system = getattr(self, "event_system", None)
+        if event_system is None:
+            return
+        group = "commander_orchestration"
+        event_system.subscribe_group(group, "phase_start", self._on_commander_phase_start)
+        event_system.subscribe_group(group, "phase_end", self._on_commander_phase_end)
+        event_system.subscribe_group(group, "unit_move_ended", self._on_commander_unit_move_ended)
+        event_system.subscribe_group(group, "charge_move_failed", self._on_commander_charge_move_failed)
+        event_system.subscribe_group(group, "unit_destroyed", self._on_commander_unit_destroyed)
+        event_system.subscribe_group(group, "model_damage_resolved", self._on_commander_model_damage_resolved)
+        event_system.subscribe_group(group, "unit_shooting_resolved", self._on_commander_unit_shooting_resolved)
+        event_system.subscribe_group(group, "fight_attacks_resolved", self._on_commander_fight_attacks_resolved)
+        event_system.subscribe_group(group, "objective_control_changed", self._on_commander_objective_control_changed)
+
+    def _commander_phase_name(self, phase: object) -> str:
+        return str(getattr(phase, "name", "") or phase or "").strip().upper()
+
+    def _commander_entity_id(self, entity: object) -> str:
+        if entity is None:
+            return ""
+        return str(get_entity_id(entity) or getattr(entity, "id", "") or getattr(entity, "_id", "") or "")
+
+    def _commander_unit_owner_player_id(self, unit: object) -> str:
+        if unit is None:
+            return ""
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+        player = getattr(army, "player", None)
+        player_id = str(getattr(player, "id", "") or "")
+        if player_id:
+            return player_id
+        for candidate_player in list(getattr(self, "players", []) or []):
+            candidate_army = getattr(candidate_player, "army", None)
+            if candidate_army is None:
+                get_army = getattr(candidate_player, "get_army", None)
+                candidate_army = get_army() if callable(get_army) else None
+            if unit in list(getattr(candidate_army, "units", []) or []):
+                return str(getattr(candidate_player, "id", "") or "")
+        return ""
+
+    def _commander_all_current_plan_player_ids(self) -> list[str]:
+        plans = getattr(self, "_battle_round_plans", {})
+        current_round = self._current_battle_round()
+        player_ids = {
+            str(player_id)
+            for (battle_round, player_id), _plan in dict(plans or {}).items()
+            if int(battle_round) == int(current_round) and str(player_id)
+        }
+        if player_ids:
+            return sorted(player_ids)
+        return sorted(
+            str(getattr(player, "id", "") or "")
+            for player in list(getattr(self, "players", []) or [])
+            if str(getattr(player, "id", "") or "")
+        )
+
+    def _commander_plan_player_ids_for_unit_id(self, unit_id: str) -> list[str]:
+        uid = str(unit_id or "")
+        if not uid:
+            return []
+        current_round = self._current_battle_round()
+        matches: set[str] = set()
+        for (battle_round, player_id), plan in dict(getattr(self, "_battle_round_plans", {}) or {}).items():
+            if int(battle_round) != int(current_round):
+                continue
+            if uid in set(dict(getattr(plan, "unit_tasks", {}) or {}).keys()):
+                matches.add(str(player_id))
+                continue
+            target_ids = {
+                str(getattr(target, "target_unit_id", "") or "")
+                for target in list(getattr(plan, "priority_targets", []) or [])
+            }
+            if uid in target_ids:
+                matches.add(str(player_id))
+        return sorted(matches)
+
+    def _on_commander_phase_start(self, player=None, phase=None, **_kwargs) -> None:
+        player_id = str(getattr(player, "id", "") or "")
+        if player_id:
+            self.get_or_create_battle_round_plan(player_id)
+
+    def _on_commander_phase_end(self, player=None, phase=None, **_kwargs) -> None:
+        player_id = str(getattr(player, "id", "") or "")
+        if not player_id:
+            return
+        phase_name = self._commander_phase_name(phase)
+        report = self.build_commander_phase_execution_report(player_id, phase_name)
+        self.record_commander_phase_report(report)
+
+    def _on_commander_unit_move_ended(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        unit_id = self._commander_entity_id(unit)
+        player_id = self._commander_unit_owner_player_id(unit)
+        if not player_id:
+            return
+        self.get_or_create_battle_round_plan(player_id)
+        reason = f"unit_moved:{unit_id}:{str(action or '').strip().lower()}"
+        self.mark_commander_dirty(
+            player_id,
+            shooting_plan_dirty=True,
+            charge_plan_dirty=True,
+            reason=reason,
+            severity=0.25,
+        )
+
+    def _on_commander_charge_move_failed(self, unit=None, **_kwargs) -> None:
+        player_id = self._commander_unit_owner_player_id(unit)
+        if not player_id:
+            return
+        unit_id = self._commander_entity_id(unit)
+        self.mark_commander_dirty(
+            player_id,
+            charge_plan_dirty=True,
+            fight_plan_dirty=True,
+            reason=f"charge_failed:{unit_id}",
+            severity=0.8,
+        )
+
+    def _on_commander_unit_destroyed(self, unit=None, **_kwargs) -> None:
+        unit_id = self._commander_entity_id(unit)
+        owner_id = self._commander_unit_owner_player_id(unit)
+        player_ids = set(self._commander_plan_player_ids_for_unit_id(unit_id))
+        if owner_id:
+            player_ids.add(owner_id)
+        for player_id in sorted(player_ids):
+            self.mark_commander_dirty(
+                player_id,
+                shooting_plan_dirty=True,
+                charge_plan_dirty=True,
+                fight_plan_dirty=True,
+                target_priorities_dirty=True,
+                reason=f"unit_destroyed:{unit_id}",
+                severity=0.85,
+            )
+
+    def _on_commander_model_damage_resolved(self, target_unit=None, attacker_unit=None, **_kwargs) -> None:
+        target_id = self._commander_entity_id(target_unit)
+        for player_id in self._commander_plan_player_ids_for_unit_id(target_id):
+            self.mark_commander_dirty(
+                player_id,
+                shooting_plan_dirty=True,
+                target_priorities_dirty=True,
+                reason=f"target_damage:{target_id}",
+                severity=0.35,
+            )
+        attacker_id = self._commander_unit_owner_player_id(attacker_unit)
+        if attacker_id:
+            self.mark_commander_dirty(
+                attacker_id,
+                shooting_plan_dirty=True,
+                reason=f"friendly_damage_output:{self._commander_entity_id(attacker_unit)}",
+                severity=0.2,
+            )
+
+    def _on_commander_unit_shooting_resolved(self, attacker_unit=None, **_kwargs) -> None:
+        player_id = self._commander_unit_owner_player_id(attacker_unit)
+        if not player_id:
+            return
+        self.mark_commander_dirty(
+            player_id,
+            charge_plan_dirty=True,
+            fight_plan_dirty=True,
+            reason=f"shooting_resolved:{self._commander_entity_id(attacker_unit)}",
+            severity=0.2,
+        )
+
+    def _on_commander_fight_attacks_resolved(self, unit=None, target_unit=None, **_kwargs) -> None:
+        for player_id in {
+            self._commander_unit_owner_player_id(unit),
+            self._commander_unit_owner_player_id(target_unit),
+        }:
+            if not player_id:
+                continue
+            self.mark_commander_dirty(
+                player_id,
+                fight_plan_dirty=True,
+                target_priorities_dirty=True,
+                reason="fight_attacks_resolved",
+                severity=0.35,
+            )
+
+    def _on_commander_objective_control_changed(self, **_kwargs) -> None:
+        for player_id in self._commander_all_current_plan_player_ids():
+            self.mark_commander_dirty(
+                player_id,
+                movement_plan_dirty=True,
+                objective_priorities_dirty=True,
+                reason="objective_control_changed",
+                severity=0.75,
+            )
 
     def _on_unit_destroyed_monarch_of_the_hunt(self, unit=None, **_kwargs) -> None:
         if unit is None or not bool(getattr(self, "is_authoritative", True)):
@@ -13323,6 +13622,7 @@ class GameRuleEventService(GameServiceBase):
         current_player_id = getattr(current_player, "id", "")
         self.get_or_create_tier1_plan(current_player_id)
         self.get_or_create_tier2_task_bundle(current_player_id)
+        self.get_or_create_battle_round_plan(current_player_id)
         army = self._get_player_army(current_player)
         if army is None:
             return

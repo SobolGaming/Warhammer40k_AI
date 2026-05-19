@@ -82,6 +82,7 @@ EXPECTED_PUBLIC_GAME_CALLABLES = {
     "get_loser",
     "get_max_charge_distance",
     "get_opponent",
+    "get_or_create_battle_round_plan",
     "get_or_create_tier1_plan",
     "get_or_create_tier2_task_bundle",
     "get_pregame_flow_state",

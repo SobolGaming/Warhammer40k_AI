@@ -74,16 +74,32 @@ def attach_ai_orchestration_context(
 
     get_tier1_plan = getattr(game, "get_or_create_tier1_plan", None)
     get_tier2_bundle = getattr(game, "get_or_create_tier2_task_bundle", None)
+    get_battle_round_plan = getattr(game, "get_or_create_battle_round_plan", None)
     if not callable(get_tier1_plan) or not callable(get_tier2_bundle):
         updated["compute_tier"] = _normalize_compute_tier(updated.get("compute_tier"))
         return updated
 
     plan = get_tier1_plan(player_id)
     tier2_bundle = get_tier2_bundle(player_id)
+    battle_round_plan = get_battle_round_plan(player_id) if callable(get_battle_round_plan) else None
+    get_dirty_flags = getattr(game, "get_commander_dirty_flags", None)
+    dirty_flags = get_dirty_flags(player_id) if callable(get_dirty_flags) else None
+    get_phase_reports = getattr(game, "get_commander_phase_reports", None)
+    phase_reports = get_phase_reports(player_id) if callable(get_phase_reports) else []
     if "plan_id" not in updated:
         updated["plan_id"] = plan.plan_id
+    if battle_round_plan is not None and "battle_round_plan_id" not in updated:
+        updated["battle_round_plan_id"] = battle_round_plan.plan_id
     if "turn_plan" not in updated:
         updated["turn_plan"] = plan.to_dict()
+    if battle_round_plan is not None and "battle_round_plan" not in updated:
+        updated["battle_round_plan"] = battle_round_plan.to_dict()
+    if dirty_flags is not None and "commander_dirty_flags" not in updated:
+        updated["commander_dirty_flags"] = dirty_flags.to_dict()
+    if dirty_flags is not None and "commander_replan_scope" not in updated:
+        updated["commander_replan_scope"] = dirty_flags.recommended_replan_scope()
+    if phase_reports and "last_commander_phase_report" not in updated:
+        updated["last_commander_phase_report"] = phase_reports[-1].to_dict()
     if "score_window_state" not in updated:
         updated["score_window_state"] = {
             "windows": [window.to_dict() for window in list(plan.scoring_windows or [])],
@@ -113,6 +129,25 @@ def attach_ai_orchestration_context(
         if "movement_intent" not in updated:
             updated["movement_intent"] = task.movement_intent.to_dict()
         task_compute_tier = str(task.compute_tier)
+    if battle_round_plan is not None and unit_id:
+        unit_task = dict(getattr(battle_round_plan, "unit_tasks", {}) or {}).get(unit_id)
+        if unit_task is not None and "unit_battle_task" not in updated:
+            updated["unit_battle_task"] = unit_task.to_dict()
+        movement_task = dict(getattr(battle_round_plan.movement_plan, "unit_positioning_tasks", {}) or {}).get(unit_id)
+        if movement_task is not None and "commander_movement_task" not in updated:
+            updated["commander_movement_task"] = movement_task.to_dict()
+        fire_assignment = dict(getattr(battle_round_plan.shooting_plan, "unit_fire_assignments", {}) or {}).get(unit_id)
+        if fire_assignment is not None and "commander_fire_assignment" not in updated:
+            updated["commander_fire_assignment"] = fire_assignment.to_dict()
+        charge_assignments = dict(
+            getattr(battle_round_plan.charge_plan, "unit_charge_assignments", {}) or {}
+        )
+        charge_assignment = charge_assignments.get(unit_id)
+        if charge_assignment is not None and "commander_charge_assignment" not in updated:
+            updated["commander_charge_assignment"] = charge_assignment.to_dict()
+        fight_assignment = dict(getattr(battle_round_plan.fight_plan, "unit_fight_assignments", {}) or {}).get(unit_id)
+        if fight_assignment is not None and "commander_fight_assignment" not in updated:
+            updated["commander_fight_assignment"] = fight_assignment.to_dict()
 
     updated["compute_tier"] = _normalize_compute_tier(
         task_compute_tier if task_compute_tier is not None else updated.get("compute_tier")
