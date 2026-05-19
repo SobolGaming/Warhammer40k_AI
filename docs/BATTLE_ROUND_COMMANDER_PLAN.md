@@ -57,6 +57,21 @@ Top-level fields:
 - `invalidation`
 - `metadata`
 
+`metadata.analysis_snapshot` is a bounded, audit-only commander analysis input
+snapshot. It is built with the plan and includes:
+
+- a `cache_key` with `battle_round`, `player_id`, and `map_generation`.
+- enemy target threat, scoring, denial, wounds, toughness, save, OC, and
+  keyword summaries.
+- friendly unit shooting, melee, mobility, survivability, risk, and keyword
+  summaries.
+- top-K unit-target matrix entries for expected shooting damage, expected melee
+  damage, movement-to-LoS feasibility, movement-to-half-range feasibility, and
+  charge feasibility.
+
+The snapshot is approximate planning metadata only. It does not create legal
+candidates, change masks, validate attacks, or mutate state.
+
 `UnitBattleTask` is the cross-phase unit assignment:
 
 - `unit_id`
@@ -142,6 +157,7 @@ intent with actual execution outcomes.
 The first implementation is deliberately conservative:
 
 - target priorities are deterministic enemy-unit wound estimates.
+- analysis snapshots are deterministic, bounded, and audit-only.
 - unit roles derive from Tier-2 task types.
 - movement tasks mirror Tier-2 target regions and eligibility posture.
 - fire, charge, and fight assignments are serializable intent placeholders.

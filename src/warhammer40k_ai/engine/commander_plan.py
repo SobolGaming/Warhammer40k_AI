@@ -44,6 +44,10 @@ MOVEMENT_ACTION_NORMAL_MOVE = "normal_move"
 MOVEMENT_ACTION_ADVANCE = "advance"
 MOVEMENT_ACTION_FALL_BACK = "fall_back"
 
+COMMANDER_ANALYSIS_MAX_TARGETS = 6
+COMMANDER_ANALYSIS_MAX_UNITS = 24
+COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT = 4
+
 
 def _sorted_strings(values: list[object] | tuple[object, ...] | set[object] | None) -> list[str]:
     return sorted({str(value) for value in list(values or []) if str(value)})
@@ -262,6 +266,147 @@ class TargetPriority:
             "threat_score": float(self.threat_score),
             "scoring_value": float(self.scoring_value),
             "denial_value": float(self.denial_value),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class CommanderTargetAnalysis:
+    target_unit_id: str
+    threat_score: float
+    scoring_value: float = 0.0
+    denial_value: float = 0.0
+    wounds_estimate: float = 0.0
+    toughness_estimate: float = 0.0
+    save_estimate: float = 0.0
+    objective_control_estimate: float = 0.0
+    keywords: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_unit_id": str(self.target_unit_id),
+            "threat_score": float(self.threat_score),
+            "scoring_value": float(self.scoring_value),
+            "denial_value": float(self.denial_value),
+            "wounds_estimate": float(self.wounds_estimate),
+            "toughness_estimate": float(self.toughness_estimate),
+            "save_estimate": float(self.save_estimate),
+            "objective_control_estimate": float(self.objective_control_estimate),
+            "keywords": _sorted_strings(self.keywords),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class CommanderUnitCapability:
+    unit_id: str
+    shooting_capability: float = 0.0
+    melee_capability: float = 0.0
+    mobility_profile: dict[str, float] = field(default_factory=dict)
+    survivability_score: float = 0.0
+    risk_profile: float = 0.0
+    keywords: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "unit_id": str(self.unit_id),
+            "shooting_capability": float(self.shooting_capability),
+            "melee_capability": float(self.melee_capability),
+            "mobility_profile": {
+                str(key): float(value)
+                for key, value in sorted(
+                    dict(self.mobility_profile or {}).items(),
+                    key=lambda item: str(item[0]),
+                )
+            },
+            "survivability_score": float(self.survivability_score),
+            "risk_profile": float(self.risk_profile),
+            "keywords": _sorted_strings(self.keywords),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class CommanderUnitTargetAnalysis:
+    unit_id: str
+    target_unit_id: str
+    expected_shooting_damage: float = 0.0
+    expected_melee_damage: float = 0.0
+    movement_to_los_feasibility: float = 0.0
+    movement_to_half_range_feasibility: float = 0.0
+    charge_feasibility: float = 0.0
+    priority_score: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "unit_id": str(self.unit_id),
+            "target_unit_id": str(self.target_unit_id),
+            "expected_shooting_damage": float(self.expected_shooting_damage),
+            "expected_melee_damage": float(self.expected_melee_damage),
+            "movement_to_los_feasibility": float(self.movement_to_los_feasibility),
+            "movement_to_half_range_feasibility": float(self.movement_to_half_range_feasibility),
+            "charge_feasibility": float(self.charge_feasibility),
+            "priority_score": float(self.priority_score),
+            "metadata": _sorted_metadata(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class CommanderAnalysisSnapshot:
+    player_id: str
+    battle_round: int
+    map_generation: int
+    target_analysis: list[CommanderTargetAnalysis] = field(default_factory=list)
+    unit_capabilities: dict[str, CommanderUnitCapability] = field(default_factory=dict)
+    unit_target_matrix: list[CommanderUnitTargetAnalysis] = field(default_factory=list)
+    max_targets: int = COMMANDER_ANALYSIS_MAX_TARGETS
+    max_units: int = COMMANDER_ANALYSIS_MAX_UNITS
+    max_targets_per_unit: int = COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        target_analysis = sorted(
+            self.target_analysis,
+            key=lambda item: (-float(item.threat_score), str(item.target_unit_id)),
+        )
+        unit_target_matrix = sorted(
+            self.unit_target_matrix,
+            key=lambda item: (
+                str(item.unit_id),
+                -float(item.priority_score),
+                str(item.target_unit_id),
+            ),
+        )
+        unit_capabilities = {
+            str(unit_id): capability.to_dict()
+            for unit_id, capability in sorted(
+                self.unit_capabilities.items(),
+                key=lambda item: str(item[0]),
+            )
+        }
+        return {
+            "player_id": str(self.player_id),
+            "battle_round": int(self.battle_round),
+            "map_generation": int(self.map_generation),
+            "cache_key": {
+                "battle_round": int(self.battle_round),
+                "player_id": str(self.player_id),
+                "map_generation": int(self.map_generation),
+            },
+            "limits": {
+                "max_targets": int(self.max_targets),
+                "max_units": int(self.max_units),
+                "max_targets_per_unit": int(self.max_targets_per_unit),
+            },
+            "target_count": int(len(target_analysis)),
+            "unit_count": int(len(unit_capabilities)),
+            "unit_target_entry_count": int(len(unit_target_matrix)),
+            "target_analysis": [target.to_dict() for target in target_analysis],
+            "unit_capabilities": unit_capabilities,
+            "unit_target_matrix": [entry.to_dict() for entry in unit_target_matrix],
             "metadata": _sorted_metadata(self.metadata),
         }
 
@@ -670,6 +815,227 @@ def _unit_wounds_estimate(unit: object) -> float:
     return float(total)
 
 
+def _unit_numeric_estimate(unit: object, attribute_name: str, default: float) -> float:
+    unit_attrs = getattr(unit, "__dict__", {}) or {}
+    for key in (attribute_name, f"_{attribute_name}"):
+        if key not in unit_attrs:
+            continue
+        value = unit_attrs.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    for model in list(getattr(unit, "models", []) or []):
+        if not _alive(model):
+            continue
+        model_value = getattr(model, attribute_name, None)
+        if model_value is None:
+            continue
+        try:
+            return float(model_value)
+        except (TypeError, ValueError):
+            continue
+    return float(default)
+
+
+def _unit_objective_control_estimate(unit: object) -> float:
+    total = 0.0
+    for model in list(getattr(unit, "models", []) or []):
+        if not _alive(model):
+            continue
+        value = getattr(model, "objective_control", None)
+        try:
+            total += float(value if value is not None else 0.0)
+        except (TypeError, ValueError):
+            continue
+    if total > 0.0:
+        return float(total)
+    return _unit_numeric_estimate(unit, "objective_control", 0.0)
+
+
+def _unit_keywords(unit: object) -> list[str]:
+    keywords: list[object] = []
+    keywords.extend(list(getattr(unit, "keywords", []) or []))
+    keywords.extend(list(getattr(unit, "faction_keywords", []) or []))
+    for model in list(getattr(unit, "models", []) or []):
+        keywords.extend(list(getattr(model, "keywords", []) or []))
+        keywords.extend(list(getattr(model, "faction_keywords", []) or []))
+    if bool(getattr(unit, "is_vehicle", False)):
+        keywords.append("VEHICLE")
+    if bool(getattr(unit, "is_monster", False)):
+        keywords.append("MONSTER")
+    return _sorted_strings([str(keyword).upper() for keyword in keywords])
+
+
+def _unit_has_any_keyword(unit: object, keywords: set[str]) -> bool:
+    unit_keywords = set(_unit_keywords(unit))
+    return bool(unit_keywords.intersection({keyword.upper() for keyword in keywords}))
+
+
+def _floatish(value: object, default: float = 0.0) -> float:
+    stat_average = getattr(value, "stat_average", None)
+    if callable(stat_average):
+        try:
+            return float(stat_average())
+        except (TypeError, ValueError):
+            return float(default)
+    if isinstance(value, str):
+        cleaned = value.replace('"', "").replace("+", "").strip()
+        if not cleaned or cleaned in {"-", "N/A"}:
+            return float(default)
+        try:
+            return float(cleaned)
+        except (TypeError, ValueError):
+            return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+    return max(float(lower), min(float(upper), float(value)))
+
+
+def _weapon_mode_matches(wargear: object, mode: str) -> bool:
+    method = getattr(wargear, f"is_{mode}", None)
+    if callable(method):
+        return bool(method())
+    return str(getattr(wargear, "type", "") or "").strip().lower() == str(mode)
+
+
+def _iter_weapon_profiles(unit: object, mode: str) -> list[object]:
+    profiles: list[object] = []
+    for model in list(getattr(unit, "models", []) or []):
+        if not _alive(model):
+            continue
+        for wargear in list(getattr(model, "wargear", []) or []):
+            if wargear is None or not _weapon_mode_matches(wargear, mode):
+                continue
+            wargear_profiles = getattr(wargear, "profiles", {}) or {}
+            if isinstance(wargear_profiles, dict):
+                profiles.extend(list(wargear_profiles.values()))
+            else:
+                profiles.extend(list(wargear_profiles or []))
+    return profiles
+
+
+def _wound_probability(strength: float, toughness: float) -> float:
+    if strength <= 0.0 or toughness <= 0.0:
+        return 0.5
+    if strength >= toughness * 2.0:
+        return 5.0 / 6.0
+    if strength > toughness:
+        return 4.0 / 6.0
+    if strength == toughness:
+        return 3.0 / 6.0
+    if strength * 2.0 <= toughness:
+        return 1.0 / 6.0
+    return 2.0 / 6.0
+
+
+def _save_fail_probability(target_unit: object, ap: float) -> float:
+    save = _unit_numeric_estimate(target_unit, "save", 7.0)
+    if save <= 0.0:
+        return 1.0
+    save_needed = save - ap
+    if save_needed <= 2.0:
+        return 1.0 / 6.0
+    if save_needed >= 7.0:
+        return 1.0
+    return _clamp((save_needed - 1.0) / 6.0)
+
+
+def _profile_expected_damage(profile: object, target_unit: object | None) -> float:
+    attacks = _floatish(getattr(profile, "attacks", None), 0.0)
+    skill = _floatish(getattr(profile, "skill", None), 0.0)
+    strength = _floatish(getattr(profile, "strength", None), 0.0)
+    damage = _floatish(getattr(profile, "damage", None), 0.0)
+    ap = _floatish(getattr(profile, "ap", None), 0.0)
+    if attacks <= 0.0 or damage <= 0.0:
+        return 0.0
+
+    hit_probability = 1.0 if skill <= 0.0 else _clamp((7.0 - skill) / 6.0)
+    wound_probability = 0.5
+    save_fail_probability = 1.0
+    if target_unit is not None:
+        target_toughness = _unit_numeric_estimate(target_unit, "toughness", 4.0)
+        wound_probability = _wound_probability(strength, target_toughness)
+        save_fail_probability = _save_fail_probability(target_unit, ap)
+    return float(attacks * hit_probability * wound_probability * save_fail_probability * damage)
+
+
+def _unit_expected_damage(unit: object, target_unit: object | None, mode: str) -> float:
+    return float(
+        sum(
+            _profile_expected_damage(profile, target_unit)
+            for profile in _iter_weapon_profiles(unit, mode)
+        )
+    )
+
+
+def _unit_max_ranged_range(unit: object) -> float:
+    ranges: list[float] = []
+    for profile in _iter_weapon_profiles(unit, "ranged"):
+        profile_range = getattr(profile, "range", None)
+        range_max = getattr(profile_range, "max", None)
+        if range_max is None:
+            range_max = getattr(profile, "range_inches", None)
+        ranges.append(_floatish(range_max, 0.0))
+    return float(max(ranges or [0.0]))
+
+
+def _unit_distance_estimate(source_unit: object, target_unit: object) -> float:
+    source_models = [model for model in list(getattr(source_unit, "models", []) or []) if _alive(model)]
+    target_models = [model for model in list(getattr(target_unit, "models", []) or []) if _alive(model)]
+    if not source_models or not target_models:
+        return 0.0
+    source_base = getattr(source_models[0], "model_base", None)
+    target_base = getattr(target_models[0], "model_base", None)
+    edge_distance = getattr(source_base, "edge_to_edge_distance", None)
+    if callable(edge_distance) and target_base is not None:
+        try:
+            return float(edge_distance(target_base))
+        except (TypeError, ValueError):
+            pass
+    sx = _floatish(getattr(source_base, "x", None), 0.0)
+    sy = _floatish(getattr(source_base, "y", None), 0.0)
+    sz = _floatish(getattr(source_base, "z", None), 0.0)
+    tx = _floatish(getattr(target_base, "x", None), 0.0)
+    ty = _floatish(getattr(target_base, "y", None), 0.0)
+    tz = _floatish(getattr(target_base, "z", None), 0.0)
+    return float(((sx - tx) ** 2 + (sy - ty) ** 2 + (sz - tz) ** 2) ** 0.5)
+
+
+def _unit_survivability_score(unit: object) -> float:
+    wounds = _unit_wounds_estimate(unit)
+    toughness = _unit_numeric_estimate(unit, "toughness", 4.0)
+    save = _unit_numeric_estimate(unit, "save", 7.0)
+    save_quality = _clamp((7.0 - save) / 6.0)
+    return float(wounds * (1.0 + toughness / 10.0) * (1.0 + save_quality))
+
+
+def _target_threat_score(unit: object) -> float:
+    wounds = _unit_wounds_estimate(unit)
+    toughness = _unit_numeric_estimate(unit, "toughness", 4.0)
+    objective_control = _unit_objective_control_estimate(unit)
+    keyword_multiplier = 1.25 if _unit_has_any_keyword(unit, {"VEHICLE", "MONSTER", "CHARACTER"}) else 1.0
+    return float((wounds + toughness * 0.35 + objective_control * 0.75) * keyword_multiplier)
+
+
+def _friendly_units_for_player(player: object) -> list[object]:
+    army = _player_army(player)
+    return sorted(
+        [
+            unit
+            for unit in list(getattr(army, "units", []) or [])
+            if unit is not None and bool(getattr(unit, "deployed", True)) and _alive(unit)
+        ],
+        key=lambda unit: _entity_id(unit),
+    )
+
+
 def _enemy_units_for_player(game: object, player: object) -> list[object]:
     player_army = _player_army(player)
     enemies: list[object] = []
@@ -683,6 +1049,164 @@ def _enemy_units_for_player(game: object, player: object) -> list[object]:
             if unit is not None and bool(getattr(unit, "deployed", True)) and _alive(unit)
         )
     return sorted(enemies, key=lambda unit: _entity_id(unit))
+
+
+def _commander_target_analysis(unit: object) -> CommanderTargetAnalysis:
+    wounds = _unit_wounds_estimate(unit)
+    toughness = _unit_numeric_estimate(unit, "toughness", 4.0)
+    save = _unit_numeric_estimate(unit, "save", 7.0)
+    objective_control = _unit_objective_control_estimate(unit)
+    threat_score = _target_threat_score(unit)
+    return CommanderTargetAnalysis(
+        target_unit_id=_entity_id(unit),
+        threat_score=threat_score,
+        scoring_value=objective_control,
+        denial_value=float(objective_control + wounds * 0.1),
+        wounds_estimate=wounds,
+        toughness_estimate=toughness,
+        save_estimate=save,
+        objective_control_estimate=objective_control,
+        keywords=_unit_keywords(unit),
+        metadata={
+            "is_high_durability": bool(wounds >= 6.0 or toughness >= 8.0),
+            "is_vehicle_or_monster": _unit_has_any_keyword(unit, {"VEHICLE", "MONSTER"}),
+        },
+    )
+
+
+def _commander_unit_capability(
+    unit: object,
+    tier2_bundle: Tier2TaskBundle,
+) -> CommanderUnitCapability:
+    unit_id = _entity_id(unit)
+    task = tier2_bundle.tasks_by_unit_id.get(unit_id)
+    movement = _unit_numeric_estimate(unit, "movement", 6.0)
+    shooting_capability = _unit_expected_damage(unit, None, "ranged")
+    melee_capability = _unit_expected_damage(unit, None, "melee")
+    return CommanderUnitCapability(
+        unit_id=unit_id,
+        shooting_capability=shooting_capability,
+        melee_capability=melee_capability,
+        mobility_profile={
+            "movement_inches": movement,
+            "advance_inches_estimate": movement + 3.5,
+            "charge_threat_inches_estimate": movement + 7.0,
+        },
+        survivability_score=_unit_survivability_score(unit),
+        risk_profile=_risk_budget_for_tier(str(getattr(task, "compute_tier", "P1") or "P1")),
+        keywords=_unit_keywords(unit),
+        metadata={
+            "ranged_profile_count": int(len(_iter_weapon_profiles(unit, "ranged"))),
+            "melee_profile_count": int(len(_iter_weapon_profiles(unit, "melee"))),
+            "tier2_task_type": str(getattr(task, "task_type", "") or ""),
+        },
+    )
+
+
+def _commander_unit_target_analysis(
+    unit: object,
+    target_unit: object,
+    target_analysis: CommanderTargetAnalysis,
+) -> CommanderUnitTargetAnalysis:
+    unit_id = _entity_id(unit)
+    target_id = _entity_id(target_unit)
+    movement = _unit_numeric_estimate(unit, "movement", 6.0)
+    distance = _unit_distance_estimate(unit, target_unit)
+    max_range = _unit_max_ranged_range(unit)
+    half_range = max_range / 2.0 if max_range > 0.0 else 0.0
+    shooting_damage = _unit_expected_damage(unit, target_unit, "ranged")
+    melee_damage = _unit_expected_damage(unit, target_unit, "melee")
+    movement_to_los = 0.0
+    movement_to_half_range = 0.0
+    if max_range > 0.0:
+        movement_to_los = _clamp((movement + max_range - distance + 1.0) / max(1.0, max_range))
+    if half_range > 0.0:
+        movement_to_half_range = _clamp((movement + half_range - distance + 1.0) / max(1.0, half_range))
+    charge_feasibility = 0.0
+    if melee_damage > 0.0:
+        charge_feasibility = _clamp((movement + 7.0 - distance + 6.0) / 12.0)
+    priority_score = (
+        shooting_damage
+        + melee_damage
+        + movement_to_los * 0.25
+        + movement_to_half_range * 0.25
+        + charge_feasibility * 0.5
+        + target_analysis.threat_score * 0.05
+    )
+    return CommanderUnitTargetAnalysis(
+        unit_id=unit_id,
+        target_unit_id=target_id,
+        expected_shooting_damage=shooting_damage,
+        expected_melee_damage=melee_damage,
+        movement_to_los_feasibility=movement_to_los,
+        movement_to_half_range_feasibility=movement_to_half_range,
+        charge_feasibility=charge_feasibility,
+        priority_score=priority_score,
+        metadata={
+            "distance_estimate_inches": distance,
+            "max_ranged_range_inches": max_range,
+        },
+    )
+
+
+def _build_commander_analysis_snapshot(
+    *,
+    player: object,
+    enemy_units: list[object],
+    tier1_plan: Tier1Plan,
+    tier2_bundle: Tier2TaskBundle,
+    generation: int,
+) -> CommanderAnalysisSnapshot:
+    target_analysis = [
+        _commander_target_analysis(unit)
+        for unit in sorted(enemy_units, key=lambda enemy: _entity_id(enemy))
+        if _entity_id(unit)
+    ]
+    target_analysis = sorted(
+        target_analysis,
+        key=lambda target: (-float(target.threat_score), str(target.target_unit_id)),
+    )[:COMMANDER_ANALYSIS_MAX_TARGETS]
+
+    target_units_by_id = {
+        _entity_id(unit): unit
+        for unit in list(enemy_units or [])
+        if _entity_id(unit)
+    }
+    friendly_units = _friendly_units_for_player(player)[:COMMANDER_ANALYSIS_MAX_UNITS]
+    unit_capabilities = {
+        _entity_id(unit): _commander_unit_capability(unit, tier2_bundle)
+        for unit in friendly_units
+        if _entity_id(unit)
+    }
+
+    matrix_entries: list[CommanderUnitTargetAnalysis] = []
+    for unit in friendly_units:
+        unit_entries: list[CommanderUnitTargetAnalysis] = []
+        for target in target_analysis:
+            target_unit = target_units_by_id.get(str(target.target_unit_id))
+            if target_unit is None:
+                continue
+            unit_entries.append(_commander_unit_target_analysis(unit, target_unit, target))
+        matrix_entries.extend(
+            sorted(
+                unit_entries,
+                key=lambda entry: (-float(entry.priority_score), str(entry.target_unit_id)),
+            )[:COMMANDER_ANALYSIS_MAX_TARGETS_PER_UNIT]
+        )
+
+    return CommanderAnalysisSnapshot(
+        player_id=str(tier1_plan.player_id),
+        battle_round=int(tier1_plan.battle_round),
+        map_generation=int(generation),
+        target_analysis=target_analysis,
+        unit_capabilities=unit_capabilities,
+        unit_target_matrix=matrix_entries,
+        metadata={
+            "source": "battle_round_plan_build",
+            "friendly_unit_candidates": int(len(friendly_units)),
+            "enemy_target_candidates": int(len(enemy_units)),
+        },
+    )
 
 
 def _task_role(task_type: str) -> str:
@@ -775,6 +1299,13 @@ def build_battle_round_plan(
     game_map = getattr(game, "map", None)
     generation = int(getattr(game_map, "state_generation", 0) or 0)
     enemy_units = _enemy_units_for_player(game, player)
+    analysis_snapshot = _build_commander_analysis_snapshot(
+        player=player,
+        enemy_units=enemy_units,
+        tier1_plan=tier1_plan,
+        tier2_bundle=tier2_bundle,
+        generation=generation,
+    )
     priority_targets: list[TargetPriority] = []
     for enemy in enemy_units:
         enemy_id = _entity_id(enemy)
@@ -890,6 +1421,7 @@ def build_battle_round_plan(
         metadata={
             "tier1_plan_id": tier1_plan.plan_id,
             "tier2_plan_id": tier2_bundle.plan_id,
+            "analysis_snapshot": analysis_snapshot.to_dict(),
         },
     )
 
