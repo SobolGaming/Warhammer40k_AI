@@ -70,7 +70,7 @@ Implementation notes:
 
 ### PR 3 - Greedy Commander Assignment Planner
 
-Commit: `Add greedy commander assignments`
+Commit: `d2f3abc2 Add greedy commander assignments`
 
 Use the PR 2 analysis snapshot to populate meaningful `UnitBattleTask`,
 `TargetFirePlan`, `UnitFireAssignment`, `ChargeTargetAssignment`, and
