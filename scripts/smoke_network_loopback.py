@@ -106,13 +106,6 @@ async def _handle_session_event(session: NetworkGameSession, event, stats: Smoke
         command = dict((event.message.get("payload", {}) or {}).get("command", {}) or {})
         if str(command.get("kind", "") or "") == CMD_REQUEST_DECISION:
             stats.decision_requests += 1
-            payload = dict(command.get("payload", {}) or {})
-            decision = dict(payload.get("decision", {}) or {})
-            if str(decision.get("decision_type", "") or "") == DECISION_CHOOSE_PLAYER_COLOR:
-                await session.handle_message(event)
-                return
-        session.client.handle_message(event)
-        return
     await session.handle_message(event)
 
 
@@ -186,6 +179,7 @@ async def _ready_and_wait_for_start(
 
 async def _wait_for_setup_or_decision(
     sessions: list[NetworkGameSession],
+    server: NetworkServer,
     *,
     timeout: float,
     stats: SmokeStats,
@@ -193,6 +187,7 @@ async def _wait_for_setup_or_decision(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     initial_phases = [str(getattr(session.game, "setup_phase", "") or "") for session in sessions]
+    initial_snapshots = int(stats.snapshots)
     while loop.time() < deadline:
         for session in sessions:
             while True:
@@ -201,10 +196,14 @@ async def _wait_for_setup_or_decision(
                 except asyncio.TimeoutError:
                     break
                 await _handle_session_event(session, event, stats)
-        if any(_pending_harmless_decisions(session) for session in sessions):
+        if _select_harmless_decision(sessions, server) is not None:
             return
         current_phases = [str(getattr(session.game, "setup_phase", "") or "") for session in sessions]
-        if current_phases != initial_phases:
+        if (
+            current_phases != initial_phases
+            and stats.snapshots > initial_snapshots
+            and not _server_pending_harmless_decisions(server)
+        ):
             return
         await asyncio.sleep(0.05)
     raise TimeoutError("Timed out waiting for setup broadcasts or a decision request.")
@@ -230,19 +229,23 @@ def _local_has_decision(session: NetworkGameSession, decision_id: str) -> bool:
     return any(str(getattr(request, "decision_id", "") or "") == decision_id for request in _pending_decisions(session))
 
 
-def _select_harmless_decision(
-    sessions: list[NetworkGameSession],
-    server: NetworkServer,
-) -> tuple[NetworkGameSession, object] | None:
+def _server_pending_harmless_decisions(server: NetworkServer) -> list[object]:
     server_game = server.game
     server_queue = getattr(server_game, "decision_queue", None) if server_game is not None else None
     if server_queue is None or not hasattr(server_queue, "list"):
-        return None
-    server_requests = [
+        return []
+    return [
         request
         for request in list(server_queue.list() or [])
         if str(getattr(request, "decision_type", "") or "") == DECISION_CHOOSE_PLAYER_COLOR
     ]
+
+
+def _select_harmless_decision(
+    sessions: list[NetworkGameSession],
+    server: NetworkServer,
+) -> tuple[NetworkGameSession, object] | None:
+    server_requests = _server_pending_harmless_decisions(server)
     for session in sessions:
         player_id = str(session.client.player_id or "")
         for request in server_requests:
@@ -373,7 +376,7 @@ async def _run_smoke(args: argparse.Namespace) -> str:
 
         await _ready_and_wait_for_start(sessions, timeout=timeout, stats=stats)
         _assert_sessions_loaded(sessions)
-        await _wait_for_setup_or_decision(sessions, timeout=timeout, stats=stats)
+        await _wait_for_setup_or_decision(sessions, server, timeout=timeout, stats=stats)
         resolved = await _resolve_one_decision_if_available(sessions, server, stats)
         await _drain_for(
             sessions,

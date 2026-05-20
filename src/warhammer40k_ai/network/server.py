@@ -11,6 +11,8 @@ from ..engine.command_channel import NetworkCommandChannel
 from ..battlefield.map import Map
 from ..engine.event_log import DeterministicEventLog
 from ..engine.command_kinds import (
+    CMD_ADVANCE_SETUP_PHASE,
+    CMD_EXECUTE_SETUP_PHASE,
     CMD_REQUEST_DECISION,
     CMD_RESOLVE_DECISION,
 )
@@ -70,6 +72,19 @@ from .lobby import (
 from .messages import CommandMessage, ErrorMessage, EventMessage, ResyncMessage, SnapshotMessage, parse_message
 from .protocol import build_resync_message, build_snapshot_message, handle_command_message
 from .transport import TransportServer, build_server_ssl_context
+
+
+_SERVER_SNAPSHOT_SYNC_COMMANDS = {
+    CMD_ADVANCE_SETUP_PHASE,
+    CMD_EXECUTE_SETUP_PHASE,
+    CMD_RESOLVE_DECISION,
+}
+
+
+def _server_command_requires_snapshot_sync(command: GameCommand | None) -> bool:
+    if command is None:
+        return False
+    return str(getattr(command, "kind", "") or "") in _SERVER_SNAPSHOT_SYNC_COMMANDS
 
 
 class NetworkServer:
@@ -442,11 +457,15 @@ class NetworkServer:
                     )
             except Exception:
                 broadcast_command = command
+        snapshot_sync = bool(broadcast and _server_command_requires_snapshot_sync(command))
         if broadcast and not had_resync and not had_error:
-            await self._broadcast_game_message(CommandMessage(command=broadcast_command))
+            if snapshot_sync:
+                await self._broadcast_snapshot()
+            else:
+                await self._broadcast_game_message(CommandMessage(command=broadcast_command))
         for result in results:
             if isinstance(result, EventMessage):
-                if broadcast:
+                if broadcast and not snapshot_sync:
                     await self._broadcast_game_message(result)
             elif isinstance(result, ResyncMessage):
                 await self._broadcast_game_message(result)
@@ -740,7 +759,7 @@ class NetworkServer:
                 return
             await asyncio.sleep(poll_interval)
 
-    async def _broadcast_resync_all(self, *, reason: str | None = None) -> None:
+    async def _broadcast_resync_all(self, reason: str | None = None) -> None:
         if self._game is None:
             return
         msg = build_resync_message(self._game, since_event_id=0, reason=reason)

@@ -65,6 +65,13 @@ Local runtime parity note:
   to run the same driver-managed pre-formation setup phases in-process
   (no websocket loopback).
 
+Network sync note:
+- The server-owned setup autosteps below are applied only on the authoritative server.
+  After each server-generated `CMD_RESOLVE_DECISION`, `CMD_EXECUTE_SETUP_PHASE`, or
+  `CMD_ADVANCE_SETUP_PHASE`, clients receive a full `snapshot` instead of replaying
+  those commands locally. Clients still receive and apply `CMD_REQUEST_DECISION`
+  messages so human prompts stay explicit and serializable.
+
 1. MUSTER_ARMIES → server advances immediately once both players are ready.
 2. SELECT_MISSION_OBJECTIVES
    - Server emits `CHOOSE_MISSION`, then resolves that request using the runtime's
@@ -72,12 +79,15 @@ Local runtime parity note:
    - Auto-random currently stays on the default `chapter_approved_2025_2026`
      pack, even though the authoritative UI can expose additional eligible
      provisional packs.
-   - Server sends `CMD_REQUEST_DECISION`, then `CMD_RESOLVE_DECISION`, then
-     `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`.
+   - Server sends `CMD_REQUEST_DECISION`. The server-selected `CMD_RESOLVE_DECISION`,
+     `CMD_EXECUTE_SETUP_PHASE`, and `CMD_ADVANCE_SETUP_PHASE` are reflected to
+     clients as authoritative snapshots.
 3. CREATE_BATTLEFIELD
-   - Server sends `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`.
+   - Server applies `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`,
+     and reflects each transition as an authoritative snapshot.
 4. DETERMINE_ATTACKER_AND_DEFENDER
-   - Server sends `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`.
+   - Server applies `CMD_EXECUTE_SETUP_PHASE`, then `CMD_ADVANCE_SETUP_PHASE`,
+     and reflects each transition as an authoritative snapshot.
 5. DECLARE_BATTLE_FORMATIONS
    - Server queues decision requests and waits (see next section).
 
@@ -317,8 +327,11 @@ If no reactions are available, the server advances phases immediately.
 
 1. Client sends `CommandMessage` (e.g., `CMD_REQUEST_DECISION`, `CMD_RESOLVE_DECISION`).
 2. Server validates and applies the command.
-3. Server broadcasts the command (or buffers it, in formation phase).
-4. Engine emits `EventMessage` updates that clients apply to their local state.
+3. Server broadcasts the command (or buffers it, in formation phase). Server-generated
+   setup-driver transitions are synchronized by a full `SnapshotMessage` instead of
+   raw command replay.
+4. Engine emits `EventMessage` updates that clients apply to their local state, except
+   when the state was already included in a setup snapshot.
 5. On resync, server sends a `ResyncMessage` with events since an event id
    (or full snapshot when no cursor is provided).
 
