@@ -31,7 +31,7 @@ Runtime guarantees:
 - Fight-phase target selection, melee weapon declaration, multi-target melee allocation, preview pile-in decisions, and preview consolidate decisions are emitted from the authoritative engine path in both UI and headless execution; replay/telemetry should therefore capture the same fight decision sequence regardless of controller type.
 - Fight-phase `SELECT_UNIT` and `MOVE_UNIT` records may include `request_context.fight_scheduler`, `request_context.fight_stage_boundary`, and `request_context.fight_move_decision_categories`. These fields preserve scheduler stage, entitlement snapshots, pending pile-in/consolidate queues, `must_fight_next` constraints, and consolidate-to-engage/objective categories for replay and AI ranking without introducing faction-specific decision types.
 - Movement-phase unit activation is exhaustive for alive battlefield units that are not embarked or in reserves. Explicit movement activations record move, advance, fall back, or remain-stationary choices; manual phase-end attempts mark unresolved units that can legally Remain Stationary as stationary and keep the phase open for units that still require a non-stationary movement activation. Reserves arrivals and disembarks from moved transports are marked as completed Normal moves.
-- In-memory retention is bounded: default `1024` records (`WH40K_DECISION_RECORD_MAX`), oldest-first pruning, with `dropped_records` tracking.
+- In-memory retention is bounded: default `4096` records (`WH40K_DECISION_RECORD_MAX`), oldest-first pruning, with `dropped_records` tracking.
 
 Replay/relabel provenance surfaces inside `omniscient_state`:
 - `army_build_state` including `army_build_descriptor_id`, detachments, attachment bindings, and Force Disposition

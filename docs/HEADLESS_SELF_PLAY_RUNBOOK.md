@@ -208,6 +208,36 @@ uv run python scripts/run_headless_self_play.py \
 The optional machine-readable report records profile artifact paths only; timing details stay in the profile logs.
 See `docs/PROFILING.md` for report contents and section timer names.
 
+General profile evaluation:
+- `scripts/run_general_profile_eval.py` preserves the reusable World Eaters vs
+  Aeldari General-profile harness used for strategy experiments.
+- The profile knobs live in
+  `data/general_profiles/we_vs_aeldari_general_profiles.json`.
+- The runner wraps the existing deterministic headless self-play path and
+  applies selected profile overrides to Player 1's cached `GeneralPlan` before
+  deployment, pre-battle, and commander order bundles are compiled.
+- Normal engine runs are unaffected; the profile runner patches the plan only
+  inside its local evaluation context.
+- The runner sets `WH40K_DECISION_RECORD_MAX` to `4096` by default so profile
+  runs retain enough in-memory DecisionRecords for later inspection.
+
+Example:
+
+```bash
+uv run python scripts/run_general_profile_eval.py \
+  --profiles data/general_profiles/we_vs_aeldari_general_profiles.json \
+  --output-dir data/general_profile_eval/current \
+  --profile-lines 80
+```
+
+Useful variants:
+
+```bash
+uv run python scripts/run_general_profile_eval.py --list-profiles --json
+uv run python scripts/run_general_profile_eval.py --profile-id round2_hammer --write-records
+uv run python scripts/run_general_profile_eval.py --no-profile --decision-record-max 4096
+```
+
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:
 

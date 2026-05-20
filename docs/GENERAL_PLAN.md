@@ -98,3 +98,20 @@ The General layer is a policy ledger and audit context. It must not:
 - mutate game state.
 
 The engine remains the source of legality and mutation authority.
+
+## Profile Evaluation Harness
+
+Reusable General strategy profiles are stored in
+`data/general_profiles/we_vs_aeldari_general_profiles.json`. The evaluation
+runner is `scripts/run_general_profile_eval.py`.
+
+The runner is intentionally outside the core engine path. It temporarily
+overrides Player 1's cached `GeneralPlan` with profile-specific round
+directives, resource policy, CP policy, target-order overrides, unit-order
+overrides, and transport doctrine before downstream deployment/pre-battle/
+commander order bundles compile. It does not patch rankers, legality checks,
+candidate masks, or engine mutation.
+
+By default, the harness sets `WH40K_DECISION_RECORD_MAX=4096` for the process so
+strategy comparisons do not truncate normal full-game records at the older
+small cap.

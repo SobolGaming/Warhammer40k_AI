@@ -530,6 +530,15 @@ def test_decision_record_store_prunes_old_records_when_limit_reached() -> None:
     assert remaining_ids == decision_ids[-2:]
 
 
+def test_decision_record_default_retention_limit_is_4096(monkeypatch) -> None:
+    monkeypatch.delenv("WH40K_DECISION_RECORD_MAX", raising=False)
+
+    game, _player = _build_game()
+
+    assert decision_record_module._decision_record_limit() == 4096
+    assert game.decision_record_store.max_records == 4096
+
+
 def test_decision_record_game_id_is_stable_within_a_single_game() -> None:
     game, player = _build_game()
 

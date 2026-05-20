@@ -1,0 +1,435 @@
+{
+  "schema_version": "1.0",
+  "default_seed": 2026052000,
+  "default_player1_army": "army_lists/WE_Daemonkin_2000.txt",
+  "default_player2_army": "army_lists/Aeldari_Warhost_2000.txt",
+  "description": "Reusable World Eaters vs Aeldari General profile evaluation set.",
+  "profiles": [
+    {
+      "description": "Default stage/push/preserve General scaffold.",
+      "id": "balanced_default",
+      "index": 1,
+      "mode": "default"
+    },
+    {
+      "commit_unit_count": 6,
+      "cp_policy_overrides": {
+        "profile_cp_spend_posture": "early_commit",
+        "reserve_for_defensive_reaction": 0,
+        "reserve_for_interrupt_or_overwatch": 0
+      },
+      "description": "WE pushes from round 1, authorizes scarce resources early, and sends melee-first units at the top enemy threat.",
+      "id": "alpha_pressure",
+      "index": 2,
+      "mode": "alpha",
+      "resource_policy": {
+        "authorization_threshold": 0.5,
+        "fallback_policy": "spend_for_alpha_pressure",
+        "reserved_for_round": 1,
+        "status": "authorized",
+        "target_bound_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability"
+        ],
+        "target_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability",
+          "stratagem",
+          "cp_pool"
+        ]
+      },
+      "round_directives": [
+        {
+          "battle_round": 1,
+          "cp_reserve_target": 0,
+          "posture": "push",
+          "preserve_priority": 0.1,
+          "push_priority": 0.95,
+          "scoring_preservation_priority": 0.3,
+          "stage_priority": 0.05
+        },
+        {
+          "battle_round": 2,
+          "cp_reserve_target": 0,
+          "posture": "push",
+          "preserve_priority": 0.1,
+          "push_priority": 0.95,
+          "scoring_preservation_priority": 0.3,
+          "stage_priority": 0.05
+        },
+        {
+          "battle_round": 3,
+          "cp_reserve_target": 0,
+          "posture": "push",
+          "preserve_priority": 0.1,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.3,
+          "stage_priority": 0.05
+        },
+        {
+          "battle_round": 4,
+          "cp_reserve_target": 0,
+          "posture": "push",
+          "preserve_priority": 0.1,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.3,
+          "stage_priority": 0.05
+        },
+        {
+          "battle_round": 5,
+          "cp_reserve_target": 0,
+          "posture": "preserve",
+          "preserve_priority": 0.45,
+          "push_priority": 0.25,
+          "scoring_preservation_priority": 0.3,
+          "stage_priority": 0.05
+        }
+      ],
+      "strategic_posture": "push",
+      "target_order": {
+        "allowed_resource_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability",
+          "stratagem"
+        ],
+        "base_priority": 0.98,
+        "count": 5,
+        "desired_kill_probability_first": 0.88,
+        "desired_kill_probability_rest": 0.75,
+        "intent_first_count": 2,
+        "max_overkill_wounds": 1.5,
+        "min_priority": 0.55,
+        "preferred_phase": "charge",
+        "priority_decay": 0.08,
+        "target_priority_mode": "threat"
+      },
+      "unit_order": {
+        "charge_intent": "planned_charge",
+        "constraint_mode": "constrain",
+        "desired_action": "advance",
+        "fight_intent": "planned_fight",
+        "intentionally_accept_shooting_ineligible": true,
+        "intentionally_skip_shooting": true,
+        "movement_intent": "advance_to_charge_lane",
+        "order_strength": 0.9,
+        "role": "melee_first",
+        "shooting_intent": "skip_for_charge"
+      }
+    },
+    {
+      "commit_unit_count": 6,
+      "cp_policy_overrides": {
+        "profile_cp_spend_posture": "round_2_hammer",
+        "reserve_for_defensive_reaction": 1,
+        "reserve_for_interrupt_or_overwatch": 1
+      },
+      "description": "WE stages round 1, preserves CP/resources for a round 2-3 push, and times transports for round 2 delivery.",
+      "id": "round2_hammer",
+      "index": 3,
+      "mode": "hammer",
+      "resource_policy": {
+        "authorization_threshold": 0.65,
+        "fallback_policy": "reserve_for_round_2_hammer",
+        "reserved_for_round": 2,
+        "status": "reserved",
+        "target_bound_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability"
+        ],
+        "target_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability",
+          "stratagem",
+          "cp_pool"
+        ]
+      },
+      "round_directives": [
+        {
+          "battle_round": 1,
+          "cp_reserve_target": 1,
+          "posture": "stage",
+          "preserve_priority": 0.3,
+          "push_priority": 0.2,
+          "scoring_preservation_priority": 0,
+          "stage_priority": 0.95
+        },
+        {
+          "battle_round": 2,
+          "cp_reserve_target": 0,
+          "posture": "push",
+          "preserve_priority": 0.2,
+          "push_priority": 0.98,
+          "scoring_preservation_priority": 0,
+          "stage_priority": 0.15
+        },
+        {
+          "battle_round": 3,
+          "cp_reserve_target": 0,
+          "posture": "push",
+          "preserve_priority": 0.25,
+          "push_priority": 0.9,
+          "scoring_preservation_priority": 0,
+          "stage_priority": 0.1
+        },
+        {
+          "battle_round": 4,
+          "cp_reserve_target": 1,
+          "posture": "preserve",
+          "preserve_priority": 0.7,
+          "preserve_unit_count": 1,
+          "push_priority": 0.5,
+          "scoring_preservation_priority": 0.75,
+          "stage_priority": 0.1
+        },
+        {
+          "battle_round": 5,
+          "cp_reserve_target": 1,
+          "posture": "preserve",
+          "preserve_priority": 0.95,
+          "preserve_unit_count": 2,
+          "push_priority": 0.25,
+          "scoring_preservation_priority": 0.95,
+          "stage_priority": 0.05
+        }
+      ],
+      "strategic_posture": "stage",
+      "target_order": {
+        "allowed_resource_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability",
+          "stratagem"
+        ],
+        "base_priority": 0.98,
+        "count": 5,
+        "desired_kill_probability_first": 0.88,
+        "desired_kill_probability_rest": 0.75,
+        "intent_first_count": 2,
+        "max_overkill_wounds": 1.5,
+        "min_priority": 0.55,
+        "preferred_phase": "charge",
+        "priority_decay": 0.08,
+        "target_priority_mode": "threat"
+      },
+      "transport_policy_overrides": {
+        "desired_round": 2,
+        "preserve_passengers": true,
+        "priority": 0.95,
+        "protected_until_round": 2
+      },
+      "unit_order": {
+        "charge_intent": "planned_charge",
+        "constraint_mode": "constrain",
+        "desired_action": "advance",
+        "fight_intent": "planned_fight",
+        "intentionally_accept_shooting_ineligible": true,
+        "intentionally_skip_shooting": true,
+        "movement_intent": "advance_to_charge_lane",
+        "order_strength": 0.9,
+        "role": "melee_first",
+        "shooting_intent": "skip_for_charge"
+      }
+    },
+    {
+      "commit_unit_count": 6,
+      "cp_policy_overrides": {
+        "profile_cp_spend_posture": "objective_denial",
+        "reserve_for_defensive_reaction": 1,
+        "reserve_for_interrupt_or_overwatch": 1
+      },
+      "description": "WE prioritizes Aeldari scoring/OC pieces over raw threat and sends fast melee to deny objectives.",
+      "id": "objective_denial",
+      "index": 4,
+      "mode": "denial",
+      "resource_policy": {
+        "authorization_threshold": 0.7,
+        "fallback_policy": "preserve_for_objective_denial_windows",
+        "reserved_for_round": 2,
+        "status": "reserved",
+        "target_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability",
+          "stratagem",
+          "cp_pool"
+        ]
+      },
+      "round_directives": [
+        {
+          "battle_round": 1,
+          "cp_reserve_target": 1,
+          "posture": "push",
+          "preserve_priority": 0.2,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.85,
+          "stage_priority": 0.2
+        },
+        {
+          "battle_round": 2,
+          "cp_reserve_target": 1,
+          "posture": "push",
+          "preserve_priority": 0.2,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.85,
+          "stage_priority": 0.2
+        },
+        {
+          "battle_round": 3,
+          "cp_reserve_target": 1,
+          "posture": "push",
+          "preserve_priority": 0.2,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.85,
+          "stage_priority": 0.2
+        },
+        {
+          "battle_round": 4,
+          "cp_reserve_target": 1,
+          "posture": "preserve",
+          "preserve_priority": 0.65,
+          "preserve_unit_count": 1,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.85,
+          "stage_priority": 0.2
+        },
+        {
+          "battle_round": 5,
+          "cp_reserve_target": 1,
+          "posture": "preserve",
+          "preserve_priority": 0.65,
+          "preserve_unit_count": 1,
+          "push_priority": 0.75,
+          "scoring_preservation_priority": 0.85,
+          "stage_priority": 0.2
+        }
+      ],
+      "strategic_posture": "push",
+      "target_order": {
+        "allowed_resource_kinds": [],
+        "base_priority": 0.98,
+        "count": 5,
+        "desired_kill_probability_first": 0.88,
+        "desired_kill_probability_rest": 0.75,
+        "intent_first_count": 2,
+        "max_overkill_wounds": 1,
+        "min_priority": 0.55,
+        "preferred_phase": "charge",
+        "priority_decay": 0.08,
+        "target_priority_mode": "objective_denial"
+      },
+      "unit_order": {
+        "charge_intent": "planned_charge",
+        "constraint_mode": "constrain",
+        "desired_action": "advance",
+        "fight_intent": "planned_fight",
+        "intentionally_accept_shooting_ineligible": true,
+        "intentionally_skip_shooting": true,
+        "movement_intent": "advance_to_charge_lane",
+        "order_strength": 0.9,
+        "role": "melee_first",
+        "shooting_intent": "skip_for_charge"
+      }
+    },
+    {
+      "commit_unit_count": 4,
+      "cp_policy_overrides": {
+        "profile_cp_spend_posture": "late_preserve",
+        "reserve_for_defensive_reaction": 2,
+        "reserve_for_interrupt_or_overwatch": 2
+      },
+      "description": "WE protects high-value units and scarce resources, accepting lower early aggression for late scoring posture.",
+      "id": "late_preserve",
+      "index": 5,
+      "mode": "preserve",
+      "preserve_unit_count": 3,
+      "resource_policy": {
+        "authorization_threshold": 0.95,
+        "fallback_policy": "preserve_for_late_game",
+        "reserved_for_round": 4,
+        "status": "reserved",
+        "target_kinds": [
+          "one_shot_weapon",
+          "once_per_battle_ability",
+          "stratagem",
+          "cp_pool"
+        ]
+      },
+      "round_directives": [
+        {
+          "battle_round": 1,
+          "cp_reserve_target": 2,
+          "posture": "stage",
+          "preserve_priority": 0.8,
+          "preserve_unit_count": 2,
+          "push_priority": 0.15,
+          "scoring_preservation_priority": 0.7,
+          "stage_priority": 0.9
+        },
+        {
+          "battle_round": 2,
+          "cp_reserve_target": 2,
+          "posture": "stage",
+          "preserve_priority": 0.75,
+          "preserve_unit_count": 2,
+          "push_priority": 0.35,
+          "scoring_preservation_priority": 0.75,
+          "stage_priority": 0.75
+        },
+        {
+          "battle_round": 3,
+          "cp_reserve_target": 1,
+          "posture": "push",
+          "preserve_priority": 0.55,
+          "preserve_unit_count": 1,
+          "push_priority": 0.7,
+          "scoring_preservation_priority": 0.8,
+          "stage_priority": 0.25
+        },
+        {
+          "battle_round": 4,
+          "cp_reserve_target": 1,
+          "posture": "preserve",
+          "preserve_priority": 0.95,
+          "preserve_unit_count": 3,
+          "push_priority": 0.45,
+          "scoring_preservation_priority": 0.95,
+          "stage_priority": 0.1
+        },
+        {
+          "battle_round": 5,
+          "cp_reserve_target": 1,
+          "posture": "preserve",
+          "preserve_priority": 1,
+          "preserve_unit_count": 3,
+          "push_priority": 0.25,
+          "scoring_preservation_priority": 1,
+          "stage_priority": 0.05
+        }
+      ],
+      "strategic_posture": "stage",
+      "target_order": {
+        "allowed_resource_kinds": [],
+        "base_priority": 0.98,
+        "count": 5,
+        "desired_kill_probability_first": 0.88,
+        "desired_kill_probability_rest": 0.75,
+        "intent_first_count": 2,
+        "max_overkill_wounds": 1.5,
+        "min_priority": 0.55,
+        "preferred_phase": "shooting",
+        "priority_decay": 0.08,
+        "target_priority_mode": "threat"
+      },
+      "unit_order": {
+        "charge_intent": "planned_charge",
+        "constraint_mode": "constrain",
+        "desired_action": "normal_move",
+        "fight_intent": "planned_fight",
+        "intentionally_accept_shooting_ineligible": false,
+        "intentionally_skip_shooting": false,
+        "movement_intent": "stage_for_counterpunch",
+        "order_strength": 0.65,
+        "role": "melee_first",
+        "shooting_intent": "opportunistic"
+      }
+    }
+  ]
+}

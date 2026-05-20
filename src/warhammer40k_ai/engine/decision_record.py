@@ -432,11 +432,11 @@ def _record_validation_enabled() -> bool:
 
 
 def _decision_record_limit() -> int:
-    raw = str(os.getenv("WH40K_DECISION_RECORD_MAX", "1024") or "1024").strip()
+    raw = str(os.getenv("WH40K_DECISION_RECORD_MAX", "4096") or "4096").strip()
     try:
         limit = int(raw)
     except ValueError:
-        limit = 1024
+        limit = 4096
     return max(0, limit)
 
 
