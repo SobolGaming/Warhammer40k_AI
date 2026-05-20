@@ -289,6 +289,7 @@ class Game(metaclass=GameFacadeMeta):
         self._command_context_depth = 0
         self.decision_queue = DecisionQueue()
         self.random_source = RandomSource()
+        self.random_source.attach_game(self)
         self._ruleset_bundle: RulesetBundle | None = None
         if ruleset_bundle is None:
             ruleset_bundle = RulesetBundle.from_values(

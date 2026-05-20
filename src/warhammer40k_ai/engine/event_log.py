@@ -24,6 +24,15 @@ _ID_KEY_EXACT = {
     "player_id",
 }
 
+_HISTORY_PRESERVE_ID_KEYS = {
+    "action_id",
+    "action_ids",
+    "chosen_action_id",
+    "chosen_action_ids",
+    "selected_action_id",
+    "selected_action_ids",
+}
+
 
 def _is_id_key(key: str | None) -> bool:
     if key is None:
@@ -38,15 +47,22 @@ def _is_id_key(key: str | None) -> bool:
     return False
 
 
-def _normalize_ids(value: Any, id_map: dict[str, str], *, key: str | None = None) -> Any:
+def _normalize_ids(
+    value: Any,
+    id_map: dict[str, str],
+    *,
+    key: str | None = None,
+    preserve_keys: set[str] | frozenset[str] | None = None,
+) -> Any:
+    preserved = preserve_keys or frozenset()
     if isinstance(value, dict):
         normalized: dict[str, Any] = {}
         for k, v in value.items():
-            normalized[str(k)] = _normalize_ids(v, id_map, key=str(k))
+            normalized[str(k)] = _normalize_ids(v, id_map, key=str(k), preserve_keys=preserved)
         return normalized
     if isinstance(value, list):
-        return [_normalize_ids(v, id_map, key=key) for v in value]
-    if isinstance(value, str) and _is_id_key(key):
+        return [_normalize_ids(v, id_map, key=key, preserve_keys=preserved) for v in value]
+    if isinstance(value, str) and key not in preserved and _is_id_key(key):
         if value not in id_map:
             id_map[value] = f"id_{len(id_map) + 1}"
         return id_map[value]
@@ -110,6 +126,7 @@ class DeterministicEventLog:
         self.dropped_through_event_id = 0
         self._cursor = 0
         self._attached_game: object | None = None
+        self._history_hash_cache: dict[tuple[str, int, int, int, bool], str] = {}
         if self.events:
             self.next_id = max(e.event_id for e in self.events) + 1
         else:
@@ -184,6 +201,7 @@ class DeterministicEventLog:
 
     def set_mode(self, mode: str) -> None:
         self.mode = str(mode or "record").lower()
+        self._history_hash_cache.clear()
         if self.mode == "replay":
             self._cursor = 0
 
@@ -209,6 +227,7 @@ class DeterministicEventLog:
         self.events.append(event)
         self._prune_overflow()
         self.next_id += 1
+        self._history_hash_cache.clear()
         return event
 
     def compute_hash(self, *, normalize_ids: bool = True) -> str:
@@ -218,6 +237,35 @@ class DeterministicEventLog:
         blob = json.dumps(events, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
+    def compute_history_hash(self, *, normalize_ids: bool = True) -> str:
+        end_index = int(self._cursor) if self.mode == "replay" else len(self.events)
+        events = list(self.events[:end_index])
+        return self._hash_history_events(events, normalize_ids=normalize_ids)
+
+    def _hash_history_events(self, events: list[GameEvent], *, normalize_ids: bool) -> str:
+        end_index = len(events)
+        cache_key = (
+            "prefix",
+            int(end_index),
+            int(self.dropped_through_event_id or 0),
+            len(self.events),
+            bool(normalize_ids),
+        )
+        cached = self._history_hash_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        event_dicts = [e.to_dict() for e in list(events or [])]
+        if normalize_ids:
+            event_dicts = _normalize_ids(event_dicts, {}, preserve_keys=_HISTORY_PRESERVE_ID_KEYS)
+        payload = {
+            "dropped_through_event_id": int(self.dropped_through_event_id or 0),
+            "events": event_dicts,
+        }
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        self._history_hash_cache[cache_key] = digest
+        return digest
+
     def consume(self, expected_type: str) -> GameEvent:
         if self.mode != "replay":
             raise RuntimeError("consume() requires replay mode.")
@@ -225,6 +273,7 @@ class DeterministicEventLog:
         if event.event_type != expected_type:
             raise ValueError(f"Expected event '{expected_type}', got '{event.event_type}'.")
         self._cursor += 1
+        self._history_hash_cache.clear()
         return event
 
     def tail(self, *, since_event_id: int | None = None) -> List[GameEvent]:
@@ -243,6 +292,7 @@ class DeterministicEventLog:
         self.events = [e for e in self.events if int(e.event_id) > event_id]
         if event_id > self.dropped_through_event_id:
             self.dropped_through_event_id = event_id
+        self._history_hash_cache.clear()
         return event_id
 
     def serialize_events(self, *, since_event_id: int | None = None) -> List[dict]:
@@ -293,6 +343,7 @@ class DeterministicEventLog:
         if validate_payload and event.payload != payload:
             raise ValueError(f"Payload mismatch for event '{event_type}'.")
         self._cursor += 1
+        self._history_hash_cache.clear()
         return event
 
     def _on_roll_made(self, **kwargs: Any) -> None:

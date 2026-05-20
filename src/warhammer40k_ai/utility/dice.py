@@ -37,24 +37,44 @@ _PREFIX_MODIFIER_DICE_RE = re.compile(
 _SUPPRESS_GET_ROLL_REQUESTS: ContextVar[bool] = ContextVar("_SUPPRESS_GET_ROLL_REQUESTS", default=False)
 
 
+def _rng_randint(rng: object, a: int, b: int, *, context: dict | None = None) -> int:
+    randint = getattr(rng, "randint")
+    try:
+        return int(randint(int(a), int(b), context=context))
+    except TypeError:
+        return int(randint(int(a), int(b)))
+
+
 def get_dice_roll(size: int = 6) -> int:
     game = get_active_game()
     if game is not None:
         event_log = getattr(game, "event_log", None)
         if event_log is not None:
             if getattr(event_log, "mode", "record") == "replay":
-                event = event_log.consume("dice_roll")
-                value = int(event.payload.get("value", 0) or 0)
                 rng = getattr(game, "random_source", None)
                 if rng is not None:
-                    expected = int(rng.randint(1, size))
-                    if expected != value:
-                        raise ValueError(
-                            f"Replay dice roll mismatch: expected {expected}, got {value}."
-                        )
+                    _rng_randint(
+                        rng,
+                        1,
+                        size,
+                        context={
+                            "kind": "legacy_dice_roll",
+                            "faces": int(size),
+                        },
+                    )
+                event = event_log.consume("dice_roll")
+                value = int(event.payload.get("value", 0) or 0)
                 return value
             roll_context = get_roll_context()
-            value = int(getattr(game, "random_source").randint(1, size))
+            value = _rng_randint(
+                getattr(game, "random_source"),
+                1,
+                size,
+                context={
+                    "kind": "legacy_dice_roll",
+                    "faces": int(size),
+                },
+            )
             event_log.record(
                 "dice_roll",
                 payload={
@@ -64,7 +84,12 @@ def get_dice_roll(size: int = 6) -> int:
                 },
             )
             return value
-        return int(getattr(game, "random_source").randint(1, size))
+        return _rng_randint(
+            getattr(game, "random_source"),
+            1,
+            size,
+            context={"kind": "legacy_dice_roll", "faces": int(size)},
+        )
     return RNG.randint(1, size)
 
 
@@ -81,7 +106,12 @@ def _roll_untracked_die(size: int, game: object | None = None) -> int:
     if game is not None:
         rng = getattr(game, "random_source", None)
         if rng is not None:
-            return int(rng.randint(1, size))
+            return _rng_randint(
+                rng,
+                1,
+                size,
+                context={"kind": "untracked_die", "faces": int(size), "roll_context": get_roll_context()},
+            )
     return int(RNG.randint(1, size))
 
 

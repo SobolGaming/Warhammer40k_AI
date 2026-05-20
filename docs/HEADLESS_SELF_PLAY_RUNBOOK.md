@@ -103,7 +103,7 @@ Replay-only evaluation:
 
 Throughput controls:
 - `--workers <N>` runs games in parallel processes.
-- `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) across runs.
+- `--seed-base <S>` makes per-game RNG deterministic (`S + game_index`) for the same action/event history across runs. Divergent branches derive later dice from the updated event-history prefix, so a future die value observed in one branch is not reused as the next stream value in another branch.
 - `--reserve-policy forced_only` avoids ordinary optional reserve declarations (default; faster and more stable), but can still reserve validated oversized/Titanic overflow units when too many large footprints would otherwise fail deployment.
 - `--max-reserves-arrival-seconds <T>` sizes the deterministic per-unit reserve-arrival work budget (default: `10`; retained as a CLI compatibility name). Wall-clock profiling overhead no longer changes how many reserve-arrival anchors are searched.
 

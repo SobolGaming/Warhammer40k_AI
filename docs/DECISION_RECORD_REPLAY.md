@@ -94,8 +94,26 @@ Expected strict failure modes:
 
 These failures are intentional and are used to detect replay drift.
 
+## Branch-Scoped RNG
+
+Game-attached randomness is deterministic for the same seed and the same consumed
+event-history prefix, but it is not a global stream whose future values can be
+reused across divergent branches. Dice and other game random draws derive their
+local RNG from:
+
+- the game seed,
+- the public deterministic event-history hash up to the draw,
+- the random operation/context, and
+- a per-operation/context counter.
+
+This keeps replay and same-history reproduction stable while preventing
+counterfactual training branches from learning that a future roll observed in a
+baseline line will still be the next roll after a different action choice.
+Strict replay treats recorded dice/roll events as authoritative outcomes rather
+than validating them by advancing an RNG stream.
+
 Retention note:
-- Runtime in-memory `DecisionRecordStore` is bounded (default `1024` records). Export records you need for long-horizon replay before pruning if your match exceeds that window.
+- Runtime in-memory `DecisionRecordStore` is bounded (default `4096` records). Export records you need for long-horizon replay before pruning if your match exceeds that window.
 
 ## Cross-Version Relabel
 

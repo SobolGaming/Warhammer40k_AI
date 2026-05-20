@@ -119,6 +119,14 @@ def _clamp_die(value: int, faces: int) -> int:
     return max(low, min(high, int(value or 0)))
 
 
+def _rng_randint(rng: object, a: int, b: int, *, context: dict) -> int:
+    randint = getattr(rng, "randint")
+    try:
+        return int(randint(int(a), int(b), context=context))
+    except TypeError:
+        return int(randint(int(a), int(b)))
+
+
 def _map_raw_d6_to_d3(raw_value: int) -> int:
     raw = _clamp_die(raw_value, 6)
     return int((raw + 1) // 2)
@@ -275,7 +283,15 @@ class DiceRollManager:
         self.next_roll_id += 1
         return rid
 
-    def _next_roll_outcome(self, state: DiceRollState, faces: int, game: object) -> dict:
+    def _next_roll_outcome(
+        self,
+        state: DiceRollState,
+        faces: int,
+        game: object,
+        *,
+        die_index: int | None = None,
+        die_id: str | None = None,
+    ) -> dict:
         uses_d3_mapping = _uses_d3_from_d6(dict(getattr(state, "spec", {}) or {}))
         raw_faces = 6 if uses_d3_mapping else int(max(1, int(faces or 1)))
         seq = state.spec.get("roll_sequence", None) if isinstance(state.spec, dict) else None
@@ -318,7 +334,28 @@ class DiceRollManager:
             rng = getattr(game, "random_source", None)
             if rng is None:
                 raise RuntimeError("Random source missing.")
-            raw_val = int(rng.randint(1, int(raw_faces)))
+            spec = dict(getattr(state, "spec", {}) or {})
+            raw_val = _rng_randint(
+                rng,
+                1,
+                int(raw_faces),
+                context={
+                    "kind": "managed_dice_roll",
+                    "roll_id": int(getattr(state, "roll_id", 0) or 0),
+                    "player_id": getattr(state, "player_id", None),
+                    "roll_type": str(spec.get("roll_type", "") or ""),
+                    "reason": str(spec.get("reason", "") or ""),
+                    "unit_id": spec.get("unit_id"),
+                    "target_unit_id": spec.get("target_unit_id"),
+                    "target_unit_ids": list(spec.get("target_unit_ids", []) or []),
+                    "faces": int(faces),
+                    "raw_faces": int(raw_faces),
+                    "die_index": die_index,
+                    "die_id": die_id,
+                    "reroll_index": len(list(getattr(state, "reroll_history", []) or [])),
+                    "existing_dice_count": len(list(getattr(state, "dice", []) or [])),
+                },
+            )
         except Exception:
             raw_val = 1
         if uses_d3_mapping:
@@ -638,7 +675,7 @@ class DiceRollManager:
                         }
                     )
                 continue
-            values.append(self._next_roll_outcome(state, faces, game))
+            values.append(self._next_roll_outcome(state, faces, game, die_index=i))
 
         state.dice = self._build_dice(state.roll_id, values, faces, derived=list(spec.get("derived_dice", []) or []))
         state.total = int(_sum_for_success(spec, state.dice))
@@ -942,7 +979,7 @@ class DiceRollManager:
                 continue
             if int(die.get("reroll_count", 0) or 0) >= 1:
                 continue
-            outcome = dict(self._next_roll_outcome(state, faces, game) or {})
+            outcome = dict(self._next_roll_outcome(state, faces, game, die_id=die_id) or {})
             new_val = _coerce_int(outcome.get("value", 1), default=1)
             new_faces = _coerce_int(outcome.get("faces", faces), default=faces)
             new_raw_val = _coerce_int(outcome.get("raw_value", new_val), default=new_val)
