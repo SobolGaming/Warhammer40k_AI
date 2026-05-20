@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import sys
@@ -14,13 +15,42 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from warhammer40k_ai.engine.command_kinds import CMD_REQUEST_DECISION, CMD_RESOLVE_DECISION
+from warhammer40k_ai.engine.command_kinds import CMD_EXECUTE_SETUP_PHASE, CMD_REQUEST_DECISION, CMD_RESOLVE_DECISION
 from warhammer40k_ai.engine.commands import GameCommand
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_ATTACH_LEADER,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_CHOOSE_PLAGUE,
+    DECISION_CHOOSE_PLAYER_COLOR,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_RESERVES,
+    DECISION_MOVE_UNIT,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SHADOW_ASSIGNMENT,
+)
 from warhammer40k_ai.network.client import NetworkClient
 from warhammer40k_ai.network.game_session import NetworkGameSession
 from warhammer40k_ai.network.server import NetworkServer
 from warhammer40k_ai.version import get_app_version
+
+FORMATION_DECISION_TYPES = {
+    DECISION_ATTACH_LEADER,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_PLAGUE,
+    DECISION_CHOOSE_PLAYER_COLOR,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_RESERVES,
+    DECISION_SHADOW_ASSIGNMENT,
+}
+
+DEPLOYMENT_DECISION_TYPES = {
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_MOVE_UNIT,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
+}
 
 
 @dataclass
@@ -28,7 +58,10 @@ class SmokeStats:
     errors: list[str]
     resync_reasons: list[str]
     resolved_command_ids: list[str]
+    flushed_commands: list[str]
     decision_requests: int = 0
+    formation_resolutions: int = 0
+    deployment_resolutions: int = 0
     snapshots: int = 0
 
 
@@ -107,6 +140,19 @@ async def _handle_session_event(session: NetworkGameSession, event, stats: Smoke
         if str(command.get("kind", "") or "") == CMD_REQUEST_DECISION:
             stats.decision_requests += 1
     await session.handle_message(event)
+
+
+async def _drain_available(
+    sessions: list[NetworkGameSession],
+    stats: SmokeStats,
+) -> None:
+    for session in sessions:
+        while True:
+            try:
+                event = await session.client.next_message(timeout=0.0)
+            except asyncio.TimeoutError:
+                break
+            await _handle_session_event(session, event, stats)
 
 
 async def _connect_player(
@@ -229,7 +275,7 @@ def _local_has_decision(session: NetworkGameSession, decision_id: str) -> bool:
     return any(str(getattr(request, "decision_id", "") or "") == decision_id for request in _pending_decisions(session))
 
 
-def _server_pending_harmless_decisions(server: NetworkServer) -> list[object]:
+def _server_pending_decisions(server: NetworkServer, decision_types: set[str]) -> list[object]:
     server_game = server.game
     server_queue = getattr(server_game, "decision_queue", None) if server_game is not None else None
     if server_queue is None or not hasattr(server_queue, "list"):
@@ -237,8 +283,19 @@ def _server_pending_harmless_decisions(server: NetworkServer) -> list[object]:
     return [
         request
         for request in list(server_queue.list() or [])
-        if str(getattr(request, "decision_type", "") or "") == DECISION_CHOOSE_PLAYER_COLOR
+        if str(getattr(request, "decision_type", "") or "") in decision_types
     ]
+
+
+def _server_pending_formation_decisions(server: NetworkServer) -> list[object]:
+    pending_fn = getattr(server, "_pending_formation_decisions", None)
+    if callable(pending_fn):
+        return list(pending_fn() or [])
+    return _server_pending_decisions(server, FORMATION_DECISION_TYPES)
+
+
+def _server_pending_harmless_decisions(server: NetworkServer) -> list[object]:
+    return _server_pending_decisions(server, {DECISION_CHOOSE_PLAYER_COLOR})
 
 
 def _select_harmless_decision(
@@ -257,6 +314,91 @@ def _select_harmless_decision(
     return None
 
 
+def _select_first_legal_option(request: object):
+    for option in list(getattr(request, "options", []) or []):
+        option_id = str(getattr(option, "option_id", "") or "")
+        if not option_id:
+            continue
+        action_id_for_option = getattr(request, "action_id_for_option_id", None)
+        candidate_mask_for_action = getattr(request, "candidate_mask_for_action_id", None)
+        action_id = action_id_for_option(option_id) if callable(action_id_for_option) else ""
+        if action_id and callable(candidate_mask_for_action) and candidate_mask_for_action(action_id) is False:
+            continue
+        return option
+    return None
+
+
+def _select_matching_request(
+    sessions: list[NetworkGameSession],
+    server_requests: list[object],
+) -> tuple[NetworkGameSession, object] | None:
+    for request in sorted(
+        list(server_requests or []),
+        key=lambda req: (
+            str(getattr(req, "player_id", "") or ""),
+            str(getattr(req, "decision_type", "") or ""),
+            str(getattr(req, "decision_id", "") or ""),
+        ),
+    ):
+        request_player = str(getattr(request, "player_id", "") or "")
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if not request_player or not decision_id:
+            continue
+        for session in sessions:
+            if str(session.client.player_id or "") == request_player and _local_has_decision(session, decision_id):
+                return session, request
+    return None
+
+
+async def _resolve_request(
+    session: NetworkGameSession,
+    request: object,
+    stats: SmokeStats,
+) -> None:
+    option = _select_first_legal_option(request)
+    if option is None:
+        raise RuntimeError(
+            f"No legal option found for {getattr(request, 'decision_type', '')} "
+            f"{getattr(request, 'decision_id', '')}."
+        )
+    result_payload = dict(getattr(option, "payload", {}) or {})
+    command = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=getattr(request, "player_id", None),
+        payload={
+            "decision_id": getattr(request, "decision_id", ""),
+            "option_id": getattr(option, "option_id", ""),
+            "result_payload": result_payload,
+        },
+    )
+    result = session.game_proxy.apply_command(command)
+    if not bool(getattr(result, "ok", False)):
+        errors = list(getattr(result, "errors", ()) or ())
+        raise RuntimeError(
+            f"Local decision resolution rejected for {getattr(request, 'decision_type', '')}: {errors}"
+        )
+    for queued in list(getattr(session, "_outgoing", []) or []):
+        payload = dict(getattr(queued, "payload", {}) or {})
+        decision_id = str(payload.get("decision_id", "") or "")
+        queued_request = None
+        game = session.game
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if decision_id and queue is not None and hasattr(queue, "get"):
+            queued_request = queue.get(decision_id)
+        stats.flushed_commands.append(
+            ":".join(
+                [
+                    str(getattr(queued, "command_id", "") or ""),
+                    str(getattr(queued, "kind", "") or ""),
+                    str(getattr(queued_request, "decision_type", "") or ""),
+                    decision_id,
+                ]
+            )
+        )
+    await session.flush_outgoing()
+    stats.resolved_command_ids.append(str(command.command_id))
+
+
 async def _resolve_one_decision_if_available(
     sessions: list[NetworkGameSession],
     server: NetworkServer,
@@ -266,23 +408,137 @@ async def _resolve_one_decision_if_available(
     if selected is None:
         return False
     session, request = selected
-    option = list(getattr(request, "options", []) or [])[0]
+    await _resolve_request(session, request, stats)
+    return True
+
+
+async def _resolve_all_formation_decisions(
+    sessions: list[NetworkGameSession],
+    server: NetworkServer,
+    *,
+    timeout: float,
+    stats: SmokeStats,
+) -> int:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    resolved = 0
+    while loop.time() < deadline:
+        await _drain_available(sessions, stats)
+        pending = _server_pending_formation_decisions(server)
+        server_phase = _server_setup_phase_name(server)
+        if not pending and server_phase == "DEPLOY_ARMIES":
+            return resolved
+        if not pending:
+            await asyncio.sleep(0.05)
+            continue
+        selected = _select_matching_request(sessions, pending)
+        if selected is None:
+            await asyncio.sleep(0.05)
+            continue
+        session, request = selected
+        await _resolve_request(session, request, stats)
+        resolved += 1
+        stats.formation_resolutions += 1
+        await asyncio.sleep(0.05)
+    pending_types = [str(getattr(req, "decision_type", "") or "") for req in _server_pending_formation_decisions(server)]
+    raise TimeoutError(
+        f"Timed out resolving formation decisions: "
+        f"server_phase={_server_setup_phase_name(server)} pending={pending_types}"
+    )
+
+
+def _server_setup_phase_name(server: NetworkServer) -> str:
+    game = server.game
+    if game is None:
+        return ""
+    phase = game.get_current_setup_phase() if hasattr(game, "get_current_setup_phase") else getattr(game, "setup_phase", None)
+    return str(getattr(phase, "name", "") or phase or "")
+
+
+async def _wait_for_setup_phase(
+    sessions: list[NetworkGameSession],
+    server: NetworkServer,
+    phase_name: str,
+    *,
+    timeout: float,
+    stats: SmokeStats,
+) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    expected = str(phase_name or "")
+    server_phase = ""
+    local_phases: list[str] = []
+    while loop.time() < deadline:
+        await _drain_available(sessions, stats)
+        server_phase = _server_setup_phase_name(server)
+        if _server_setup_phase_name(server) == expected:
+            local_phases = []
+            for session in sessions:
+                game = session.game
+                phase = game.get_current_setup_phase() if game is not None and hasattr(game, "get_current_setup_phase") else None
+                local_phases.append(str(getattr(phase, "name", "") or phase or ""))
+            if all(phase == expected for phase in local_phases):
+                return
+        else:
+            local_phases = []
+            for session in sessions:
+                game = session.game
+                phase = game.get_current_setup_phase() if game is not None and hasattr(game, "get_current_setup_phase") else None
+                local_phases.append(str(getattr(phase, "name", "") or phase or ""))
+        await asyncio.sleep(0.05)
+    pending_types = [str(getattr(req, "decision_type", "") or "") for req in _server_pending_formation_decisions(server)]
+    pending_types.extend(
+        str(getattr(req, "decision_type", "") or "")
+        for req in _server_pending_decisions(server, DEPLOYMENT_DECISION_TYPES)
+    )
+    setup_task = getattr(server, "_setup_task", None)
+    setup_task_error = ""
+    if setup_task is not None and setup_task.done() and not setup_task.cancelled():
+        exc = setup_task.exception()
+        if exc is not None:
+            setup_task_error = f"; setup_task_error={type(exc).__name__}: {exc}"
+    raise TimeoutError(
+        f"Timed out waiting for setup phase {expected}; "
+        f"server_phase={server_phase}; local_phases={local_phases}; pending={pending_types}{setup_task_error}."
+    )
+
+
+async def _initialize_network_deployment(
+    session: NetworkGameSession,
+) -> None:
     command = GameCommand.create(
-        CMD_RESOLVE_DECISION,
-        player_id=getattr(request, "player_id", None),
-        payload={
-            "decision_id": getattr(request, "decision_id", ""),
-            "option_id": getattr(option, "option_id", ""),
-            "result_payload": {},
-        },
+        CMD_EXECUTE_SETUP_PHASE,
+        player_id=session.client.player_id,
+        payload={"manual_phases": True},
     )
     result = session.game_proxy.apply_command(command)
     if not bool(getattr(result, "ok", False)):
         errors = list(getattr(result, "errors", ()) or ())
-        raise RuntimeError(f"Local decision resolution rejected: {errors}")
+        raise RuntimeError(f"Local deployment initialization rejected: {errors}")
     await session.flush_outgoing()
-    stats.resolved_command_ids.append(str(command.command_id))
-    return True
+
+
+async def _resolve_one_deployment_decision(
+    sessions: list[NetworkGameSession],
+    server: NetworkServer,
+    *,
+    timeout: float,
+    stats: SmokeStats,
+) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        await _drain_available(sessions, stats)
+        pending = _server_pending_decisions(server, DEPLOYMENT_DECISION_TYPES)
+        selected = _select_matching_request(sessions, pending)
+        if selected is not None:
+            session, request = selected
+            await _resolve_request(session, request, stats)
+            stats.deployment_resolutions += 1
+            return True
+        await asyncio.sleep(0.05)
+    pending_types = [str(getattr(req, "decision_type", "") or "") for req in _server_pending_decisions(server, DEPLOYMENT_DECISION_TYPES)]
+    raise TimeoutError(f"Timed out waiting for deployment decision request: {pending_types}")
 
 
 async def _drain_for(
@@ -294,13 +550,7 @@ async def _drain_for(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + max(0.0, float(seconds))
     while loop.time() < deadline:
-        for session in sessions:
-            while True:
-                try:
-                    event = await session.client.next_message(timeout=0.0)
-                except asyncio.TimeoutError:
-                    break
-                await _handle_session_event(session, event, stats)
+        await _drain_available(sessions, stats)
         await asyncio.sleep(0.05)
 
 
@@ -323,17 +573,19 @@ def _assert_sessions_loaded(sessions: list[NetworkGameSession]) -> None:
             raise RuntimeError(f"{session.client.role} local control does not match client.player_id.")
 
 
-def _assert_no_errors_or_resync_storm(stats: SmokeStats) -> None:
+def _assert_no_errors_or_resync_storm(stats: SmokeStats, *, expected_clients: int) -> None:
     if stats.errors:
         raise RuntimeError(
             "Network smoke observed ErrorMessage payloads: "
-            f"{stats.errors}; resolved_command_ids={list(stats.resolved_command_ids)}"
+            f"{stats.errors}; resolved_command_ids={list(stats.resolved_command_ids)}; "
+            f"flushed_commands={list(stats.flushed_commands)}"
         )
     allowed_reasons = {"", "formation_reveal"}
     unexpected = [reason for reason in stats.resync_reasons if reason not in allowed_reasons]
     if unexpected:
         raise RuntimeError(f"Unexpected resync reason(s): {unexpected}")
-    if len(stats.resync_reasons) > 1:
+    reason_counts = Counter(str(reason or "") for reason in stats.resync_reasons)
+    if any(count > max(1, int(expected_clients)) for count in reason_counts.values()):
         raise RuntimeError(f"Unexpected resync storm: {stats.resync_reasons}")
 
 
@@ -341,7 +593,7 @@ async def _run_smoke(args: argparse.Namespace) -> str:
     army1_name, army1_text = _army_text(str(args.player1_army))
     army2_name, army2_text = _army_text(str(args.player2_army))
     timeout = float(args.timeout)
-    stats = SmokeStats(errors=[], resync_reasons=[], resolved_command_ids=[])
+    stats = SmokeStats(errors=[], resync_reasons=[], resolved_command_ids=[], flushed_commands=[])
 
     server = NetworkServer(host=str(args.host), port=0, cert_path=None, key_path=None)
     clients: list[NetworkClient] = []
@@ -378,12 +630,26 @@ async def _run_smoke(args: argparse.Namespace) -> str:
         _assert_sessions_loaded(sessions)
         await _wait_for_setup_or_decision(sessions, server, timeout=timeout, stats=stats)
         resolved = await _resolve_one_decision_if_available(sessions, server, stats)
+        formation_resolved = await _resolve_all_formation_decisions(
+            sessions,
+            server,
+            timeout=timeout,
+            stats=stats,
+        )
+        await _wait_for_setup_phase(sessions, server, "DEPLOY_ARMIES", timeout=timeout, stats=stats)
+        await _initialize_network_deployment(session1)
+        deployment_resolved = await _resolve_one_deployment_decision(
+            sessions,
+            server,
+            timeout=timeout,
+            stats=stats,
+        )
         await _drain_for(
             sessions,
             seconds=float(args.post_decision_drain_seconds),
             stats=stats,
         )
-        _assert_no_errors_or_resync_storm(stats)
+        _assert_no_errors_or_resync_storm(stats, expected_clients=len(sessions))
 
         summary = (
             "network_loopback_smoke=ok "
@@ -391,6 +657,8 @@ async def _run_smoke(args: argparse.Namespace) -> str:
             f"snapshots={stats.snapshots} "
             f"decision_requests={stats.decision_requests} "
             f"resolved_decision={str(resolved).lower()} "
+            f"formation_resolved={formation_resolved} "
+            f"deployment_resolved={str(deployment_resolved).lower()} "
             f"resyncs={len(stats.resync_reasons)}"
         )
     finally:

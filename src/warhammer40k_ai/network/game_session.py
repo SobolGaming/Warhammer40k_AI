@@ -214,6 +214,7 @@ class NetworkGameSession:
             game.is_authoritative = False
         except Exception:
             pass
+        game.auto_resolve_dice_rolls = False
         self._apply_local_control(game)
         return game
 

@@ -84,9 +84,11 @@ filterwarnings = [
 ]
 markers = [
   "slow: long-running tests that are expensive but still deterministic.",
+  "smoke: script-level smoke checks for pre-merge/nightly hardening lanes.",
   "integration: end-to-end tests that cross subsystem boundaries (networking, persistence, full parsing).",
   "preview: preview-gated tests for mechanics that are not live release rules.",
   "ui: tests that exercise pygame/UI-facing modules and require the UI test extra.",
+  "network: tests that exercise network server/client/session paths.",
 ]
 
 [tool.uv]

@@ -28,6 +28,9 @@ from scripts.main import initialize_game
 from warhammer40k_ai.UI.game_ui import GameView
 from warhammer40k_ai.UI.human_interface import HumanUIInterface
 from warhammer40k_ai.UI.session_presentation_orchestrator import SessionPresentationOrchestrator
+from warhammer40k_ai.engine.command_kinds import CMD_RESOLVE_DECISION
+from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.decision_requests import build_select_next_deploy_unit_request
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
 
 
@@ -95,6 +98,87 @@ def _assert_deployment_plans_created(game) -> None:
         plan_id = str(getattr(plan, "plan_id", "") or "")
         if not plan_id:
             raise RuntimeError(f"Deployment plan for {player_id} did not expose a plan_id.")
+
+
+def _deployable_units_for_player(player) -> list[object]:
+    army = player.get_army() if player is not None else None
+    units = list(getattr(army, "units", []) or []) if army is not None else []
+    deployable: list[object] = []
+    for unit in units:
+        if unit is None:
+            continue
+        if bool(getattr(unit, "deployed", False)):
+            continue
+        if bool(getattr(unit, "is_attached_leader", False)):
+            continue
+        if bool(getattr(unit, "is_joined_support", False)):
+            continue
+        if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+            continue
+        reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+        if reserve_status in {"reserves", "strategic_reserves", "embarked"}:
+            continue
+        deployable.append(unit)
+    return deployable
+
+
+def _select_first_legal_option(request):
+    for option in list(getattr(request, "options", []) or []):
+        option_id = str(getattr(option, "option_id", "") or "")
+        if not option_id:
+            continue
+        action_id = request.action_id_for_option_id(option_id)
+        if action_id and request.candidate_mask_for_action_id(action_id) is False:
+            continue
+        return option
+    return None
+
+
+def _exercise_manual_deployment_decision(game_proxy) -> bool:
+    phase = game_proxy.get_current_setup_phase()
+    if str(getattr(phase, "name", "") or "") != "DEPLOY_ARMIES":
+        return False
+    player = game_proxy.get_current_deployment_player()
+    if player is None:
+        raise RuntimeError("Manual deployment smoke could not determine current deployment player.")
+    deployable = _deployable_units_for_player(player)
+    if not deployable:
+        raise RuntimeError("Manual deployment smoke found no deployable units.")
+    deployment_zones = getattr(game_proxy, "deployment_zones", {}) or {}
+    deployment_zone = deployment_zones.get(getattr(player, "id", None)) if isinstance(deployment_zones, dict) else None
+    already_deployed = [
+        unit
+        for unit in list(getattr(player.get_army(), "units", []) or [])
+        if bool(getattr(unit, "deployed", False))
+    ]
+    request = build_select_next_deploy_unit_request(
+        game_proxy,
+        player,
+        deployable,
+        deployment_zone=deployment_zone if isinstance(deployment_zone, dict) else None,
+        already_deployed_units=already_deployed,
+        extra_context={"decision_owner": "local_ui_smoke"},
+        queue_requests=True,
+    )
+    if request is None:
+        raise RuntimeError("Manual deployment smoke did not create a deployment selection request.")
+    option = _select_first_legal_option(request)
+    if option is None:
+        raise RuntimeError("Manual deployment smoke found no legal deployment selection option.")
+    command = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=getattr(request, "player_id", None),
+        payload={
+            "decision_id": getattr(request, "decision_id", ""),
+            "option_id": getattr(option, "option_id", ""),
+            "result_payload": dict(getattr(option, "payload", {}) or {}),
+        },
+    )
+    result = game_proxy.apply_command(command)
+    if not bool(getattr(result, "ok", False)):
+        errors = list(getattr(result, "errors", ()) or ())
+        raise RuntimeError(f"Manual deployment selection command was rejected: {errors}")
+    return True
 
 
 def _draw_frames(game_view: GameView, frame_count: int) -> None:
@@ -171,6 +255,7 @@ def main() -> int:
 
         boundary = _execute_setup_to_manual_deployment_boundary(runtime.game_proxy, runtime)
         _assert_deployment_plans_created(game)
+        deployment_decision = _exercise_manual_deployment_decision(runtime.game_proxy)
         game_view.refresh_roster_panes()
         game_view.update_roster_pane_titles()
         presentation_orchestrator.publish_game_loaded(
@@ -180,6 +265,7 @@ def main() -> int:
         )
 
         _draw_frames(game_view, int(args.frames))
+        _draw_frames(game_view, 1)
         screen = _exercise_basic_events(screen, game_view)
         game_view.screen = screen
         _draw_frames(game_view, 1)
@@ -187,7 +273,8 @@ def main() -> int:
         print(
             "local_ui_smoke=ok "
             f"boundary={boundary} "
-            f"frames={max(1, int(args.frames)) + 1} "
+            f"deployment_decision={str(deployment_decision).lower()} "
+            f"frames={max(1, int(args.frames)) + 2} "
             f"video_driver={pygame.display.get_driver()}"
         )
         return 0

@@ -41,13 +41,44 @@ uv run python scripts/run_headless_self_play.py --games 1 --workers 1
 uv run warhammer40k-ai --version
 ```
 
+## Ranker Diagnostics
+
+Before ranker training, extract diagnostic candidate rows and a coverage report
+from DecisionRecords or profile-eval record outputs:
+
+```bash
+uv run python scripts/extract_ranker_training_rows.py \
+  --input data/general_profile_eval/mirror_eval \
+  --output-jsonl data/ranker_training_rows.jsonl \
+  --coverage-output data/ranker_training_coverage.json \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
+The JSONL output is candidate-row oriented and intended for inspection before
+training. The coverage report summarizes decision counts, candidate counts,
+mask ratio, chosen-action rank, commander assignment/fallback signals, stale
+plan signals, resource authorization status, context payload size, deployment
+tempo usage, and smoke pass/fail status.
+
 ## UI Smoke Checks
+
+The script-level smokes are also available as a repeatable pytest lane:
+
+```bash
+uv run python -m pytest tests/smoke/ -m smoke
+```
+
+These tests are marked `smoke`, `integration`, and `slow`; UI and network
+entries are additionally marked `ui` and `network`.
 
 For pygame UI boot coverage without opening a real window, use SDL's dummy
 video driver. The smoke script initializes the local authoritative runtime,
 publishes `game_loaded`, advances setup to the manual deployment boundary,
-builds deployment plans, draws a few frames, and exercises ESC/SPACE/resize
-events. It is a crash smoke only; it does not verify rendering quality.
+builds deployment plans, resolves one manual deployment selection through the
+local decision path, draws a few frames, and exercises ESC/SPACE/resize events.
+It is a crash smoke only; it does not verify rendering quality.
 
 ```bash
 SDL_VIDEODRIVER=dummy uv run python scripts/smoke_ui_local.py \
@@ -67,9 +98,10 @@ uv run python scripts/smoke_ui_local.py `
 For network loopback coverage, run the two-client smoke. It starts a localhost
 server on an ephemeral port, handshakes two clients, submits army lists, starts
 the game, loads snapshots into `NetworkGameSession`, waits for setup/formation
-traffic, resolves one available local decision, asserts no `ErrorMessage`
-payloads, asserts no unexpected resync storm, and stops both clients and the
-server cleanly before reporting success.
+traffic, resolves all formation decisions needed to enter `DEPLOY_ARMIES`,
+initializes network deployment, resolves one deployment selection, asserts no
+`ErrorMessage` payloads, asserts no unexpected resync storm, and stops both
+clients and the server cleanly before reporting success.
 
 ```bash
 uv run python scripts/smoke_network_loopback.py \
@@ -81,6 +113,26 @@ PowerShell:
 
 ```powershell
 uv run python scripts/smoke_network_loopback.py `
+  --player1-army army_lists/chaos_test.txt `
+  --player2-army army_lists/aeldari_test.txt
+```
+
+For compiled orchestration context persistence coverage, run the snapshot plan
+smoke. It forces `GeneralPlan`, `DeploymentOrderBundle`,
+`PreBattleOrderBundle`, `DeploymentPlan`, `BattleRoundPlan`, and
+`CommanderOrderBundle` context onto a pending deployment request, serializes the
+snapshot with `json.dumps`, reloads it, and snapshots the loaded game again.
+
+```bash
+uv run python scripts/smoke_snapshot_plans.py \
+  --player1-army army_lists/chaos_test.txt \
+  --player2-army army_lists/aeldari_test.txt
+```
+
+PowerShell:
+
+```powershell
+uv run python scripts/smoke_snapshot_plans.py `
   --player1-army army_lists/chaos_test.txt `
   --player2-army army_lists/aeldari_test.txt
 ```

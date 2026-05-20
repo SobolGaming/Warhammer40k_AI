@@ -3684,13 +3684,10 @@ class GameSetupDeploymentReservesMixin:
         # Aeldari: Ethereal Pathway selections are made at the start of this step.
         self._apply_ethereal_pathway_declarations()
         
-        # Check if we have local players that need UI-based deployment
-        has_local_players = any(getattr(player, "has_control", lambda: False)() for player in self.players)
-        
-        if has_local_players and manual_phases:
-            # For local players in manual mode, set up deployment state but don't auto-deploy
-            # The UI will handle the actual deployment decisions
-            logger.info("INFO: Local deployment mode - use UI to deploy units")
+        if manual_phases:
+            # Interactive clients set up deployment state here, then submit explicit
+            # deployment decisions through the shared command/decision path.
+            logger.info("INFO: Manual deployment mode - waiting for deployment decisions")
             self.sync_deployment_zones_to_attacker_defender()
             
             # Set up deployment zones if not already done

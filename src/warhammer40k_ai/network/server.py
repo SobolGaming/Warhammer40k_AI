@@ -28,8 +28,11 @@ from ..engine.decision_kinds import (
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_CHOOSE_PLAGUE,
+    DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_SELECT_DICE_REROLL,
+    DECISION_SELECT_NEXT_DEPLOY_UNIT,
 )
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
@@ -42,8 +45,10 @@ from ..engine.decision_requests import (
     build_hover_mode_requests,
     build_transport_assignment_requests,
     build_reserves_allocation_request,
+    build_select_next_deploy_unit_request,
 )
 from ..engine.mission_selection import iter_random_mission_options
+from ..engine.phase import SetupPhase
 from ..roster.player import Player, PlayerControl
 from ..roster.army import ArmyValidationError, parse_army_list_text
 from ..utility.dice import get_dice_roll
@@ -369,6 +374,12 @@ class NetworkServer:
 
     async def _apply_server_command_with_broadcast(self, command: GameCommand, broadcast: bool):
         return await self._apply_server_command(command, broadcast=broadcast)
+
+    def _is_setup_phase(self, phase: SetupPhase) -> bool:
+        game = self._game
+        if game is None or not hasattr(game, "get_current_setup_phase"):
+            return False
+        return game.get_current_setup_phase() == phase
 
     def _choose_random_mission(self, game: Game) -> tuple[dict, int]:
         combos = iter_random_mission_options(game)
@@ -830,6 +841,12 @@ class NetworkServer:
                 await self._send_game_message(connection_id, result)
             elif isinstance(result, ErrorMessage):
                 await self._send_game_message(connection_id, result)
+        if (
+            not had_resync
+            and not had_error
+            and str(getattr(command_msg.command, "kind", "") or "") == CMD_EXECUTE_SETUP_PHASE
+        ):
+            await self._queue_deployment_decision_if_needed()
 
     async def _send_snapshot_or_resync(self, connection_id: str, payload: dict) -> None:
         if self._game is None:
@@ -846,6 +863,80 @@ class NetworkServer:
             return
         msg = build_snapshot_message(self._game)
         await self._broadcast_game_message(msg)
+
+    def _pending_deployment_decisions(self) -> list[DecisionRequest]:
+        game = self._game
+        if game is None:
+            return []
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return []
+        deployment_types = {
+            DECISION_CHOOSE_DEPLOYMENT_ZONE,
+            DECISION_MOVE_UNIT,
+            DECISION_SELECT_NEXT_DEPLOY_UNIT,
+        }
+        return [
+            request
+            for request in list(queue.list() or [])
+            if str(getattr(request, "decision_type", "") or "") in deployment_types
+        ]
+
+    @staticmethod
+    def _deployable_units_for_player(player: Player) -> list[object]:
+        army = player.get_army() if player is not None else None
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        deployable: list[object] = []
+        for unit in units:
+            if unit is None:
+                continue
+            if bool(getattr(unit, "deployed", False)):
+                continue
+            if bool(getattr(unit, "is_attached_leader", False)):
+                continue
+            if bool(getattr(unit, "is_joined_support", False)):
+                continue
+            if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+                continue
+            reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+            if reserve_status in {"reserves", "strategic_reserves", "embarked"}:
+                continue
+            deployable.append(unit)
+        deployable.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return deployable
+
+    async def _queue_deployment_decision_if_needed(self) -> None:
+        game = self._game
+        if game is None or not self._is_setup_phase(SetupPhase.DEPLOY_ARMIES):
+            return
+        if self._pending_deployment_decisions():
+            return
+        get_player = getattr(game, "get_current_deployment_player", None)
+        player = get_player() if callable(get_player) else None
+        if player is None:
+            return
+        deployable = self._deployable_units_for_player(player)
+        if not deployable:
+            return
+        deployment_zones = getattr(game, "deployment_zones", {}) or {}
+        deployment_zone = deployment_zones.get(getattr(player, "id", None)) if isinstance(deployment_zones, dict) else None
+        already_deployed: list[object] = []
+        army = player.get_army()
+        player_units = list(getattr(army, "units", []) or []) if army is not None else []
+        for unit in player_units:
+            if bool(getattr(unit, "deployed", False)):
+                already_deployed.append(unit)
+        request = build_select_next_deploy_unit_request(
+            game,
+            player,
+            deployable,
+            deployment_zone=deployment_zone if isinstance(deployment_zone, dict) else None,
+            already_deployed_units=already_deployed,
+            extra_context={"decision_owner": "network_server"},
+            queue_requests=False,
+        )
+        if request is not None:
+            await self._send_decision_request(request)
 
     async def _send_control(self, connection_id: str, msg_type: str, payload: dict) -> None:
         message = build_control_message(msg_type, payload)

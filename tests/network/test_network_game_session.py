@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from warhammer40k_ai.engine.command_kinds import CMD_RESOLVE_DECISION
 from warhammer40k_ai.engine.decision_kinds import DECISION_REQUEST_DICE_ROLL
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+import warhammer40k_ai.network.game_session as game_session_module
 from warhammer40k_ai.network.game_session import NetworkGameSession
 from warhammer40k_ai.network.messages import PROTOCOL_VERSION
 from warhammer40k_ai.network.transport import TransportEvent
@@ -118,3 +119,21 @@ def test_auto_dice_fallback_uses_shared_controller_when_game_has_no_controller_h
         assert queued.payload.get("option_id") == request.options[0].option_id
 
     asyncio.run(run())
+
+
+def test_snapshot_loaded_network_games_disable_local_dice_auto_resolve(monkeypatch) -> None:
+    fake_game = SimpleNamespace(
+        auto_resolve_dice_rolls=True,
+        event_log=None,
+        players=[],
+    )
+
+    monkeypatch.setattr(game_session_module, "load_game_snapshot", lambda _snapshot: fake_game)
+
+    client = _FakeClient()
+    session = NetworkGameSession(client)
+
+    loaded = session._build_game({"schema_version": 1})
+
+    assert loaded is fake_game
+    assert fake_game.auto_resolve_dice_rolls is False
