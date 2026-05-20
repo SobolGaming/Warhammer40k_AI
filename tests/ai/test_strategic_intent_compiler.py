@@ -383,6 +383,61 @@ def test_stale_explicit_general_unit_order_falls_back_to_greedy_assignment() -> 
     )
 
 
+def test_commander_constraint_status_stays_out_of_normal_context_but_in_full_plan() -> None:
+    shooter = _Unit(
+        "unit:shooter",
+        wargear=[_Wargear("ranged", _Profile(attacks=2, strength=8, ap=-2, damage=3), name="lascannon")],
+    )
+    target = _Unit("target:present", wounds=8, oc=3)
+    game, player, _opponent = _build_game([shooter], [target])
+    general = game.get_or_create_general_plan(player.id)
+    custom_general = replace(
+        general,
+        target_priority_doctrine={
+            "unit_order_overrides": {
+                "unit:shooter": {
+                    "constraint_mode": "replace",
+                    "role": "shooting_first",
+                    "primary_target_unit_id": "target:present",
+                    "shooting_order": {"primary_target_unit_id": "target:present"},
+                }
+            }
+        },
+    )
+    _install_general_plan(game, player, custom_general)
+
+    full_plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm?",
+        player_id=player.id,
+        options=[DecisionOption.create("Yes", payload={"choice": True})],
+        context={"unit_id": "unit:shooter"},
+    )
+
+    game.request_decision(request)
+
+    local_slice_keys = [
+        "unit_battle_task",
+        "commander_movement_task",
+        "commander_fire_assignment",
+        "commander_charge_assignment",
+        "commander_fight_assignment",
+    ]
+    for key in local_slice_keys:
+        assert "commander_constraint_status" not in request.context[key].get("metadata", {})
+    assert (
+        full_plan["shooting_plan"]["unit_fire_assignments"]["unit:shooter"]["metadata"][
+            "commander_constraint_status"
+        ]["shooting_constraint_status"]
+        == "applied"
+    )
+    assert (
+        full_plan["unit_tasks"]["unit:shooter"]["metadata"]["commander_constraint_status"]["constraint_mode"]
+        == "replace"
+    )
+
+
 def test_order_bundle_serialization_is_deterministic_and_context_stays_slim() -> None:
     scout = _Unit("unit:scout", scout_distance=6.0, deployed=False)
     target = _Unit("target:high", wounds=8)
