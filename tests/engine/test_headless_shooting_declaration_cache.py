@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_DECLARE_SHOTS, DECISION_SELECT_UNIT
-from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+from warhammer40k_ai.engine.decision_kinds import DECISION_DECLARE_SHOTS, DECISION_SELECT_TOOL_ACTION, DECISION_SELECT_UNIT
+from warhammer40k_ai.engine.decisions import CandidateAction, DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.decision_requests import queue_declare_shots_request
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 
@@ -171,7 +171,7 @@ def test_default_shooting_declarations_try_valid_preferred_declarations_first():
     ]
 
 
-def test_general_resource_policy_reserves_one_shot_profiles_until_threshold_target():
+def test_general_resource_policy_reserves_one_shot_profiles_until_commander_authorizes_current_round():
     game, _unit, profile_name = _shooting_game_with_profile(
         wargear_name="Hunter-killer missile",
         profile_name="hunter-killer",
@@ -198,7 +198,7 @@ def test_general_resource_policy_reserves_one_shot_profiles_until_threshold_targ
             **base_context,
             "target_fire_plan_summary": {
                 "target_unit_id": "target-a",
-                "threat_score": 0.3,
+                "threat_score": 0.9,
             },
         },
     )
@@ -207,6 +207,16 @@ def test_general_resource_policy_reserves_one_shot_profiles_until_threshold_targ
         "Declare shots",
         context={
             **base_context,
+            "commander_resource_authorizations": [
+                {
+                    "resource_id": "unit:one_shot_weapon",
+                    "resource_kind": "one_shot_weapon",
+                    "status": "conditionally_authorized",
+                    "owner_unit_id": "unit",
+                    "allowed_target_unit_ids": ["target-a"],
+                    "authorization_threshold": 0.8,
+                }
+            ],
             "target_fire_plan_summary": {
                 "target_unit_id": "target-a",
                 "threat_score": 0.9,
@@ -227,6 +237,92 @@ def test_general_resource_policy_reserves_one_shot_profiles_until_threshold_targ
 
     assert reserved == []
     assert authorized[0]["target_unit_id"] == "target-a"
+
+
+def test_commander_resource_authorization_blocks_wrong_one_shot_target():
+    game, _unit, profile_name = _shooting_game_with_profile(
+        wargear_name="Hunter-killer missile",
+        profile_name="hunter-killer",
+    )
+    request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots",
+        context={
+            "phase_name": "SHOOTING_PHASE",
+            "unit_id": "unit",
+            "shooting_target_generation": 1,
+            "shooting_target_candidates": [_target_candidate_row(["target-b"], profile_name=profile_name)],
+            "commander_resource_authorizations": [
+                {
+                    "resource_id": "unit:one_shot_weapon",
+                    "resource_kind": "one_shot_weapon",
+                    "status": "conditionally_authorized",
+                    "owner_unit_id": "unit",
+                    "allowed_target_unit_ids": ["target-a"],
+                    "authorization_threshold": 0.8,
+                }
+            ],
+        },
+    )
+
+    declarations = HeadlessPolicyDecisionController._default_shooting_declarations(
+        game,
+        request,
+        {"unit_id": "unit", "max_declarations": 1},
+    )
+
+    assert declarations == []
+
+
+def test_tool_action_cp_reserve_penalty_preserves_unless_commander_authorizes():
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+    spend = CandidateAction(
+        action_id="spend-cp",
+        params={"action": "use", "cp_cost": 1},
+        metadata={"projected_score_delta_round": 500.0},
+    )
+    context = {
+        "general_cp_policy": {
+            "reserve_for_interrupt_or_overwatch": 1,
+            "reserve_for_defensive_reaction": 1,
+        },
+        "current_command_points": 1,
+    }
+    reserved_request = DecisionRequest.create(
+        DECISION_SELECT_TOOL_ACTION,
+        "Use tool?",
+        context=context,
+        candidates=[spend],
+        mask=[True],
+    )
+    authorized_request = DecisionRequest.create(
+        DECISION_SELECT_TOOL_ACTION,
+        "Use tool?",
+        context={
+            **context,
+            "commander_resource_authorizations": [
+                {
+                    "resource_id": "stratagem:commit",
+                    "resource_kind": "stratagem",
+                    "status": "authorized",
+                }
+            ],
+        },
+        candidates=[spend],
+        mask=[True],
+    )
+
+    assert controller._semantic_score(reserved_request, spend) < controller._semantic_score(authorized_request, spend)
+    assert HeadlessPolicyDecisionController._cp_reserve_penalty(
+        reserved_request.context,
+        spend.params,
+        spend.metadata,
+    ) > 0.0
+    assert HeadlessPolicyDecisionController._cp_reserve_penalty(
+        authorized_request.context,
+        spend.params,
+        spend.metadata,
+    ) == 0.0
 
 
 def test_default_shooting_declarations_reuse_validation_until_map_generation_changes():

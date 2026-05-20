@@ -64,6 +64,7 @@ decision.
   - `general_limited_resource_policy` for resources relevant to the unit plus
     global CP/stratagem reserves
   - `general_cp_policy`
+  - `current_command_points`
 - The full `battle_round_plan` payload is attached only for audit/debug
   contexts, either when `request.context["include_full_battle_round_plan"]` is
   true or when `game.attach_full_battle_round_plan_context` is true.
@@ -395,6 +396,8 @@ For unit-scoped shooting decisions, the context can include:
 - `target_fire_plan_summary`
 - `general_limited_resource_policy`
 - `general_cp_policy`
+- `current_command_points`
+- `commander_resource_authorizations`
 
 The declaration builder follows this order:
 
@@ -407,8 +410,9 @@ The declaration builder follows this order:
    target rows, fall back to the existing local target/profile ranking and
    validation path.
 4. Preserve General-reserved one-shot / once-per-battle shooting profiles
-   unless policy marks them available/authorized, reserves them for the current
-   target, or the target fire plan meets the policy authorization threshold.
+   unless the current battle-round `commander_resource_authorizations` slice
+   marks the resource `authorized` or `conditionally_authorized` for that
+   target. Raw General policy is doctrine, not an execution authorization.
 
 All shooting legality still comes from existing legal target candidate
 generation and profile validation. The commander and General only influence

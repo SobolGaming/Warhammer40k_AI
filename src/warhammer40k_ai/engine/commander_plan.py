@@ -1719,6 +1719,21 @@ def _compiled_unit_order_constraint_mode(order: object | None) -> str:
     return mode if mode in {"hint", "constrain", "replace", "override"} else "hint"
 
 
+def _compiled_unit_order_delays_commit(order: object | None) -> bool:
+    metadata = _compiled_unit_order_metadata(order)
+    if str(metadata.get("directive_commit_status", "") or "").strip().lower() == "staging":
+        return True
+    source_kinds = {str(kind) for kind in list(metadata.get("source_intent_kinds", []) or [])}
+    if "round_posture_delay" in source_kinds:
+        return True
+    for attr_name in ("movement_order", "shooting_order", "charge_order", "fight_order"):
+        suborder = getattr(order, attr_name, None)
+        sub_metadata = dict(getattr(suborder, "metadata", {}) or {})
+        if str(sub_metadata.get("directive_commit_status", "") or "").strip().lower() == "staging":
+            return True
+    return False
+
+
 def _compiled_shooting_primary_target(order: object | None) -> str | None:
     shooting_order = getattr(order, "shooting_order", None)
     target_id = str(getattr(shooting_order, "primary_target_unit_id", "") or "")
@@ -1809,6 +1824,19 @@ def _apply_compiled_commander_assignment_constraints(
             unit_roles[uid] = ROLE_PRESERVE
             status["shooting_constraint_status"] = "preserve_removed"
             status["charge_constraint_status"] = "preserve_removed"
+            statuses[uid] = status
+            continue
+
+        if _compiled_unit_order_delays_commit(order):
+            _remove_shooting_assignment_commitment(
+                unit_id=uid,
+                shooting_assignments=shooting_assignments,
+                committed_damage=committed_damage,
+                target_assigned_units=target_assigned_units,
+            )
+            charge_assignments.pop(uid, None)
+            status["shooting_constraint_status"] = "staged_hold"
+            status["charge_constraint_status"] = "staged_hold"
             statuses[uid] = status
             continue
 

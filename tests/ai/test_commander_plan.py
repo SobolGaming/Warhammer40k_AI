@@ -681,6 +681,7 @@ def test_shooting_commander_context_attaches_preferred_targets_and_general_resou
         for policy in request.context["general_limited_resource_policy"]
     ) == ["cp_pool", "stratagem"]
     assert request.context["general_cp_policy"]["reserve_for_interrupt_or_overwatch"] == 1
+    assert request.context["current_command_points"] == player.command_points
 
 
 def test_phase_unit_selection_context_receives_candidate_charge_and_fight_assignments() -> None:

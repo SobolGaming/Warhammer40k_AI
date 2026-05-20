@@ -70,6 +70,28 @@ materialization, and only when the target exists in the current commander
 analysis matrix. Stale compiled targets fall back to the existing greedy
 assignment output and record rejection status in full plan metadata.
 
+Round posture also gates delayed commits. A `stage` round, or any directive with
+low aggression and resource budgets, compiles non-hard unit orders into staging
+intent: movement becomes `stage_for_commit`, charge/fight intent becomes `hold`,
+and one-shot/CP spending remains reserved unless the current-round compiler
+emits an explicit authorization. Hard `replace`/`override` unit orders are still
+treated as immediate commitments because they are General-level commands rather
+than soft future plans.
+
+Limited-resource timing is two-layered:
+
+- `GeneralPlan.limited_resource_policy` is doctrine and long-horizon reservation
+  metadata.
+- `CommanderOrderBundle.resource_authorizations` is the current battle-round
+  execution gate consumed by lower layers.
+
+A high-priority target does not spend a reserved one-shot weapon directly from
+raw General policy. The compiler must first authorize it for the current round
+as `authorized` or `conditionally_authorized`, and conditional authorizations
+must name the current target. CP reserve policy follows the same principle:
+normal tool/stratagem ranking penalizes spending below the General reserve
+target unless the Commander has authorized that spend.
+
 ## Context Rules
 
 Normal decision context stays slim. It may include ids and unit-local slices:
@@ -81,6 +103,8 @@ Normal decision context stays slim. It may include ids and unit-local slices:
 - `infiltrate_deployment_order`
 - `prebattle_screen_order`
 - `commander_resource_authorizations`
+- `general_cp_policy`
+- `current_command_points`
 
 Full `deployment_order_bundle`, `prebattle_order_bundle`, and
 `commander_order_bundle` payloads are audit/debug-only through explicit request

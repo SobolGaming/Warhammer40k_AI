@@ -1788,6 +1788,19 @@ class HeadlessPolicyDecisionController(DecisionController):
         profile_name: str,
         target_id: str,
     ) -> bool:
+        relevant_authorizations = [
+            dict(authorization)
+            for authorization in list(ctx.get("commander_resource_authorizations", []) or [])
+            if isinstance(authorization, dict)
+            and str(authorization.get("owner_unit_id", "") or "").strip() in {"", unit_id}
+            and cls._profile_matches_limited_resource_policy(authorization, wargear, profile, profile_name)
+        ]
+        if relevant_authorizations:
+            return any(
+                cls._commander_resource_authorization_allows_target(authorization, target_id)
+                for authorization in relevant_authorizations
+            )
+
         relevant_policies = [
             dict(policy)
             for policy in list(ctx.get("general_limited_resource_policy", []) or [])
@@ -1797,23 +1810,42 @@ class HeadlessPolicyDecisionController(DecisionController):
         ]
         if not relevant_policies:
             return True
-        target_priority = cls._target_fire_plan_priority(ctx, target_id)
         for policy in relevant_policies:
             status = str(policy.get("status", "") or "").strip().lower()
             if status in {"available", "authorized"}:
+                reserved_target_id = str(policy.get("reserved_for_target_unit_id", "") or "").strip()
+                if reserved_target_id and reserved_target_id != str(target_id or "").strip():
+                    continue
                 return True
+            if status == "conditionally_authorized":
+                allowed_targets = {
+                    str(value or "").strip()
+                    for value in list(policy.get("allowed_target_unit_ids", []) or [])
+                    if str(value or "").strip()
+                }
+                if str(target_id or "").strip() in allowed_targets:
+                    return True
             if status in {"spent", "forbidden"}:
                 return False
-            if status == "reserved":
-                reserved_target_id = str(policy.get("reserved_for_target_unit_id", "") or "").strip()
-                if reserved_target_id and reserved_target_id == str(target_id or "").strip():
-                    return True
-                try:
-                    threshold = float(policy.get("authorization_threshold", 0.0) or 0.0)
-                except (TypeError, ValueError):
-                    threshold = 0.0
-                if threshold > 0.0 and target_priority >= threshold:
-                    return True
+        return False
+
+    @staticmethod
+    def _commander_resource_authorization_allows_target(
+        authorization: dict[str, Any],
+        target_id: str,
+    ) -> bool:
+        status = str(authorization.get("status", "") or "").strip().lower()
+        if status in {"spent", "forbidden", "reserved"}:
+            return False
+        allowed_targets = {
+            str(value or "").strip()
+            for value in list(authorization.get("allowed_target_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if status == "conditionally_authorized":
+            return str(target_id or "").strip() in allowed_targets
+        if status in {"available", "authorized"}:
+            return not allowed_targets or str(target_id or "").strip() in allowed_targets
         return False
 
     @classmethod
@@ -4228,6 +4260,96 @@ class HeadlessPolicyDecisionController(DecisionController):
         selected = ranked[index]
         return [selected] + [candidate for candidate in ranked if candidate is not selected]
 
+    @classmethod
+    def _candidate_cp_cost(cls, params: dict[str, Any], metadata: dict[str, Any]) -> float:
+        for source in (params, metadata):
+            for key in (
+                "cp_cost",
+                "cost",
+                "current_cp_cost",
+                "effective_cp_cost",
+                "stratagem_cp_cost",
+                "command_point_cost",
+            ):
+                if key in source:
+                    return max(0.0, cls._num(source.get(key)))
+            stratagem = source.get("stratagem")
+            if isinstance(stratagem, dict):
+                for key in ("cp_cost", "cost", "current_cp_cost", "effective_cp_cost"):
+                    if key in stratagem:
+                        return max(0.0, cls._num(stratagem.get(key)))
+        return 0.0
+
+    @classmethod
+    def _context_current_command_points(cls, ctx: dict[str, Any]) -> float | None:
+        for key in ("current_command_points", "available_command_points", "command_points"):
+            if key in ctx:
+                return max(0.0, cls._num(ctx.get(key)))
+        return None
+
+    @classmethod
+    def _context_cp_reserve_target(cls, ctx: dict[str, Any]) -> float:
+        reserve_values: list[float] = []
+        for key in ("cp_reserve_target", "reserve_cp", "reserve_command_points"):
+            if key in ctx:
+                reserve_values.append(cls._num(ctx.get(key)))
+        for policy_key in ("general_cp_policy", "cp_reserve_policy", "commander_constraints"):
+            policy = ctx.get(policy_key)
+            if not isinstance(policy, dict):
+                continue
+            for key in (
+                "cp_reserve_target",
+                "reserve_cp",
+                "reserve_command_points",
+                "reserve_for_interrupt_or_overwatch",
+                "reserve_for_defensive_reaction",
+                "reserve_for_reroll",
+            ):
+                if key in policy:
+                    reserve_values.append(cls._num(policy.get(key)))
+        return max([0.0, *reserve_values])
+
+    @staticmethod
+    def _tool_spend_has_commander_authorization(
+        ctx: dict[str, Any],
+        params: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> bool:
+        for source in (params, metadata):
+            if bool(source.get("commander_authorized", False)) or bool(source.get("resource_authorized", False)):
+                return True
+        for authorization in list(ctx.get("commander_resource_authorizations", []) or []):
+            if not isinstance(authorization, dict):
+                continue
+            kind = str(authorization.get("resource_kind", "") or "").strip().lower()
+            status = str(authorization.get("status", "") or "").strip().lower()
+            if kind in {"cp_pool", "stratagem"} and status in {"authorized", "conditionally_authorized"}:
+                return True
+        return False
+
+    @classmethod
+    def _cp_reserve_penalty(
+        cls,
+        ctx: dict[str, Any],
+        params: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> float:
+        cost = cls._candidate_cp_cost(params, metadata)
+        if cost <= 0.0:
+            return 0.0
+        reserve_target = cls._context_cp_reserve_target(ctx)
+        if reserve_target <= 0.0:
+            return 0.0
+        current_cp = cls._context_current_command_points(ctx)
+        if current_cp is None:
+            return 0.0
+        if current_cp - cost >= reserve_target:
+            return 0.0
+        if cls._tool_spend_has_commander_authorization(ctx, params, metadata):
+            return 0.0
+        shortfall = reserve_target - max(0.0, current_cp - cost)
+        return 250.0 + 50.0 * max(0.0, shortfall)
+
     def _semantic_score(self, request: DecisionRequest, candidate: CandidateAction) -> float:
         metadata = dict(getattr(candidate, "metadata", {}) or {})
         params = dict(getattr(candidate, "params", {}) or {})
@@ -4264,6 +4386,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 score += 100.0
             else:
                 score -= 10.0
+                score -= self._cp_reserve_penalty(request_context, params, metadata)
         if str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_MOVEMENT_ACTION:
             if str(metadata.get("movement_action_distance_mismatch", "") or "").strip():
                 score -= 100.0

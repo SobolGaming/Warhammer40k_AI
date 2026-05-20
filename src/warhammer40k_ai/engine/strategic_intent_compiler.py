@@ -1845,6 +1845,17 @@ def _resource_authorizations(
     return authorizations
 
 
+def _directive_delays_commit(directive: RoundCommanderDirective) -> bool:
+    posture = str(directive.posture or "").strip().lower()
+    if posture == POSTURE_STAGE:
+        return True
+    return float(directive.aggression_budget) < 0.5 and float(directive.resource_budget) < 0.5
+
+
+def _constraint_mode_is_hard_override(mode: str) -> bool:
+    return str(mode or "").strip().lower() in {"replace", "override"}
+
+
 def compile_general_intent_to_commander_orders(
     game: object,
     general_plan: object,
@@ -1949,6 +1960,10 @@ def compile_general_intent_to_commander_orders(
         override_movement = dict(override.get("movement_order", {}) or {}) if isinstance(override.get("movement_order"), dict) else {}
         override_charge = dict(override.get("charge_order", {}) or {}) if isinstance(override.get("charge_order"), dict) else {}
         override_fight = dict(override.get("fight_order", {}) or {}) if isinstance(override.get("fight_order"), dict) else {}
+        constraint_mode = str(override.get("constraint_mode", "hint") or "hint").strip().lower()
+        if constraint_mode not in {"hint", "constrain", "replace", "override"}:
+            constraint_mode = "hint"
+        explicit_override = bool(override)
         default_target = str(_policy_value(entries[0], "target_unit_id", "") or "") if entries else ""
         override_target = str(
             override.get("primary_target_unit_id", "")
@@ -2009,6 +2024,16 @@ def compile_general_intent_to_commander_orders(
             or override.get("movement_intent", "")
             or ("preserve_hidden" if preserve else "score_or_screen" if scout_order else "maintain_forward_screen" if infiltrate_order else "execute_tier2_task")
         )
+        delay_commit = bool(
+            _directive_delays_commit(directive)
+            and not preserve
+            and not _constraint_mode_is_hard_override(constraint_mode)
+        )
+        if delay_commit:
+            movement_intent = str(override_movement.get("staging_intent", "") or "stage_for_commit")
+            shooting_intent = "opportunistic"
+            charge_intent = "hold"
+            fight_intent = "hold"
         requires_half_range = bool(
             override_shooting.get("requires_half_range", False)
             or primary_metadata.get("has_half_range_trigger", False)
@@ -2030,14 +2055,17 @@ def compile_general_intent_to_commander_orders(
                 }
             ]
         desired_range_bands = _sorted_metadata_list(requested_range_bands)
+        if delay_commit:
+            desired_range_bands = []
         charge_target = str(override_charge.get("primary_target_unit_id", "") or "") or (
             best_target if charge_intent == "planned_charge" else ""
         )
         fight_target = str(override_fight.get("primary_target_unit_id", "") or "") or (
             best_target if fight_intent == "planned_fight" else ""
         )
-        constraint_mode = str(override.get("constraint_mode", "hint") or "hint")
-        explicit_override = bool(override)
+        if delay_commit:
+            charge_target = ""
+            fight_target = ""
         allowed_resource_kinds = list(getattr(target_order, "allowed_resource_kinds", []) or [])
         if override_shooting.get("allowed_resource_kinds"):
             allowed_resource_kinds = _sorted_strings(override_shooting.get("allowed_resource_kinds", []))
@@ -2047,48 +2075,61 @@ def compile_general_intent_to_commander_orders(
             "deployment_doctrine",
             *(["general_preserve_directive"] if uid in preserve_units else []),
             *(["explicit_general_unit_order"] if explicit_override else []),
+            *(["round_posture_delay"] if delay_commit else []),
         ]
+        shooting_primary_target_id = None if shooting_intent == "preserve" or delay_commit else (best_target or None)
         unit_orders[uid] = UnitOrder(
             unit_id=uid,
             role=role,
             preserve=preserve,
-            primary_target_unit_id=best_target or None,
+            primary_target_unit_id=None if delay_commit else (best_target or None),
             backup_target_unit_ids=backup_targets,
             constraint_mode=constraint_mode,
             order_strength=_clamp(override.get("order_strength", 1.0 if explicit_override else 0.5), 0.0, 1.0),
             movement_order=MovementOrder(
                 intent=movement_intent,
-                desired_action=str(override_movement.get("desired_action", "") or ""),
+                desired_action=str(
+                    (override_movement.get("staging_desired_action", "") or "normal_move")
+                    if delay_commit
+                    else (override_movement.get("desired_action", "") or "")
+                ),
                 target_region_ids=list(getattr(deployment_order, "preferred_region_ids", []) or []),
                 required_los_to_unit_ids=_sorted_strings(
-                    override_movement.get("required_los_to_unit_ids", [best_target] if best_target and shooting_intent == "planned_focus_fire" else [])
+                    []
+                    if delay_commit
+                    else override_movement.get("required_los_to_unit_ids", [best_target] if best_target and shooting_intent == "planned_focus_fire" else [])
                 ),
                 desired_range_bands=desired_range_bands,
                 charge_staging_target_unit_id=str(override_movement.get("charge_staging_target_unit_id", "") or "")
-                or (charge_target if charge_intent == "planned_charge" else None),
+                or (charge_target if charge_intent == "planned_charge" and not delay_commit else None),
                 avoid_becoming_shooting_ineligible=bool(
-                    override_movement.get("avoid_becoming_shooting_ineligible", shooting_intent == "planned_focus_fire")
+                    True
+                    if delay_commit
+                    else override_movement.get("avoid_becoming_shooting_ineligible", shooting_intent == "planned_focus_fire")
                 ),
                 intentionally_accept_shooting_ineligible=bool(
-                    override_movement.get(
+                    False
+                    if delay_commit
+                    else override_movement.get(
                         "intentionally_accept_shooting_ineligible",
                         charge_intent == "planned_charge" and shooting_intent != "planned_focus_fire",
                     )
                 ),
-                avoid_exposure=bool(preserve or uid in max_exposure_by_unit),
+                avoid_exposure=bool(delay_commit or preserve or uid in max_exposure_by_unit),
                 metadata={
                     "source": "strategic_intent_compiler",
                     "source_intent_kinds": source_intent_kinds,
+                    "directive_commit_status": "staging" if delay_commit else "commit",
                 },
             ),
             shooting_order=ShootingOrder(
                 intent=shooting_intent,
-                primary_target_unit_id=None if shooting_intent == "preserve" else (best_target or None),
+                primary_target_unit_id=shooting_primary_target_id,
                 backup_target_unit_ids=backup_targets,
                 expected_damage_by_target=expected_damage_by_target,
-                requires_los=bool(override_shooting.get("requires_los", bool(best_target and shooting_intent == "planned_focus_fire"))),
-                requires_half_range=requires_half_range,
-                requires_stationary=requires_stationary,
+                requires_los=bool(False if delay_commit else override_shooting.get("requires_los", bool(best_target and shooting_intent == "planned_focus_fire"))),
+                requires_half_range=bool(False if delay_commit else requires_half_range),
+                requires_stationary=bool(False if delay_commit else requires_stationary),
                 allows_split_fire=bool(override_shooting.get("allows_split_fire", True)),
                 max_overkill_wounds=_floatish(
                     override_shooting.get(
@@ -2109,8 +2150,10 @@ def compile_general_intent_to_commander_orders(
                         "target_priority_doctrine",
                         "resource_policy",
                         *(["explicit_general_unit_order"] if explicit_override else []),
+                        *(["round_posture_delay"] if delay_commit else []),
                     ],
                     "explicit_general_override": bool(explicit_override),
+                    "directive_commit_status": "staging" if delay_commit else "commit",
                 },
             ),
             charge_order=ChargeOrder(
@@ -2121,10 +2164,14 @@ def compile_general_intent_to_commander_orders(
                 intentionally_skip_shooting=bool(
                     override_charge.get(
                         "intentionally_skip_shooting",
-                        charge_intent == "planned_charge" and shooting_intent != "planned_focus_fire",
+                        False if delay_commit else charge_intent == "planned_charge" and shooting_intent != "planned_focus_fire",
                     )
                 ),
-                metadata={"source": "strategic_intent_compiler", "explicit_general_override": bool(explicit_override)},
+                metadata={
+                    "source": "strategic_intent_compiler",
+                    "explicit_general_override": bool(explicit_override),
+                    "directive_commit_status": "staging" if delay_commit else "commit",
+                },
             ),
             fight_order=FightOrder(
                 intent=fight_intent,
@@ -2132,7 +2179,11 @@ def compile_general_intent_to_commander_orders(
                 backup_target_unit_ids=backup_targets,
                 activation_priority=_floatish(_policy_value(primary_entry, "expected_melee_damage", 0.0), 0.0)
                 + _floatish(_policy_value(primary_entry, "charge_feasibility", 0.0), 0.0),
-                metadata={"source": "strategic_intent_compiler", "explicit_general_override": bool(explicit_override)},
+                metadata={
+                    "source": "strategic_intent_compiler",
+                    "explicit_general_override": bool(explicit_override),
+                    "directive_commit_status": "staging" if delay_commit else "commit",
+                },
             ),
             resource_permissions=permissions,
             metadata={
@@ -2144,6 +2195,7 @@ def compile_general_intent_to_commander_orders(
                 "source_directive_id": directive.directive_id,
                 "source_intent_kinds": source_intent_kinds,
                 "explicit_general_override": bool(explicit_override),
+                "directive_commit_status": "staging" if delay_commit else "commit",
             },
         )
 

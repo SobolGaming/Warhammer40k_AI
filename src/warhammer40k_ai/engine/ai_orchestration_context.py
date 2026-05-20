@@ -15,6 +15,7 @@ from .decision_kinds import (
     DECISION_SCOUT_MOVE,
     DECISION_SELECT_UNIT,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SELECT_TOOL_ACTION,
 )
 from .decisions import DecisionRequest
 from .orchestration_guardrails import context_payload_guardrail_report
@@ -58,6 +59,26 @@ def _player_id_for_request(game: object, request: DecisionRequest) -> str:
     return str(getattr(current_player, "id", "") or "")
 
 
+def _player_for_id(game: object, player_id: str) -> object | None:
+    for player in list(getattr(game, "players", []) or []):
+        if str(getattr(player, "id", "") or "") == str(player_id or ""):
+            return player
+    return None
+
+
+def _player_command_points(game: object, player_id: str) -> int | None:
+    player = _player_for_id(game, player_id)
+    if player is None:
+        return None
+    value = getattr(player, "command_points", None)
+    if value is None:
+        return None
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return None
+
+
 def _terrain_state_summary(game: object) -> dict[str, Any]:
     map_obj = getattr(game, "map", None)
     terrain_features = list(getattr(map_obj, "terrain_features", []) or [])
@@ -77,6 +98,29 @@ def _limited_resource_policy_context(general_plan: object, unit_id: str) -> list
             to_dict = getattr(policy, "to_dict", None)
             policies.append(to_dict() if callable(to_dict) else dict(policy))
     return sorted(policies, key=lambda item: str(dict(item).get("resource_id", "")))
+
+
+def _commander_resource_authorization_context(
+    battle_round_plan: object,
+    unit_id: str,
+    *,
+    include_global_resources: bool = False,
+) -> list[dict[str, Any]]:
+    commander_order_bundle = dict(getattr(battle_round_plan, "metadata", {}) or {}).get("commander_order_bundle")
+    if not isinstance(commander_order_bundle, dict):
+        return []
+    resource_authorizations = dict(commander_order_bundle.get("resource_authorizations", {}) or {})
+    scoped: list[dict[str, Any]] = []
+    for authorization in resource_authorizations.values():
+        if not isinstance(authorization, dict):
+            continue
+        owner_unit_id = str(authorization.get("owner_unit_id", "") or "").strip()
+        resource_kind = str(authorization.get("resource_kind", "") or "").strip()
+        if owner_unit_id == str(unit_id or "").strip() or (
+            include_global_resources and resource_kind in {"cp_pool", "stratagem"}
+        ):
+            scoped.append(dict(authorization))
+    return sorted(scoped, key=lambda item: str(dict(item).get("resource_id", "")))
 
 
 def _slim_commander_local_slice(data: dict[str, Any]) -> dict[str, Any]:
@@ -321,13 +365,18 @@ def attach_ai_orchestration_context(
     if "cp_reserve_policy" not in updated:
         updated["cp_reserve_policy"] = dict(tier2_bundle.cp_reserve_policy or {})
 
+    if general_plan is not None:
+        if "general_cp_policy" not in updated:
+            updated["general_cp_policy"] = dict(getattr(general_plan, "cp_policy", {}) or {})
+        command_points = _player_command_points(game, player_id)
+        if command_points is not None and "current_command_points" not in updated:
+            updated["current_command_points"] = int(command_points)
+
     unit_id = str(updated.get("unit_id", "") or "")
     if general_plan is not None and unit_id:
         limited_resource_policy = _limited_resource_policy_context(general_plan, unit_id)
         if limited_resource_policy and "general_limited_resource_policy" not in updated:
             updated["general_limited_resource_policy"] = limited_resource_policy
-        if "general_cp_policy" not in updated:
-            updated["general_cp_policy"] = dict(getattr(general_plan, "cp_policy", {}) or {})
     task = tier2_bundle.tasks_by_unit_id.get(unit_id) if unit_id else None
     task_compute_tier = None
     if task is not None:
@@ -397,19 +446,27 @@ def attach_ai_orchestration_context(
         fight_assignment = dict(getattr(battle_round_plan.fight_plan, "unit_fight_assignments", {}) or {}).get(unit_id)
         if fight_assignment is not None and "commander_fight_assignment" not in updated:
             updated["commander_fight_assignment"] = _slim_commander_local_slice(fight_assignment.to_dict())
-        commander_order_bundle = dict(getattr(battle_round_plan, "metadata", {}) or {}).get("commander_order_bundle")
-        if isinstance(commander_order_bundle, dict):
-            resource_authorizations = dict(commander_order_bundle.get("resource_authorizations", {}) or {})
-            unit_resource_authorizations = [
-                dict(authorization)
-                for authorization in resource_authorizations.values()
-                if str(dict(authorization).get("owner_unit_id", "") or "") == unit_id
-            ]
-            if unit_resource_authorizations and "commander_resource_authorizations" not in updated:
-                updated["commander_resource_authorizations"] = sorted(
-                    unit_resource_authorizations,
-                    key=lambda item: str(dict(item).get("resource_id", "")),
-                )
+        unit_resource_authorizations = _commander_resource_authorization_context(
+            battle_round_plan,
+            unit_id,
+            include_global_resources=str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_TOOL_ACTION,
+        )
+        if unit_resource_authorizations and "commander_resource_authorizations" not in updated:
+            updated["commander_resource_authorizations"] = unit_resource_authorizations
+
+    if (
+        battle_round_plan is not None
+        and not unit_id
+        and str(getattr(request, "decision_type", "") or "") == DECISION_SELECT_TOOL_ACTION
+        and "commander_resource_authorizations" not in updated
+    ):
+        global_resource_authorizations = _commander_resource_authorization_context(
+            battle_round_plan,
+            "",
+            include_global_resources=True,
+        )
+        if global_resource_authorizations:
+            updated["commander_resource_authorizations"] = global_resource_authorizations
 
     if deployment_plan is not None and unit_id:
         deployment_task = dict(getattr(deployment_plan, "unit_tasks", {}) or {}).get(unit_id)

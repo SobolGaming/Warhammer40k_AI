@@ -246,6 +246,202 @@ def test_commander_orders_compile_targets_preserve_and_resource_authorization() 
     assert "target:high" in authorization["allowed_target_unit_ids"]
 
 
+def test_commander_resource_authorization_stays_reserved_before_reserved_round() -> None:
+    shooter = _Unit(
+        "unit:shooter",
+        wargear=[_Wargear("ranged", _Profile(attacks=2, strength=12, ap=-3, damage=6), name="hunter-killer missile")],
+    )
+    high_target = _Unit("target:high", wounds=12, oc=5)
+    game, player, _opponent = _build_game([shooter], [high_target])
+    general = game.get_or_create_general_plan(player.id)
+    directive = GeneralRoundDirective(
+        battle_round=1,
+        posture="stage",
+        push_priority=0.2,
+        cp_reserve_target=1.0,
+    )
+    policies = dict(general.limited_resource_policy)
+    policies["unit:shooter:one_shot_weapon"] = LimitedResourcePolicy(
+        resource_id="unit:shooter:one_shot_weapon",
+        resource_kind="one_shot_weapon",
+        status="reserved",
+        reserved_for_round=2,
+        authorization_threshold=0.8,
+        owner_unit_id="unit:shooter",
+    )
+    custom_general = replace(
+        general,
+        battle_round_directives={1: directive},
+        limited_resource_policy=policies,
+    )
+    deployment_orders = game.get_or_create_deployment_order_bundle(player.id)
+    prebattle_orders = game.get_or_create_prebattle_order_bundle(player.id)
+    tier1 = game.get_or_create_tier1_plan(player.id)
+    tier2 = game.get_or_create_tier2_task_bundle(player.id)
+    analysis = game.get_or_create_battle_round_plan(player.id).metadata["analysis_snapshot"]
+
+    commander_orders = compile_general_intent_to_commander_orders(
+        game,
+        custom_general,
+        deployment_orders,
+        prebattle_orders,
+        tier1,
+        tier2,
+        analysis,
+        battle_round=1,
+        player_id=player.id,
+    ).to_dict()
+
+    authorization = commander_orders["resource_authorizations"]["unit:shooter:one_shot_weapon"]
+    assert authorization["status"] == "reserved"
+    assert authorization["allowed_target_unit_ids"] == []
+
+
+def test_stage_round_downshifts_constrained_future_charge_order_until_push_round() -> None:
+    melee = _Unit(
+        "unit:melee",
+        keywords=["INFANTRY"],
+        wargear=[_Wargear("melee", _Profile(attacks=6, strength=8, ap=-2, damage=2), name="chainaxe")],
+    )
+    target = _Unit("target:high", wounds=10, oc=4)
+    game, player, _opponent = _build_game([melee], [target])
+    general = game.get_or_create_general_plan(player.id)
+    custom_general = replace(
+        general,
+        battle_round_directives={
+            1: GeneralRoundDirective(battle_round=1, posture="stage", push_priority=0.2),
+            2: GeneralRoundDirective(battle_round=2, posture="push", push_priority=0.9),
+        },
+        target_priority_doctrine={
+            "unit_order_overrides": {
+                "unit:melee": {
+                    "constraint_mode": "constrain",
+                    "role": "melee_first",
+                    "primary_target_unit_id": "target:high",
+                    "movement_order": {
+                        "intent": "advance_to_charge_lane",
+                        "desired_action": "advance",
+                        "charge_staging_target_unit_id": "target:high",
+                        "intentionally_accept_shooting_ineligible": True,
+                    },
+                    "charge_order": {
+                        "intent": "planned_charge",
+                        "primary_target_unit_id": "target:high",
+                        "intentionally_skip_shooting": True,
+                    },
+                    "fight_order": {
+                        "intent": "planned_fight",
+                        "primary_target_unit_id": "target:high",
+                    },
+                }
+            }
+        },
+    )
+    deployment_orders = game.get_or_create_deployment_order_bundle(player.id)
+    prebattle_orders = game.get_or_create_prebattle_order_bundle(player.id)
+    tier1 = game.get_or_create_tier1_plan(player.id)
+    tier2 = game.get_or_create_tier2_task_bundle(player.id)
+    analysis = game.get_or_create_battle_round_plan(player.id).metadata["analysis_snapshot"]
+
+    stage_orders = compile_general_intent_to_commander_orders(
+        game,
+        custom_general,
+        deployment_orders,
+        prebattle_orders,
+        tier1,
+        tier2,
+        analysis,
+        battle_round=1,
+        player_id=player.id,
+    ).to_dict()
+    push_orders = compile_general_intent_to_commander_orders(
+        game,
+        custom_general,
+        deployment_orders,
+        prebattle_orders,
+        tier1,
+        tier2,
+        analysis,
+        battle_round=2,
+        player_id=player.id,
+    ).to_dict()
+
+    stage = stage_orders["unit_orders"]["unit:melee"]
+    push = push_orders["unit_orders"]["unit:melee"]
+    assert stage["metadata"]["directive_commit_status"] == "staging"
+    assert stage["movement_order"]["intent"] == "stage_for_commit"
+    assert stage["movement_order"]["desired_action"] == "normal_move"
+    assert stage["movement_order"]["intentionally_accept_shooting_ineligible"] is False
+    assert stage["charge_order"]["intent"] == "hold"
+    assert "primary_target_unit_id" not in stage["charge_order"]
+    assert stage["fight_order"]["intent"] == "hold"
+    assert "primary_target_unit_id" not in stage["shooting_order"]
+    assert push["metadata"]["directive_commit_status"] == "commit"
+    assert push["movement_order"]["desired_action"] == "advance"
+    assert push["charge_order"]["intent"] == "planned_charge"
+    assert push["charge_order"]["primary_target_unit_id"] == "target:high"
+
+    _install_general_plan(game, player, custom_general)
+    materialized_stage_plan = game.get_or_create_battle_round_plan(player.id).to_dict()
+    materialized_charge = materialized_stage_plan["charge_plan"]["unit_charge_assignments"]["unit:melee"]
+    materialized_status = materialized_stage_plan["unit_tasks"]["unit:melee"]["metadata"][
+        "commander_constraint_status"
+    ]
+    assert materialized_status["charge_constraint_status"] == "staged_hold"
+    assert "primary_target_unit_id" not in materialized_charge
+
+
+def test_stage_round_does_not_downshift_hard_replace_order() -> None:
+    melee = _Unit(
+        "unit:melee",
+        keywords=["INFANTRY"],
+        wargear=[_Wargear("melee", _Profile(attacks=6, strength=8, ap=-2, damage=2), name="chainaxe")],
+    )
+    target = _Unit("target:high", wounds=10, oc=4)
+    game, player, _opponent = _build_game([melee], [target])
+    general = game.get_or_create_general_plan(player.id)
+    custom_general = replace(
+        general,
+        battle_round_directives={1: GeneralRoundDirective(battle_round=1, posture="stage", push_priority=0.2)},
+        target_priority_doctrine={
+            "unit_order_overrides": {
+                "unit:melee": {
+                    "constraint_mode": "replace",
+                    "role": "melee_first",
+                    "primary_target_unit_id": "target:high",
+                    "movement_order": {"desired_action": "advance"},
+                    "charge_order": {
+                        "intent": "planned_charge",
+                        "primary_target_unit_id": "target:high",
+                    },
+                }
+            }
+        },
+    )
+    deployment_orders = game.get_or_create_deployment_order_bundle(player.id)
+    prebattle_orders = game.get_or_create_prebattle_order_bundle(player.id)
+    tier1 = game.get_or_create_tier1_plan(player.id)
+    tier2 = game.get_or_create_tier2_task_bundle(player.id)
+    analysis = game.get_or_create_battle_round_plan(player.id).metadata["analysis_snapshot"]
+
+    orders = compile_general_intent_to_commander_orders(
+        game,
+        custom_general,
+        deployment_orders,
+        prebattle_orders,
+        tier1,
+        tier2,
+        analysis,
+        battle_round=1,
+        player_id=player.id,
+    ).to_dict()
+
+    unit_order = orders["unit_orders"]["unit:melee"]
+    assert unit_order["metadata"]["directive_commit_status"] == "commit"
+    assert unit_order["movement_order"]["desired_action"] == "advance"
+    assert unit_order["charge_order"]["primary_target_unit_id"] == "target:high"
+
+
 def test_commander_orders_include_enriched_schema_and_explicit_general_overrides() -> None:
     shooter = _Unit(
         "unit:shooter",
@@ -328,6 +524,7 @@ def test_explicit_general_unit_order_constrains_battle_round_fire_assignment() -
     general = game.get_or_create_general_plan(player.id)
     custom_general = replace(
         general,
+        battle_round_directives={1: GeneralRoundDirective(battle_round=1, posture="push", push_priority=0.9)},
         target_priority_doctrine={
             "unit_order_overrides": {
                 "unit:shooter": {
@@ -360,6 +557,7 @@ def test_stale_explicit_general_unit_order_falls_back_to_greedy_assignment() -> 
     general = game.get_or_create_general_plan(player.id)
     custom_general = replace(
         general,
+        battle_round_directives={1: GeneralRoundDirective(battle_round=1, posture="push", push_priority=0.9)},
         target_priority_doctrine={
             "unit_order_overrides": {
                 "unit:shooter": {
