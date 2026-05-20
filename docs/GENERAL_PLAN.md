@@ -106,11 +106,18 @@ Reusable General strategy profiles are stored in
 runner is `scripts/run_general_profile_eval.py`.
 
 The runner is intentionally outside the core engine path. It temporarily
-overrides Player 1's cached `GeneralPlan` with profile-specific round
-directives, resource policy, CP policy, target-order overrides, unit-order
-overrides, and transport doctrine before downstream deployment/pre-battle/
-commander order bundles compile. It does not patch rankers, legality checks,
-candidate masks, or engine mutation.
+overrides each selected player's cached `GeneralPlan` with that player's own
+profile-specific round directives, resource policy, CP policy, target-order
+overrides, unit-order overrides, and transport doctrine before downstream
+deployment/pre-battle/commander order bundles compile. It does not patch
+rankers, legality checks, candidate masks, or engine mutation.
+
+Profile privacy is part of the harness contract. A General may evaluate public
+state such as both army compositions, mission, deployment, reserves, and board
+state, but it must not receive the opponent's selected profile id or profile
+knobs. The harness may record the profile pair only in post-game evaluation
+summaries. The runner also keeps in-game `game_id` values profile-agnostic so
+DecisionRecords do not directly encode the selected profile pair.
 
 By default, the harness sets `WH40K_DECISION_RECORD_MAX=4096` for the process so
 strategy comparisons do not truncate normal full-game records at the older

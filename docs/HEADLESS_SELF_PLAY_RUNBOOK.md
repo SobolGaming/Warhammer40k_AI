@@ -214,10 +214,18 @@ General profile evaluation:
 - The profile knobs live in
   `data/general_profiles/we_vs_aeldari_general_profiles.json`.
 - The runner wraps the existing deterministic headless self-play path and
-  applies selected profile overrides to Player 1's cached `GeneralPlan` before
-  deployment, pre-battle, and commander order bundles are compiled.
+  applies selected profile overrides independently to each player's cached
+  `GeneralPlan` before deployment, pre-battle, and commander order bundles are
+  compiled.
 - Normal engine runs are unaffected; the profile runner patches the plan only
   inside its local evaluation context.
+- Profile selection is private to each player's General. The runner records the
+  profile pair in the post-game summary, but it does not write the opponent's
+  profile id into either player's `GeneralPlan`, target doctrine, CP policy, or
+  compiler order bundles.
+- In-game `game_id` values are profile-agnostic (`general_profile_eval:<index>`),
+  so DecisionRecords do not directly encode the profile pair. Profile ids remain
+  in the external summary filenames and JSON summaries for evaluation.
 - The runner sets `WH40K_DECISION_RECORD_MAX` to `4096` by default so profile
   runs retain enough in-memory DecisionRecords for later inspection.
 
@@ -230,11 +238,17 @@ uv run python scripts/run_general_profile_eval.py \
   --profile-lines 80
 ```
 
+With no profile-selection flags, the runner evaluates the Cartesian product of
+all Player 1 and Player 2 profiles in the document. Use `--pairing-mode mirror`
+to run only same-id matchups, or select sides explicitly:
+
 Useful variants:
 
 ```bash
 uv run python scripts/run_general_profile_eval.py --list-profiles --json
 uv run python scripts/run_general_profile_eval.py --profile-id round2_hammer --write-records
+uv run python scripts/run_general_profile_eval.py --player1-profile-id alpha_pressure --player2-profile-id late_preserve
+uv run python scripts/run_general_profile_eval.py --pairing-mode mirror --no-profile
 uv run python scripts/run_general_profile_eval.py --no-profile --decision-record-max 4096
 ```
 

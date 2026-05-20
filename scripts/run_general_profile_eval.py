@@ -12,8 +12,13 @@ import json
 import os
 from pathlib import Path
 import pstats
+import sys
 import time
 from typing import Any, Callable, Iterable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_headless_self_play as self_play
 from warhammer40k_ai.engine.game import Game
@@ -25,7 +30,7 @@ from warhammer40k_ai.engine.general_plan import (
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = SCRIPT_DIR.parents[0]
 DEFAULT_PROFILES_PATH = ROOT / "data" / "general_profiles" / "we_vs_aeldari_general_profiles.json"
 DEFAULT_OUTPUT_DIR = ROOT / "data" / "general_profile_eval" / "current"
 
@@ -66,16 +71,72 @@ def _load_profile_document(path: Path) -> dict[str, Any]:
     return dict(payload)
 
 
+def _profile_catalog(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    catalog: dict[str, dict[str, Any]] = {}
+    for profile in list(document.get("profiles", []) or []):
+        if not isinstance(profile, dict):
+            continue
+        profile_id = str(profile.get("id", "") or "").strip()
+        if not profile_id:
+            continue
+        catalog[profile_id] = dict(profile)
+    return dict(sorted(catalog.items(), key=lambda item: (int(item[1].get("index", 0) or 0), str(item[0]))))
+
+
 def _selected_profiles(document: dict[str, Any], profile_ids: Iterable[str] | None) -> list[dict[str, Any]]:
     wanted = {str(profile_id).strip() for profile_id in list(profile_ids or []) if str(profile_id).strip()}
-    profiles = [dict(profile or {}) for profile in list(document.get("profiles", []) or [])]
+    catalog = _profile_catalog(document)
+    profiles = list(catalog.values())
     if not wanted:
         return sorted(profiles, key=lambda profile: (int(profile.get("index", 0) or 0), str(profile.get("id", ""))))
-    selected = [profile for profile in profiles if str(profile.get("id", "") or "") in wanted]
-    missing = sorted(wanted.difference({str(profile.get("id", "") or "") for profile in selected}))
+    selected = [catalog[profile_id] for profile_id in wanted if profile_id in catalog]
+    missing = sorted(wanted.difference(set(catalog)))
     if missing:
         raise ValueError(f"Unknown profile id(s): {', '.join(missing)}")
     return sorted(selected, key=lambda profile: (int(profile.get("index", 0) or 0), str(profile.get("id", ""))))
+
+
+def _profiles_by_id(document: dict[str, Any], profile_ids: Iterable[str]) -> list[dict[str, Any]]:
+    profile_ids = [str(profile_id).strip() for profile_id in list(profile_ids or []) if str(profile_id).strip()]
+    if not profile_ids:
+        return []
+    return _selected_profiles(document, profile_ids)
+
+
+def _profile_pair_label(player1_profile: dict[str, Any], player2_profile: dict[str, Any]) -> str:
+    p1_index = int(player1_profile.get("index", 0) or 0)
+    p2_index = int(player2_profile.get("index", 0) or 0)
+    p1_id = _safe_label(str(player1_profile.get("id", "") or "player1"))
+    p2_id = _safe_label(str(player2_profile.get("id", "") or "player2"))
+    return f"p1_{p1_index:02d}_{p1_id}_vs_p2_{p2_index:02d}_{p2_id}"
+
+
+def _profile_pairings(
+    *,
+    player1_profiles: list[dict[str, Any]],
+    player2_profiles: list[dict[str, Any]],
+    pairing_mode: str,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    mode = str(pairing_mode or "cartesian").strip().lower()
+    if not player1_profiles or not player2_profiles:
+        return []
+    if mode == "mirror":
+        p2_by_id = {str(profile.get("id", "") or ""): profile for profile in player2_profiles}
+        pairs = [
+            (profile, p2_by_id[str(profile.get("id", "") or "")])
+            for profile in player1_profiles
+            if str(profile.get("id", "") or "") in p2_by_id
+        ]
+        if pairs:
+            return pairs
+        return list(zip(player1_profiles, player2_profiles))
+    if mode == "zip":
+        if len(player1_profiles) != len(player2_profiles):
+            raise ValueError("--pairing-mode zip requires equal player1/player2 profile counts.")
+        return list(zip(player1_profiles, player2_profiles))
+    if mode != "cartesian":
+        raise ValueError(f"Unknown pairing mode: {pairing_mode}")
+    return [(p1, p2) for p1 in player1_profiles for p2 in player2_profiles]
 
 
 def _floatish(value: Any, default: float = 0.0) -> float:
@@ -546,7 +607,10 @@ def _apply_profile_to_plan(game: object, plan: GeneralPlan, profile: dict[str, A
 
 
 @contextmanager
-def _general_profile_context(profile: dict[str, Any], events: list[dict[str, Any]]):
+def _general_profile_context(
+    profiles_by_player_slot: dict[int, dict[str, Any]],
+    events_by_player_slot: dict[int, list[dict[str, Any]]],
+):
     original_callable: Callable[..., Any] = getattr(Game, "get_or_create_general_plan")
     had_class_attr = "get_or_create_general_plan" in Game.__dict__
     original_class_attr = Game.__dict__.get("get_or_create_general_plan")
@@ -554,16 +618,29 @@ def _general_profile_context(profile: dict[str, Any], events: list[dict[str, Any
     def _wrapped_get_or_create_general_plan(game: Game, player_id: str):
         plan = original_callable(game, player_id)
         players = list(getattr(game, "players", []) or [])
-        if not players or str(getattr(players[0], "id", "") or "") != str(player_id or ""):
+        player_slot = -1
+        for index, player in enumerate(players):
+            if str(getattr(player, "id", "") or "") == str(player_id or ""):
+                player_slot = int(index)
+                break
+        if player_slot < 0:
+            return plan
+        profile = profiles_by_player_slot.get(player_slot)
+        if profile is None:
             return plan
         if str(dict(getattr(plan, "metadata", {}) or {}).get("eval_profile_id", "") or "") == str(profile.get("id", "") or ""):
             return plan
         updated, event = _apply_profile_to_plan(game, plan, profile)
         if event:
+            event = {
+                **event,
+                "player_slot": f"player{player_slot + 1}",
+                "player_id": str(player_id),
+            }
             key = game._general_plan_key(str(player_id))
             game._general_plans[key] = updated
             _clear_plan_dependents(game, str(player_id))
-            events.append(event)
+            events_by_player_slot.setdefault(player_slot, []).append(event)
             record_event = getattr(game, "record_orchestration_audit_event", None)
             if callable(record_event):
                 record_event(
@@ -587,7 +664,9 @@ def _general_profile_context(profile: dict[str, Any], events: list[dict[str, Any
 
 def _run_profile_game(
     *,
-    profile: dict[str, Any],
+    run_index: int,
+    player1_profile: dict[str, Any],
+    player2_profile: dict[str, Any],
     player1_army: str,
     player2_army: str,
     seed: int,
@@ -598,17 +677,23 @@ def _run_profile_game(
     replay_dir: str,
     write_records: bool,
 ) -> dict[str, Any]:
-    profile_id = str(profile.get("id", "") or "profile")
-    profile_index = int(profile.get("index", 0) or 0)
-    label = f"{profile_index:02d}_{_safe_label(profile_id)}"
-    events: list[dict[str, Any]] = []
+    player1_profile_id = str(player1_profile.get("id", "") or "player1_profile")
+    player2_profile_id = str(player2_profile.get("id", "") or "player2_profile")
+    label = _profile_pair_label(player1_profile, player2_profile)
+    events_by_slot: dict[int, list[dict[str, Any]]] = {0: [], 1: []}
     profiler = cProfile.Profile() if profile_enabled else None
 
     def _execute() -> dict[str, Any]:
-        with _general_profile_context(profile, events):
+        with _general_profile_context(
+            {
+                0: player1_profile,
+                1: player2_profile,
+            },
+            events_by_slot,
+        ):
             with self_play._deterministic_uuid4_context(int(seed)):
                 return self_play._run_single_game(
-                    game_id=f"general_profile:{label}:seed:{int(seed)}",
+                    game_id=f"general_profile_eval:{int(run_index):06d}:seed:{int(seed)}",
                     player1_army_file=str(player1_army),
                     player2_army_file=str(player2_army),
                     max_phase_steps=int(max_phase_steps),
@@ -645,13 +730,21 @@ def _run_profile_game(
         _write_json(output_dir / f"{label}_records.json", records)
 
     summary = {
-        "profile_id": profile_id,
-        "profile_index": profile_index,
-        "profile_description": str(profile.get("description", "") or ""),
+        "run_index": int(run_index),
+        "profile_pair_id": label,
+        "player1_profile_id": player1_profile_id,
+        "player1_profile_index": int(player1_profile.get("index", 0) or 0),
+        "player1_profile_description": str(player1_profile.get("description", "") or ""),
+        "player2_profile_id": player2_profile_id,
+        "player2_profile_index": int(player2_profile.get("index", 0) or 0),
+        "player2_profile_description": str(player2_profile.get("description", "") or ""),
         "seed": int(seed),
         "elapsed_seconds": round(elapsed, 6),
         "decision_record_count": int(len(records)),
-        "applied_general_profile_events": events,
+        "applied_general_profile_events": {
+            "player1": list(events_by_slot.get(0, []) or []),
+            "player2": list(events_by_slot.get(1, []) or []),
+        },
         "winner_army_label": str(result.get("winner_army_label", "") or ""),
         "winner_score_line": str(result.get("winner_score_line", "") or ""),
         "phase_steps": int(result.get("phase_steps", 0) or 0),
@@ -668,7 +761,30 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Evaluate reusable GeneralPlan profiles in deterministic WE vs Aeldari headless games.",
     )
     parser.add_argument("--profiles", default=str(DEFAULT_PROFILES_PATH), help="General profile JSON document.")
-    parser.add_argument("--profile-id", action="append", default=[], help="Profile id to run. Repeat to select many.")
+    parser.add_argument(
+        "--profile-id",
+        action="append",
+        default=[],
+        help="Profile id to run for both players. Repeat to select many.",
+    )
+    parser.add_argument(
+        "--player1-profile-id",
+        action="append",
+        default=[],
+        help="Profile id for Player 1. Repeat to select many.",
+    )
+    parser.add_argument(
+        "--player2-profile-id",
+        action="append",
+        default=[],
+        help="Profile id for Player 2. Repeat to select many.",
+    )
+    parser.add_argument(
+        "--pairing-mode",
+        choices=("cartesian", "mirror", "zip"),
+        default="cartesian",
+        help="How to pair selected Player 1 and Player 2 profiles.",
+    )
     parser.add_argument("--list-profiles", action="store_true", help="List configured profiles and exit.")
     parser.add_argument("--json", action="store_true", help="With --list-profiles, print the full profile JSON.")
     parser.add_argument("--player1-army", default="", help="Player 1 army list path. Defaults to profile document value.")
@@ -690,12 +806,20 @@ def main() -> None:
     if not profiles_path.is_absolute():
         profiles_path = ROOT / profiles_path
     document = _load_profile_document(profiles_path)
-    profiles = _selected_profiles(document, args.profile_id)
+    catalog = _profile_catalog(document)
+    generic_profiles = _profiles_by_id(document, args.profile_id)
+    player1_profiles = _profiles_by_id(document, args.player1_profile_id) or generic_profiles or list(catalog.values())
+    player2_profiles = _profiles_by_id(document, args.player2_profile_id) or generic_profiles or list(catalog.values())
+    profile_pairs = _profile_pairings(
+        player1_profiles=player1_profiles,
+        player2_profiles=player2_profiles,
+        pairing_mode=str(args.pairing_mode),
+    )
     if bool(args.list_profiles):
         if bool(args.json):
-            print(json.dumps(_json_safe({"profiles": profiles}), indent=2, sort_keys=True))
+            print(json.dumps(_json_safe({"profiles": list(catalog.values())}), indent=2, sort_keys=True))
             return
-        for profile in profiles:
+        for profile in list(catalog.values()):
             print(f"{int(profile.get('index', 0) or 0):02d} {profile.get('id', '')}: {profile.get('description', '')}")
         return
 
@@ -711,9 +835,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     summaries: list[dict[str, Any]] = []
-    for profile in profiles:
+    for run_index, (player1_profile, player2_profile) in enumerate(profile_pairs):
         summary = _run_profile_game(
-            profile=profile,
+            run_index=run_index,
+            player1_profile=player1_profile,
+            player2_profile=player2_profile,
             player1_army=player1_army,
             player2_army=player2_army,
             seed=seed,
@@ -726,7 +852,8 @@ def main() -> None:
         )
         summaries.append(summary)
         print(
-            f"{summary['profile_index']:02d} {summary['profile_id']}: "
+            f"{summary['player1_profile_index']:02d} {summary['player1_profile_id']} vs "
+            f"{summary['player2_profile_index']:02d} {summary['player2_profile_id']}: "
             f"{summary['winner_score_line']} in {summary['elapsed_seconds']:.2f}s"
         )
     _write_json(
@@ -737,6 +864,12 @@ def main() -> None:
             "player2_army": player2_army,
             "seed": seed,
             "decision_record_max": int(os.environ["WH40K_DECISION_RECORD_MAX"]),
+            "pairing_mode": str(args.pairing_mode),
+            "profile_pair_count": int(len(profile_pairs)),
+            "profile_privacy": {
+                "opponent_profile_hidden_from_general_plan": True,
+                "pair_ids_are_report_only": True,
+            },
             "summaries": summaries,
         },
     )

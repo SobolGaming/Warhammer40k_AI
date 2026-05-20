@@ -3,7 +3,7 @@
   "default_seed": 2026052000,
   "default_player1_army": "army_lists/WE_Daemonkin_2000.txt",
   "default_player2_army": "army_lists/Aeldari_Warhost_2000.txt",
-  "description": "Reusable World Eaters vs Aeldari General profile evaluation set.",
+  "description": "Reusable World Eaters vs Aeldari General profile evaluation set. Profiles are army-agnostic strategic postures and can be assigned independently to either player.",
   "profiles": [
     {
       "description": "Default stage/push/preserve General scaffold.",
@@ -18,7 +18,7 @@
         "reserve_for_defensive_reaction": 0,
         "reserve_for_interrupt_or_overwatch": 0
       },
-      "description": "WE pushes from round 1, authorizes scarce resources early, and sends melee-first units at the top enemy threat.",
+      "description": "The profiled army pushes from round 1, authorizes scarce resources early, and sends melee-first units at the top enemy threat.",
       "id": "alpha_pressure",
       "index": 2,
       "mode": "alpha",
@@ -123,7 +123,7 @@
         "reserve_for_defensive_reaction": 1,
         "reserve_for_interrupt_or_overwatch": 1
       },
-      "description": "WE stages round 1, preserves CP/resources for a round 2-3 push, and times transports for round 2 delivery.",
+      "description": "The profiled army stages round 1, preserves CP/resources for a round 2-3 push, and times transports for round 2 delivery.",
       "id": "round2_hammer",
       "index": 3,
       "mode": "hammer",
@@ -236,7 +236,7 @@
         "reserve_for_defensive_reaction": 1,
         "reserve_for_interrupt_or_overwatch": 1
       },
-      "description": "WE prioritizes Aeldari scoring/OC pieces over raw threat and sends fast melee to deny objectives.",
+      "description": "The profiled army prioritizes opposing scoring/OC pieces over raw threat and sends fast melee to deny objectives.",
       "id": "objective_denial",
       "index": 4,
       "mode": "denial",
@@ -335,7 +335,7 @@
         "reserve_for_defensive_reaction": 2,
         "reserve_for_interrupt_or_overwatch": 2
       },
-      "description": "WE protects high-value units and scarce resources, accepting lower early aggression for late scoring posture.",
+      "description": "The profiled army protects high-value units and scarce resources, accepting lower early aggression for late scoring posture.",
       "id": "late_preserve",
       "index": 5,
       "mode": "preserve",
