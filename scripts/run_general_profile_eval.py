@@ -21,6 +21,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import run_headless_self_play as self_play
+from extract_ranker_training_rows import build_ranker_coverage_report, candidate_rows_from_records
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.general_plan import (
     GeneralPlan,
@@ -150,6 +151,201 @@ def _floatish(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return float(default)
+
+
+def _score_for_label(scoreboard: dict[str, Any], label: str) -> float:
+    return _floatish(scoreboard.get(str(label or ""), 0.0), 0.0)
+
+
+def _score_value(value: float) -> int | float:
+    numeric = float(value)
+    if numeric.is_integer():
+        return int(numeric)
+    return round(numeric, 6)
+
+
+def _mean(values: Iterable[float]) -> float:
+    numbers = [float(value) for value in list(values or [])]
+    if not numbers:
+        return 0.0
+    return round(sum(numbers) / len(numbers), 6)
+
+
+def _smoke_status_from_args(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "ui": str(getattr(args, "ui_smoke_status", "not_run") or "not_run"),
+        "network": str(getattr(args, "network_smoke_status", "not_run") or "not_run"),
+        "snapshot": str(getattr(args, "snapshot_smoke_status", "not_run") or "not_run"),
+    }
+
+
+def _coverage_metric_slice(coverage: dict[str, Any]) -> dict[str, Any]:
+    commander = dict(coverage.get("commander_assignment_hit_fallback_rate", {}) or {})
+    return {
+        "record_count": int(coverage.get("record_count", 0) or 0),
+        "candidate_row_count": int(coverage.get("candidate_row_count", 0) or 0),
+        "decision_type_counts": dict(coverage.get("decision_type_counts", {}) or {}),
+        "candidate_count_distribution": dict(coverage.get("candidate_count_distribution", {}) or {}),
+        "mask_ratio": dict(coverage.get("mask_ratio", {}) or {}),
+        "chosen_action_rank_under_current_ranker": _json_safe(
+            dict(coverage.get("chosen_action_rank_under_current_ranker", {}) or {})
+        ),
+        "fallback_rate": float(commander.get("fallback_rate", 0.0) or 0.0),
+        "fallback_count": int(commander.get("fallback_count", 0) or 0),
+        "commander_assignment_hit_rate": float(commander.get("hit_rate", 0.0) or 0.0),
+        "commander_assignment_hit_count": int(commander.get("hit_count", 0) or 0),
+        "stale_plan_rate": dict(coverage.get("stale_plan_rate", {}) or {}),
+        "resource_authorization_usage": dict(coverage.get("resource_authorization_used_rejected", {}) or {}),
+        "context_payload_byte_distribution": dict(coverage.get("context_payload_byte_distribution", {}) or {}),
+        "deployment_tempo_usage": dict(coverage.get("deployment_tempo_usage", {}) or {}),
+    }
+
+
+def _matrix_report_row(
+    summary: dict[str, Any],
+    *,
+    records: list[dict[str, Any]],
+    player1_army_label: str,
+    player2_army_label: str,
+    smoke_status: dict[str, str],
+) -> dict[str, Any]:
+    scoreboard = dict(summary.get("scoreboard", {}) or {})
+    player1_score = _score_for_label(scoreboard, player1_army_label)
+    player2_score = _score_for_label(scoreboard, player2_army_label)
+    winner_army_label = str(summary.get("winner_army_label", "") or "")
+    if winner_army_label == str(player1_army_label):
+        player1_result = "win"
+        player2_result = "loss"
+        winner_slot = "player1"
+    elif winner_army_label == str(player2_army_label):
+        player1_result = "loss"
+        player2_result = "win"
+        winner_slot = "player2"
+    else:
+        player1_result = "tie"
+        player2_result = "tie"
+        winner_slot = "tie"
+
+    rows = candidate_rows_from_records(records)
+    coverage = build_ranker_coverage_report(records, rows=rows, smoke_status=smoke_status)
+    return {
+        "profile_pair_id": str(summary.get("profile_pair_id", "") or ""),
+        "seed": int(summary.get("seed", 0) or 0),
+        "player1_profile_id": str(summary.get("player1_profile_id", "") or ""),
+        "player2_profile_id": str(summary.get("player2_profile_id", "") or ""),
+        "player1_profile_index": int(summary.get("player1_profile_index", 0) or 0),
+        "player2_profile_index": int(summary.get("player2_profile_index", 0) or 0),
+        "player1_army_label": str(player1_army_label),
+        "player2_army_label": str(player2_army_label),
+        "winner_army_label": winner_army_label,
+        "winner_slot": winner_slot,
+        "player1_result": player1_result,
+        "player2_result": player2_result,
+        "vp": {
+            "player1": _score_value(player1_score),
+            "player2": _score_value(player2_score),
+            "differential_player1_minus_player2": _score_value(player1_score - player2_score),
+        },
+        "phase_count": int(summary.get("phase_steps", 0) or 0),
+        "decision_count": int(summary.get("decision_record_count", len(records)) or 0),
+        "records_path": str(summary.get("records_path", "") or ""),
+        "summary_path": str(summary.get("summary_path", "") or ""),
+        "coverage": _coverage_metric_slice(coverage),
+    }
+
+
+def _build_profile_matrix_report(
+    *,
+    summaries: list[dict[str, Any]],
+    records_by_profile_pair_id: dict[str, list[dict[str, Any]]],
+    profiles_path: Path,
+    player1_army: str,
+    player2_army: str,
+    seed: int,
+    decision_record_max: int,
+    pairing_mode: str,
+    smoke_status: dict[str, str],
+    ranker_rows_path: str = "",
+    ranker_coverage_path: str = "",
+) -> dict[str, Any]:
+    player1_army_label, player2_army_label = self_play._army_labels_from_paths(player1_army, player2_army)
+    rows = [
+        _matrix_report_row(
+            summary,
+            records=list(records_by_profile_pair_id.get(str(summary.get("profile_pair_id", "") or ""), []) or []),
+            player1_army_label=player1_army_label,
+            player2_army_label=player2_army_label,
+            smoke_status=smoke_status,
+        )
+        for summary in list(summaries or [])
+    ]
+    winner_counts = Counter(str(row.get("winner_slot", "") or "tie") for row in rows)
+    player1_win_count = sum(1 for row in rows if str(row.get("player1_result", "")) == "win")
+    player2_win_count = sum(1 for row in rows if str(row.get("player2_result", "")) == "win")
+    tie_count = sum(1 for row in rows if str(row.get("winner_slot", "")) == "tie")
+    vp_differentials = [
+        float(dict(row.get("vp", {}) or {}).get("differential_player1_minus_player2", 0.0) or 0.0)
+        for row in rows
+    ]
+    return {
+        "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "profiles_path": str(profiles_path.resolve()),
+        "player1_army": str(player1_army),
+        "player2_army": str(player2_army),
+        "player1_army_label": str(player1_army_label),
+        "player2_army_label": str(player2_army_label),
+        "seed": int(seed),
+        "decision_record_max": int(decision_record_max),
+        "pairing_mode": str(pairing_mode),
+        "profile_pair_count": int(len(rows)),
+        "smoke_status": dict(smoke_status),
+        "ranker_diagnostics": {
+            "rows_path": str(ranker_rows_path or ""),
+            "coverage_path": str(ranker_coverage_path or ""),
+        },
+        "aggregate": {
+            "profile_pair_count": int(len(rows)),
+            "winner_counts": dict(sorted(winner_counts.items())),
+            "player1_win_count": int(player1_win_count),
+            "player2_win_count": int(player2_win_count),
+            "tie_count": int(tie_count),
+            "mean_vp_differential_player1_minus_player2": _mean(vp_differentials),
+            "total_phase_count": int(sum(int(row.get("phase_count", 0) or 0) for row in rows)),
+            "total_decision_count": int(sum(int(row.get("decision_count", 0) or 0) for row in rows)),
+        },
+        "rows": rows,
+    }
+
+
+def _resolve_output_file(raw_path: str, *, output_dir: Path, default_name: str) -> Path:
+    text = str(raw_path or "").strip()
+    path = output_dir / default_name if not text else Path(text).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
+def _write_ranker_diagnostics(
+    *,
+    records: list[dict[str, Any]],
+    rows_path: Path,
+    coverage_path: Path,
+    smoke_status: dict[str, str],
+) -> dict[str, Any]:
+    rows = candidate_rows_from_records(records)
+    rows_path.parent.mkdir(parents=True, exist_ok=True)
+    with rows_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True, ensure_ascii=True, separators=(",", ":")))
+            handle.write("\n")
+    coverage = build_ranker_coverage_report(records, rows=rows, smoke_status=smoke_status)
+    _write_json(coverage_path, coverage)
+    return {
+        "rows_path": str(rows_path.resolve()),
+        "coverage_path": str(coverage_path.resolve()),
+        "record_count": int(len(records)),
+        "candidate_row_count": int(len(rows)),
+    }
 
 
 def _entity_id(entity: object) -> str:
@@ -675,8 +871,9 @@ def _run_profile_game(
     profile_enabled: bool,
     profile_lines: int,
     replay_dir: str,
+    collect_records: bool,
     write_records: bool,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     player1_profile_id = str(player1_profile.get("id", "") or "player1_profile")
     player2_profile_id = str(player2_profile.get("id", "") or "player2_profile")
     label = _profile_pair_label(player1_profile, player2_profile)
@@ -699,7 +896,7 @@ def _run_profile_game(
                     max_phase_steps=int(max_phase_steps),
                     game_seed=int(seed),
                     replay_dir=str(replay_dir or ""),
-                    export_records=bool(write_records),
+                    export_records=bool(collect_records),
                 )
 
     started = time.perf_counter()
@@ -726,8 +923,10 @@ def _run_profile_game(
         }
 
     records = list(result.pop("records", []) or [])
+    records_path = output_dir / f"{label}_records.json"
     if write_records:
-        _write_json(output_dir / f"{label}_records.json", records)
+        _write_json(records_path, records)
+    summary_path = output_dir / f"{label}_summary.json"
 
     summary = {
         "run_index": int(run_index),
@@ -741,6 +940,7 @@ def _run_profile_game(
         "seed": int(seed),
         "elapsed_seconds": round(elapsed, 6),
         "decision_record_count": int(len(records)),
+        "records_path": str(records_path.resolve()) if bool(write_records) else "",
         "applied_general_profile_events": {
             "player1": list(events_by_slot.get(0, []) or []),
             "player2": list(events_by_slot.get(1, []) or []),
@@ -750,10 +950,11 @@ def _run_profile_game(
         "phase_steps": int(result.get("phase_steps", 0) or 0),
         "scoreboard": dict(result.get("scoreboard", {}) or {}),
         "profile_artifacts": profile_artifacts,
+        "summary_path": str(summary_path.resolve()),
         "game_result": result,
     }
-    _write_json(output_dir / f"{label}_summary.json", summary)
-    return summary
+    _write_json(summary_path, summary)
+    return summary, records
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -797,6 +998,47 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-lines", type=int, default=80, help="Readable cProfile line count.")
     parser.add_argument("--replay-dir", default="", help="Optional replay output directory.")
     parser.add_argument("--write-records", action="store_true", help="Write per-profile DecisionRecord JSON files.")
+    parser.add_argument(
+        "--matrix-report-output",
+        default="",
+        help="Compact General profile matrix report JSON. Defaults to <output-dir>/matrix_report.json.",
+    )
+    parser.add_argument(
+        "--write-ranker-diagnostics",
+        action="store_true",
+        help=(
+            "Write aggregate ranker candidate rows and coverage from the profile records. "
+            "Records are collected in memory even when --write-records is not set."
+        ),
+    )
+    parser.add_argument(
+        "--ranker-rows-output",
+        default="",
+        help="Aggregate ranker candidate JSONL output. Defaults to <output-dir>/ranker_training_rows.jsonl.",
+    )
+    parser.add_argument(
+        "--ranker-coverage-output",
+        default="",
+        help="Aggregate ranker coverage JSON output. Defaults to <output-dir>/ranker_training_coverage.json.",
+    )
+    parser.add_argument(
+        "--ui-smoke-status",
+        choices=("pass", "fail", "not_run"),
+        default="not_run",
+        help="UI smoke status to include in matrix/ranker diagnostics.",
+    )
+    parser.add_argument(
+        "--network-smoke-status",
+        choices=("pass", "fail", "not_run"),
+        default="not_run",
+        help="Network smoke status to include in matrix/ranker diagnostics.",
+    )
+    parser.add_argument(
+        "--snapshot-smoke-status",
+        choices=("pass", "fail", "not_run"),
+        default="not_run",
+        help="Snapshot smoke status to include in matrix/ranker diagnostics.",
+    )
     return parser
 
 
@@ -835,8 +1077,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     summaries: list[dict[str, Any]] = []
+    records_by_profile_pair_id: dict[str, list[dict[str, Any]]] = {}
+    all_records: list[dict[str, Any]] = []
+    collect_records = bool(args.write_records or args.write_ranker_diagnostics)
     for run_index, (player1_profile, player2_profile) in enumerate(profile_pairs):
-        summary = _run_profile_game(
+        summary, records = _run_profile_game(
             run_index=run_index,
             player1_profile=player1_profile,
             player2_profile=player2_profile,
@@ -848,14 +1093,63 @@ def main() -> None:
             profile_enabled=not bool(args.no_profile),
             profile_lines=max(1, int(args.profile_lines or 80)),
             replay_dir=str(args.replay_dir or ""),
+            collect_records=collect_records,
             write_records=bool(args.write_records),
         )
         summaries.append(summary)
+        profile_pair_id = str(summary.get("profile_pair_id", "") or "")
+        records_by_profile_pair_id[profile_pair_id] = list(records)
+        all_records.extend(records)
         print(
             f"{summary['player1_profile_index']:02d} {summary['player1_profile_id']} vs "
             f"{summary['player2_profile_index']:02d} {summary['player2_profile_id']}: "
             f"{summary['winner_score_line']} in {summary['elapsed_seconds']:.2f}s"
         )
+
+    smoke_status = _smoke_status_from_args(args)
+    ranker_diagnostic_info = {
+        "rows_path": "",
+        "coverage_path": "",
+        "record_count": int(len(all_records)),
+        "candidate_row_count": 0,
+    }
+    if bool(args.write_ranker_diagnostics):
+        ranker_rows_path = _resolve_output_file(
+            str(args.ranker_rows_output or ""),
+            output_dir=output_dir,
+            default_name="ranker_training_rows.jsonl",
+        )
+        ranker_coverage_path = _resolve_output_file(
+            str(args.ranker_coverage_output or ""),
+            output_dir=output_dir,
+            default_name="ranker_training_coverage.json",
+        )
+        ranker_diagnostic_info = _write_ranker_diagnostics(
+            records=all_records,
+            rows_path=ranker_rows_path,
+            coverage_path=ranker_coverage_path,
+            smoke_status=smoke_status,
+        )
+
+    matrix_report = _build_profile_matrix_report(
+        summaries=summaries,
+        records_by_profile_pair_id=records_by_profile_pair_id,
+        profiles_path=profiles_path,
+        player1_army=player1_army,
+        player2_army=player2_army,
+        seed=seed,
+        decision_record_max=int(os.environ["WH40K_DECISION_RECORD_MAX"]),
+        pairing_mode=str(args.pairing_mode),
+        smoke_status=smoke_status,
+        ranker_rows_path=str(ranker_diagnostic_info.get("rows_path", "") or ""),
+        ranker_coverage_path=str(ranker_diagnostic_info.get("coverage_path", "") or ""),
+    )
+    matrix_report_path = _resolve_output_file(
+        str(args.matrix_report_output or ""),
+        output_dir=output_dir,
+        default_name="matrix_report.json",
+    )
+    _write_json(matrix_report_path, matrix_report)
     _write_json(
         output_dir / "summary.json",
         {
@@ -870,9 +1164,15 @@ def main() -> None:
                 "opponent_profile_hidden_from_general_plan": True,
                 "pair_ids_are_report_only": True,
             },
+            "matrix_report_path": str(matrix_report_path.resolve()),
+            "ranker_diagnostics": ranker_diagnostic_info,
             "summaries": summaries,
         },
     )
+    print(f"Matrix report: {matrix_report_path}")
+    if bool(args.write_ranker_diagnostics):
+        print(f"Ranker rows: {ranker_diagnostic_info['rows_path']}")
+        print(f"Ranker coverage: {ranker_diagnostic_info['coverage_path']}")
 
 
 if __name__ == "__main__":

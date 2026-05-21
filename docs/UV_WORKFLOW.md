@@ -67,6 +67,20 @@ the extractor scans decision-record-like filenames such as
 ignored. Pass an explicit JSON/JSONL file path when a nonstandard filename
 should be consumed.
 
+General profile evaluation can write the same diagnostics while producing its
+compact matrix report:
+
+```bash
+uv run python scripts/run_general_profile_eval.py \
+  --pairing-mode mirror \
+  --write-records \
+  --write-ranker-diagnostics \
+  --output-dir data/general_profile_eval/mirror_eval \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
 ## UI Smoke Checks
 
 The script-level smokes are also available as a repeatable pytest lane:

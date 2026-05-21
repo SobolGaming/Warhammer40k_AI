@@ -122,3 +122,11 @@ DecisionRecords do not directly encode the selected profile pair.
 By default, the harness sets `WH40K_DECISION_RECORD_MAX=4096` for the process so
 strategy comparisons do not truncate normal full-game records at the older
 small cap.
+
+The harness writes a compact `matrix_report.json` for each run. The report keeps
+the profile-pair metadata outside the engine record stream while summarizing
+per-pair win/loss/tie result, VP differential, phase count, decision count, and
+ranker diagnostics derived from DecisionRecords. With `--write-ranker-diagnostics`,
+the runner also writes aggregate candidate-row JSONL and coverage JSON so
+profile comparisons and ranker-data coverage can be inspected before weight
+sweeps.

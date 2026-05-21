@@ -252,6 +252,28 @@ uv run python scripts/run_general_profile_eval.py --pairing-mode mirror --no-pro
 uv run python scripts/run_general_profile_eval.py --no-profile --decision-record-max 4096
 ```
 
+For pre-training diagnostics, combine fixed-seed profile evaluation, record
+export, ranker-row extraction, and matrix reporting in one run:
+
+```bash
+uv run python scripts/run_general_profile_eval.py \
+  --pairing-mode mirror \
+  --write-records \
+  --write-ranker-diagnostics \
+  --output-dir data/general_profile_eval/mirror_eval \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
+The runner writes `matrix_report.json` in the output directory. Each row records
+the profile pair, seed, army labels, win/loss/tie result, VP differential,
+phase count, decision count, fallback rate, resource authorization usage,
+commander assignment hit rate, stale-plan rate, deployment tempo usage,
+chosen-rank distribution, and context payload size. When
+`--write-ranker-diagnostics` is enabled, the aggregate candidate JSONL and
+coverage JSON are written beside the matrix report.
+
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:
 

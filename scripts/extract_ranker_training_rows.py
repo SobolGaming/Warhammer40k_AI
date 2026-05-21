@@ -272,6 +272,13 @@ def _candidate_rows(record: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def candidate_rows_from_records(records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        rows.extend(_candidate_rows(_safe_dict(record)))
+    return rows
+
+
 def _has_commander_assignment(row: dict[str, Any], context: dict[str, Any]) -> bool:
     metadata = _safe_dict(row.get("candidate_metadata"))
     if _safe_dict(row.get("commander_alignment")):
@@ -431,12 +438,25 @@ def _build_coverage(records: list[dict[str, Any]], rows: list[dict[str, Any]], s
     }
 
 
+def build_ranker_coverage_report(
+    records: Iterable[dict[str, Any]],
+    *,
+    rows: Iterable[dict[str, Any]] | None = None,
+    smoke_status: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    record_list = [_safe_dict(record) for record in records]
+    row_list = list(rows) if rows is not None else candidate_rows_from_records(record_list)
+    return _build_coverage(
+        record_list,
+        [_safe_dict(row) for row in row_list],
+        dict(smoke_status or {}),
+    )
+
+
 def main() -> int:
     args = _build_parser().parse_args()
     records = list(_iter_records(args.input))
-    rows: list[dict[str, Any]] = []
-    for record in records:
-        rows.extend(_candidate_rows(record))
+    rows = candidate_rows_from_records(records)
 
     output_path = Path(str(args.output_jsonl)).expanduser()
     if not output_path.is_absolute():
@@ -452,9 +472,9 @@ def main() -> int:
             handle.write(json.dumps(row, sort_keys=True, ensure_ascii=True, separators=(",", ":")))
             handle.write("\n")
 
-    coverage = _build_coverage(
+    coverage = build_ranker_coverage_report(
         records,
-        rows,
+        rows=rows,
         smoke_status={
             "ui": str(args.ui_smoke_status),
             "network": str(args.network_smoke_status),
