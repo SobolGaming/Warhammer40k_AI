@@ -101,13 +101,25 @@ result before promoting any candidate:
 ```bash
 uv run python scripts/analyze_ranker_weight_sweep.py \
   --input data/ranker_weight_sweeps/mirror_eval/weight_sweep_report.json \
-  --output data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json
+  --output data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json \
+  --min-vp-delta 1.0 \
+  --min-win-delta 1
 ```
 
 The analysis ranks candidates by VP differential, win/loss/tie counts,
 fallback-rate delta, commander-hit-rate delta, stale-plan-rate delta,
 resource-usage anomalies, context-size regressions, and decision/phase-count
 regressions.
+
+Promotion is explicit and produces a checked-in artifact without changing
+engine defaults:
+
+```bash
+uv run python scripts/promote_ranker_weight_candidate.py \
+  --analysis data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json \
+  --promoted-weight-set-id score_pressure_baseline_v1 \
+  --output data/ranker_weight_sweeps/promoted_baselines/score_pressure_baseline_v1.json
+```
 
 ## UI Smoke Checks
 

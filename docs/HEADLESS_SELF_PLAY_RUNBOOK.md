@@ -325,7 +325,9 @@ Analyze sweep results before promoting any weight set:
 ```bash
 uv run python scripts/analyze_ranker_weight_sweep.py \
   --input data/ranker_weight_sweeps/mirror_eval/weight_sweep_report.json \
-  --output data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json
+  --output data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json \
+  --min-vp-delta 1.0 \
+  --min-win-delta 1
 ```
 
 The analysis report ranks weight sets by VP differential, win/loss/tie counts,
@@ -336,6 +338,21 @@ compare profile pairs against the baseline and flags changes that look like one
 lucky matchup instead of consistent improvement. Promotion statuses are
 `promote_candidate`, `review`, `reject`, and `baseline`; any `review` candidate
 requires human inspection before becoming the next baseline.
+
+Promote only after reviewing the analysis:
+
+```bash
+uv run python scripts/promote_ranker_weight_candidate.py \
+  --analysis data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json \
+  --promoted-weight-set-id score_pressure_baseline_v1 \
+  --output data/ranker_weight_sweeps/promoted_baselines/score_pressure_baseline_v1.json \
+  --notes "Promoted after smoke and matrix review."
+```
+
+The promotion script writes a reusable `weight_sets` JSON plus provenance
+metadata. It does not change engine defaults. To evaluate the promoted artifact
+as the named baseline in a later sweep, pass it to `--weight-sets` and set
+`--baseline-weight-set-id` to the promoted id.
 
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:
