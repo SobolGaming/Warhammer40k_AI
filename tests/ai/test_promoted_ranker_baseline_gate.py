@@ -153,6 +153,44 @@ def test_gate_report_fails_on_blocker_or_missing_smoke(tmp_path) -> None:
     assert report["seed_results"][0]["blockers"] == ["fallback_rate_regression"]
 
 
+def test_gate_report_requires_all_smoke_keys_even_without_blockers(tmp_path) -> None:
+    mod = _load_script_module()
+
+    missing = mod.build_gate_report(
+        previous_weight_set_id="baseline",
+        promoted_weight_set_id="score_focus_v1",
+        seed_results=[
+            {
+                "seed": 101,
+                "sweep_report": {"smoke_status": {}},
+                "analysis": _analysis(),
+            }
+        ],
+        dry_run=False,
+        allow_not_run_smoke=False,
+        weight_sets_path=tmp_path / "gate_weight_sets.json",
+    )
+    relaxed = mod.build_gate_report(
+        previous_weight_set_id="baseline",
+        promoted_weight_set_id="score_focus_v1",
+        seed_results=[
+            {
+                "seed": 102,
+                "sweep_report": {"smoke_status": {"ui": "pass", "network": "not_run", "snapshot": "pass"}},
+                "analysis": _analysis(),
+            }
+        ],
+        dry_run=False,
+        allow_not_run_smoke=True,
+        weight_sets_path=tmp_path / "gate_weight_sets.json",
+    )
+
+    assert missing["gate_status"] == "fail"
+    assert missing["seed_results"][0]["smoke_passed"] is False
+    assert relaxed["gate_status"] == "pass"
+    assert relaxed["seed_results"][0]["smoke_passed"] is True
+
+
 def test_gate_cli_dry_run_writes_config_and_command_plan(tmp_path, monkeypatch) -> None:
     mod = _load_script_module()
     promoted_path = tmp_path / "promoted.json"

@@ -276,8 +276,12 @@ def _analysis_row_by_id(analysis: Mapping[str, Any], weight_set_id: str) -> dict
 
 
 def _smoke_ok(smoke_status: Mapping[str, Any], *, allow_not_run: bool) -> bool:
+    required = ("ui", "network", "snapshot")
+    status = dict(smoke_status or {})
     allowed = {"pass", "not_run"} if bool(allow_not_run) else {"pass"}
-    return all(str(value or "not_run") in allowed for value in dict(smoke_status or {}).values())
+    if any(key not in status for key in required):
+        return False
+    return all(str(status.get(key) or "not_run") in allowed for key in required)
 
 
 def build_gate_report(
