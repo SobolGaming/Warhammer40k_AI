@@ -81,6 +81,22 @@ uv run python scripts/run_general_profile_eval.py \
   --snapshot-smoke-status pass
 ```
 
+For deterministic ranker weight sweeps before ML, run fixed-seed profile
+matrices across configured component-ranker weight sets:
+
+```bash
+uv run python scripts/run_ranker_weight_sweep.py \
+  --weight-sets data/ranker_weight_sweeps/example_weight_sets.json \
+  --pairing-mode mirror \
+  --output-dir data/ranker_weight_sweeps/mirror_eval \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
+The sweep report compares every weight set to the baseline and links the
+per-weight-set matrix report plus ranker row/coverage artifacts.
+
 ## UI Smoke Checks
 
 The script-level smokes are also available as a repeatable pytest lane:

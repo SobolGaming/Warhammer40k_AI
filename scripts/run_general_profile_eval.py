@@ -871,6 +871,7 @@ def _run_profile_game(
     profile_enabled: bool,
     profile_lines: int,
     replay_dir: str,
+    ai_orchestrator: object | None,
     collect_records: bool,
     write_records: bool,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -896,6 +897,7 @@ def _run_profile_game(
                     max_phase_steps=int(max_phase_steps),
                     game_seed=int(seed),
                     replay_dir=str(replay_dir or ""),
+                    ai_orchestrator_override=ai_orchestrator,
                     export_records=bool(collect_records),
                 )
 
@@ -1093,6 +1095,7 @@ def main() -> None:
             profile_enabled=not bool(args.no_profile),
             profile_lines=max(1, int(args.profile_lines or 80)),
             replay_dir=str(args.replay_dir or ""),
+            ai_orchestrator=None,
             collect_records=collect_records,
             write_records=bool(args.write_records),
         )

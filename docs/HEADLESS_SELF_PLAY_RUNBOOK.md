@@ -274,6 +274,52 @@ chosen-rank distribution, and context payload size. When
 `--write-ranker-diagnostics` is enabled, the aggregate candidate JSONL and
 coverage JSON are written beside the matrix report.
 
+Ranker weight sweeps:
+- `scripts/run_ranker_weight_sweep.py` runs the same fixed-seed General profile
+  matrix for a built-in baseline plus one or more configured deterministic
+  weight sets.
+- The harness changes only deterministic component-ranker weights used by
+  `AIPolicyOrchestrator`; it does not train models, alter legality, generate
+  candidates, or bypass masks.
+- Each weight set gets its own subdirectory with `matrix_report.json`,
+  `ranker_training_rows.jsonl`, and `ranker_training_coverage.json`.
+- The aggregate `weight_sweep_report.json` records `weight_set_id`,
+  profile-pair count, mean VP differential, win/loss/tie counts, total decision
+  count, fallback rate, commander hit rate, stale-plan rate, resource usage,
+  deployment tempo usage, chosen-rank distribution, context payload size, smoke
+  status, artifact paths, and baseline deltas.
+
+Example:
+
+```bash
+uv run python scripts/run_ranker_weight_sweep.py \
+  --weight-sets data/ranker_weight_sweeps/example_weight_sets.json \
+  --pairing-mode mirror \
+  --output-dir data/ranker_weight_sweeps/mirror_eval \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
+Weight-set JSON can be a list or an object with a `weight_sets` list. The
+baseline is automatically prepended when `baseline` is absent:
+
+```json
+{
+  "weight_sets": [
+    {
+      "weight_set_id": "score_pressure",
+      "description": "Increase score-projection weight for movement choices.",
+      "component_weight_multipliers": {
+        "movement_ranker": {
+          "projected_score_delta_next_window": 1.15
+        }
+      }
+    }
+  ]
+}
+```
+
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:
 

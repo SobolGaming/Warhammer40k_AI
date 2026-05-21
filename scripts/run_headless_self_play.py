@@ -662,6 +662,7 @@ def _run_single_game(
     llm_adapter_config: str | None = None,
     policy_bundle_source: str | None = None,
     models_root: str | None = None,
+    ai_orchestrator_override: AIPolicyOrchestrator | None = None,
     ai_orchestrator_ignored_decision_types: Iterable[str] | None = None,
     ai_orchestrator_ignore_setup_decisions: bool = False,
     force_skip_decision_types: Iterable[str] | None = None,
@@ -702,12 +703,12 @@ def _run_single_game(
         seed_fn = getattr(random_source, "seed", None)
         if callable(seed_fn):
             seed_fn(int(game_seed))
-    ai_orchestrator = None
+    ai_orchestrator = ai_orchestrator_override
     policy_bundle_text = str(policy_bundle_source or "").strip()
-    if policy_bundle_text:
+    if policy_bundle_text and ai_orchestrator is None:
         ai_orchestrator = _load_policy_bundle_orchestrator(policy_bundle_text, models_root=models_root)
     llm_config_text = str(llm_adapter_config or "").strip()
-    if llm_config_text:
+    if llm_config_text and ai_orchestrator is None:
         ai_orchestrator = build_llm_policy_orchestrator_from_config_file(llm_config_text)
     controller = HeadlessPolicyDecisionController(
         game=game,
