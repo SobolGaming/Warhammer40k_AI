@@ -25,7 +25,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--input",
         action="append",
         required=True,
-        help="DecisionRecords JSON/JSONL file or directory. Repeat to merge sources.",
+        help=(
+            "DecisionRecords JSON/JSONL file or directory. Repeat to merge sources. "
+            "Directory inputs scan decision-record-like filenames only."
+        ),
     )
     parser.add_argument("--output-jsonl", default="data/ranker_training_rows.jsonl")
     parser.add_argument("--coverage-output", default="data/ranker_training_coverage.json")
@@ -50,6 +53,23 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _is_directory_record_file(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    if suffix not in {".json", ".jsonl"}:
+        return False
+    name = path.name.lower()
+    if name in {
+        "accepted_decision_records.json",
+        "accepted_decision_records.jsonl",
+        "decision_records.json",
+        "decision_records.jsonl",
+        "headless_self_play_decision_records.json",
+        "headless_self_play_decision_records.jsonl",
+    }:
+        return True
+    return path.stem.lower().endswith("_records")
+
+
 def _iter_input_files(path: Path) -> Iterator[Path]:
     if path.is_file():
         yield path
@@ -57,7 +77,7 @@ def _iter_input_files(path: Path) -> Iterator[Path]:
     if not path.is_dir():
         raise FileNotFoundError(f"Input path not found: {path}")
     for candidate in sorted(path.rglob("*"), key=lambda item: str(item)):
-        if candidate.suffix.lower() in {".json", ".jsonl"} and candidate.is_file():
+        if candidate.is_file() and _is_directory_record_file(candidate):
             yield candidate
 
 

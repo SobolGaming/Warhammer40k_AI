@@ -60,7 +60,12 @@ The JSONL output is candidate-row oriented and intended for inspection before
 training. The coverage report summarizes decision counts, candidate counts,
 mask ratio, chosen-action rank, commander assignment/fallback signals, stale
 plan signals, resource authorization status, context payload size, deployment
-tempo usage, and smoke pass/fail status.
+tempo usage, and smoke pass/fail status. When `--input` points at a directory,
+the extractor scans decision-record-like filenames such as
+`decision_records.json`, `accepted_decision_records.json`, and
+`*_records.json`; unrelated JSON artifacts such as snapshots and summaries are
+ignored. Pass an explicit JSON/JSONL file path when a nonstandard filename
+should be consumed.
 
 ## UI Smoke Checks
 
