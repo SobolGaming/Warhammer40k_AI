@@ -246,6 +246,7 @@ def _aggregate_result_row(
         "player1_win_count": int(aggregate.get("player1_win_count", 0) or 0),
         "player2_win_count": int(aggregate.get("player2_win_count", 0) or 0),
         "tie_count": int(aggregate.get("tie_count", 0) or 0),
+        "total_phase_count": int(aggregate.get("total_phase_count", 0) or 0),
         "total_decision_count": int(aggregate.get("total_decision_count", 0) or 0),
         "fallback_rate": _extract_rate(coverage, ("commander_assignment_hit_fallback_rate", "fallback_rate")),
         "commander_assignment_hit_rate": _extract_rate(
@@ -272,6 +273,7 @@ def _baseline_delta(row: Mapping[str, Any], baseline: Mapping[str, Any]) -> dict
         "player1_win_count",
         "player2_win_count",
         "tie_count",
+        "total_phase_count",
         "total_decision_count",
         "fallback_rate",
         "commander_assignment_hit_rate",

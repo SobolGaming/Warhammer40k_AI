@@ -285,9 +285,9 @@ Ranker weight sweeps:
   `ranker_training_rows.jsonl`, and `ranker_training_coverage.json`.
 - The aggregate `weight_sweep_report.json` records `weight_set_id`,
   profile-pair count, mean VP differential, win/loss/tie counts, total decision
-  count, fallback rate, commander hit rate, stale-plan rate, resource usage,
-  deployment tempo usage, chosen-rank distribution, context payload size, smoke
-  status, artifact paths, and baseline deltas.
+  count, total phase count, fallback rate, commander hit rate, stale-plan rate,
+  resource usage, deployment tempo usage, chosen-rank distribution, context
+  payload size, smoke status, artifact paths, and baseline deltas.
 
 Example:
 
@@ -319,6 +319,23 @@ baseline is automatically prepended when `baseline` is absent:
   ]
 }
 ```
+
+Analyze sweep results before promoting any weight set:
+
+```bash
+uv run python scripts/analyze_ranker_weight_sweep.py \
+  --input data/ranker_weight_sweeps/mirror_eval/weight_sweep_report.json \
+  --output data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json
+```
+
+The analysis report ranks weight sets by VP differential, win/loss/tie counts,
+fallback-rate delta, commander-hit-rate delta, stale-plan-rate delta,
+resource-usage anomalies, context-size regressions, and decision/phase-count
+regressions. It also reads linked per-weight-set `matrix_report.json` files to
+compare profile pairs against the baseline and flags changes that look like one
+lucky matchup instead of consistent improvement. Promotion statuses are
+`promote_candidate`, `review`, `reject`, and `baseline`; any `review` candidate
+requires human inspection before becoming the next baseline.
 
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:

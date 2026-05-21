@@ -95,7 +95,19 @@ uv run python scripts/run_ranker_weight_sweep.py \
 ```
 
 The sweep report compares every weight set to the baseline and links the
-per-weight-set matrix report plus ranker row/coverage artifacts.
+per-weight-set matrix report plus ranker row/coverage artifacts. Analyze the
+result before promoting any candidate:
+
+```bash
+uv run python scripts/analyze_ranker_weight_sweep.py \
+  --input data/ranker_weight_sweeps/mirror_eval/weight_sweep_report.json \
+  --output data/ranker_weight_sweeps/mirror_eval/weight_sweep_analysis.json
+```
+
+The analysis ranks candidates by VP differential, win/loss/tie counts,
+fallback-rate delta, commander-hit-rate delta, stale-plan-rate delta,
+resource-usage anomalies, context-size regressions, and decision/phase-count
+regressions.
 
 ## UI Smoke Checks
 
