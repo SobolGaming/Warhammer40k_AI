@@ -1,0 +1,25 @@
+{
+  "weight_sets": [
+    {
+      "component_weight_multipliers": {
+        "movement_ranker": {
+          "projected_score_delta_next_window": 1.15
+        }
+      },
+      "description": "Slightly increase score projection pressure for movement ranking.",
+      "weight_set_id": "score_pressure"
+    },
+    {
+      "component_weight_multipliers": {
+        "movement_ranker": {
+          "commander_task_alignment": 1.15
+        },
+        "shooting_ranker": {
+          "projected_trade_ev": 1.1
+        }
+      },
+      "description": "Slightly increase commander-intent alignment for movement and shooting.",
+      "weight_set_id": "commander_alignment_pressure"
+    }
+  ]
+}

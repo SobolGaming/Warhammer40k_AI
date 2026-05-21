@@ -89,6 +89,22 @@ def test_weight_set_orchestrator_applies_component_weight_overrides() -> None:
     assert inverted.choose_action(request).action_id == "candidate-a"
 
 
+def test_checked_in_example_weight_sets_load() -> None:
+    mod = _load_script_module()
+    config_path = Path(__file__).resolve().parents[2] / "data" / "ranker_weight_sweeps" / "example_weight_sets.json"
+
+    weight_sets = mod._load_weight_sets(str(config_path), baseline_weight_set_id="baseline")
+
+    assert [item["weight_set_id"] for item in weight_sets] == [
+        "baseline",
+        "score_pressure",
+        "commander_alignment_pressure",
+    ]
+    score_focus = weight_sets[1]
+    orchestrator = mod.build_orchestrator_for_weight_set(score_focus)
+    assert orchestrator.component_implementations()["movement_ranker"].component_name == "movement_ranker"
+
+
 def test_ranker_weight_sweep_main_writes_report_and_baseline_delta(monkeypatch, tmp_path) -> None:
     mod = _load_script_module()
     profiles_path = tmp_path / "profiles.json"
