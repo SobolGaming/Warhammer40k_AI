@@ -121,6 +121,22 @@ uv run python scripts/promote_ranker_weight_candidate.py \
   --output data/ranker_weight_sweeps/promoted_baselines/score_pressure_baseline_v1.json
 ```
 
+Then gate the promoted artifact against the previous baseline on a wider
+profile/seed matrix before treating it as the next default tuning artifact:
+
+```bash
+uv run python scripts/run_promoted_ranker_baseline_gate.py \
+  --promoted-artifact data/ranker_weight_sweeps/promoted_baselines/score_pressure_baseline_v1.json \
+  --previous-baseline-weight-set-id baseline \
+  --pairing-mode cartesian \
+  --seed-base 2026052100 \
+  --seed-count 3 \
+  --output-dir data/ranker_weight_sweeps/promoted_baseline_gate/score_pressure_baseline_v1 \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
 ## UI Smoke Checks
 
 The script-level smokes are also available as a repeatable pytest lane:

@@ -354,6 +354,30 @@ metadata. It does not change engine defaults. To evaluate the promoted artifact
 as the named baseline in a later sweep, pass it to `--weight-sets` and set
 `--baseline-weight-set-id` to the promoted id.
 
+Before accepting a promoted artifact as the next default tuning artifact, run
+the promoted-baseline gate. The gate builds a two-weight-set evaluation config
+containing the previous baseline and the promoted candidate, reruns the wider
+profile/seed matrix, analyzes every seed with stricter promotion thresholds, and
+writes a pass/fail gate report:
+
+```bash
+uv run python scripts/run_promoted_ranker_baseline_gate.py \
+  --promoted-artifact data/ranker_weight_sweeps/promoted_baselines/score_pressure_baseline_v1.json \
+  --previous-baseline-weight-set-id baseline \
+  --pairing-mode cartesian \
+  --seed-base 2026052100 \
+  --seed-count 3 \
+  --output-dir data/ranker_weight_sweeps/promoted_baseline_gate/score_pressure_baseline_v1 \
+  --ui-smoke-status pass \
+  --network-smoke-status pass \
+  --snapshot-smoke-status pass
+```
+
+The gate passes only when the promoted weight set remains a
+`promote_candidate` for every seed and smoke statuses are `pass` by default.
+Use `--allow-not-run-smoke` only for exploratory gates that should not be used
+as acceptance evidence.
+
 Result summary:
 - Single-game runs print the winner using the army-list stem plus final score, for example:
 
