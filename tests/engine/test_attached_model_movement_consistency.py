@@ -165,6 +165,37 @@ def test_disembark_validator_requires_positions_for_attached_members():
     assert errors == ("Disembark requires positions for every alive model in the unit.",)
 
 
+def test_movement_status_marks_attached_group_when_selected_member_points_to_root():
+    bodyguard = SimpleNamespace(
+        id="unit:bodyguard",
+        round_state=SimpleNamespace(
+            moved_this_round=False,
+            remained_stationary_this_round=True,
+            advanced_this_round=False,
+        ),
+    )
+    leader = SimpleNamespace(
+        id="unit:leader",
+        round_state=SimpleNamespace(
+            moved_this_round=False,
+            remained_stationary_this_round=True,
+            advanced_this_round=False,
+        ),
+    )
+    bodyguard.get_attached_unit_root = lambda: bodyguard
+    bodyguard.get_attached_unit_members = lambda: [bodyguard, leader]
+    leader.get_attached_unit_root = lambda: bodyguard
+
+    movement_handlers._mark_move_units_movement_status(leader, "advance")
+
+    assert bodyguard.round_state.moved_this_round is True
+    assert bodyguard.round_state.advanced_this_round is True
+    assert bodyguard.round_state.remained_stationary_this_round is False
+    assert leader.round_state.moved_this_round is True
+    assert leader.round_state.advanced_this_round is True
+    assert leader.round_state.remained_stationary_this_round is False
+
+
 def test_headless_move_unit_precheck_rejects_invalid_model_positions(monkeypatch):
     option = DecisionOption.create(
         "Confirm",

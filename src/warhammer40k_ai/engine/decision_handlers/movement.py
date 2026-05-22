@@ -50,15 +50,11 @@ from ...utility.deployment_special_rules import (
 from ...utility.dice import get_roll
 from ...utility.entity_ids import get_entity_id
 from ...utility.profiling_sections import profiled_section
-from ...utility.unit_models import alive_unit_group_models, unit_group_models
+from ...utility.unit_models import alive_unit_group_models, unit_group_members, unit_group_models
 
 
 def _movement_members(unit) -> list:
-    try:
-        members = list(unit.get_attached_unit_members() or [])
-    except Exception:
-        members = []
-    return members or [unit]
+    return unit_group_members(unit) or [unit]
 
 
 def _set_unit_anchor_position_from_model_positions(unit: object, model_positions: object) -> None:
