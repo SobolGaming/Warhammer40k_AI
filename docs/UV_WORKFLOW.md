@@ -84,6 +84,10 @@ uv run python scripts/run_general_profile_eval.py \
 For deterministic ranker weight sweeps before ML, run fixed-seed profile
 matrices across configured component-ranker weight sets:
 
+The profile-matrix and ranker-sweep CLIs relaunch with `PYTHONHASHSEED=0` by
+default before importing engine code. This keeps fixed-seed tuning runs from
+depending on process-level Python hash randomization.
+
 ```bash
 uv run python scripts/run_ranker_weight_sweep.py \
   --weight-sets data/ranker_weight_sweeps/example_weight_sets.json \
@@ -97,6 +101,12 @@ uv run python scripts/run_ranker_weight_sweep.py \
 The sweep report compares every weight set to the baseline and links the
 per-weight-set matrix report plus ranker row/coverage artifacts. Analyze the
 result before promoting any candidate:
+
+Rejected ranker weight sets are tracked in
+`data/ranker_weight_sweeps/rejected_weight_sets.json` by functional fingerprint,
+so renaming the same knobs does not make the sweep try them again. The sweep
+runner skips rejected non-baseline candidates by default; pass
+`--allow-rejected-weight-sets` only for deliberate exploratory reruns.
 
 ```bash
 uv run python scripts/analyze_ranker_weight_sweep.py \

@@ -278,6 +278,11 @@ Ranker weight sweeps:
 - `scripts/run_ranker_weight_sweep.py` runs the same fixed-seed General profile
   matrix for a built-in baseline plus one or more configured deterministic
   weight sets.
+- The profile-matrix and weight-sweep CLIs relaunch themselves with
+  `PYTHONHASHSEED=0` by default before importing engine code, so process-level
+  Python hash randomization does not change fixed-seed evaluation trajectories.
+  Set `WH40K_ALLOW_RANDOM_HASH_SEED=1` only for diagnosing hash-order
+  sensitivity.
 - The harness changes only deterministic component-ranker weights used by
   `AIPolicyOrchestrator`; it does not train models, alter legality, generate
   candidates, or bypass masks.
@@ -319,6 +324,13 @@ baseline is automatically prepended when `baseline` is absent:
   ]
 }
 ```
+
+Rejected weight sets are tracked by functional fingerprint in
+`data/ranker_weight_sweeps/rejected_weight_sets.json`. The sweep runner skips
+matching non-baseline candidates by default, even if they are renamed, and
+records any skipped entries in `weight_sweep_report.json`. Use
+`--allow-rejected-weight-sets` only for an intentional exploratory rerun of a
+previously rejected candidate.
 
 Analyze sweep results before promoting any weight set:
 

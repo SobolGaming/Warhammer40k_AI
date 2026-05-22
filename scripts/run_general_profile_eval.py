@@ -20,6 +20,22 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+DETERMINISTIC_PYTHON_HASH_SEED = "0"
+
+
+def _ensure_deterministic_python_hash_seed() -> None:
+    if os.environ.get("WH40K_ALLOW_RANDOM_HASH_SEED") == "1":
+        return
+    if os.environ.get("PYTHONHASHSEED") == DETERMINISTIC_PYTHON_HASH_SEED:
+        return
+    env = dict(os.environ)
+    env["PYTHONHASHSEED"] = DETERMINISTIC_PYTHON_HASH_SEED
+    os.execvpe(sys.executable, [sys.executable, *sys.argv], env)
+
+
+if __name__ == "__main__":
+    _ensure_deterministic_python_hash_seed()
+
 import run_headless_self_play as self_play
 from extract_ranker_training_rows import build_ranker_coverage_report, candidate_rows_from_records
 from warhammer40k_ai.engine.game import Game

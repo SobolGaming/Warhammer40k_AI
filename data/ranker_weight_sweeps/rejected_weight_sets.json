@@ -1,0 +1,31 @@
+{
+  "rejected_weight_sets": [
+    {
+      "baseline_weight_set_id": "baseline",
+      "blockers": [
+        "win_count_delta_below_threshold",
+        "improvement_concentrated_in_one_matchup"
+      ],
+      "candidate_fingerprint": "4dd91e8e2eef140ec5b73fa21c60ce079621673fc7f5c3205933676da1564a94",
+      "notes": "Manual rejection: VP improvement came from one still-losing matchup; no win-count gain.",
+      "rejected_at_utc": "2026-05-21T22:03:21Z",
+      "source_analysis_path": "data/ranker_weight_sweeps/pipeline_20260521_manual_inspection/weight_sweep_analysis.json",
+      "status": "reject",
+      "weight_set_id": "score_pressure"
+    },
+    {
+      "baseline_weight_set_id": "baseline",
+      "blockers": [
+        "win_count_delta_below_threshold",
+        "improvement_concentrated_in_one_matchup"
+      ],
+      "candidate_fingerprint": "28a0c7ee181337ee145dcc40a87cadcb2d5158dfb652d7197a5b68ca8d535406",
+      "notes": "Manual rejection: VP improvement came from one still-losing matchup; no win-count gain.",
+      "rejected_at_utc": "2026-05-21T22:03:21Z",
+      "source_analysis_path": "data/ranker_weight_sweeps/pipeline_20260521_manual_inspection/weight_sweep_analysis.json",
+      "status": "reject",
+      "weight_set_id": "commander_alignment_pressure"
+    }
+  ],
+  "schema_version": 1
+}

@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import sys
 
+import pytest
+
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.decisions import CandidateAction, DecisionRequest
 
@@ -103,6 +105,112 @@ def test_checked_in_example_weight_sets_load() -> None:
     score_focus = weight_sets[1]
     orchestrator = mod.build_orchestrator_for_weight_set(score_focus)
     assert orchestrator.component_implementations()["movement_ranker"].component_name == "movement_ranker"
+
+
+def test_weight_set_fingerprint_ignores_non_behavioral_identity_fields() -> None:
+    mod = _load_script_module()
+    first = {
+        "weight_set_id": "score_pressure",
+        "description": "Original label.",
+        "component_weight_multipliers": {
+            "movement_ranker": {"projected_score_delta_next_window": 1.15}
+        },
+    }
+    second = {
+        "weight_set_id": "renamed_attempt",
+        "description": "Different label.",
+        "notes": "Different human notes.",
+        "component_weight_multipliers": {
+            "movement_ranker": {"projected_score_delta_next_window": 1.15}
+        },
+    }
+    changed = {
+        "weight_set_id": "changed_attempt",
+        "description": "Behavioral change.",
+        "component_weight_multipliers": {
+            "movement_ranker": {"projected_score_delta_next_window": 1.2}
+        },
+    }
+
+    assert mod.weight_set_fingerprint(first) == mod.weight_set_fingerprint(second)
+    assert mod.weight_set_fingerprint(first) != mod.weight_set_fingerprint(changed)
+
+
+def test_rejection_registry_skips_matching_functional_weight_sets() -> None:
+    mod = _load_script_module()
+    rejected = {
+        "weight_set_id": "score_pressure",
+        "component_weight_multipliers": {
+            "movement_ranker": {"projected_score_delta_next_window": 1.15}
+        },
+    }
+    renamed_rejected = {
+        "weight_set_id": "same_knobs_new_name",
+        "description": "Same behavior should still be skipped.",
+        "component_weight_multipliers": {
+            "movement_ranker": {"projected_score_delta_next_window": 1.15}
+        },
+    }
+    fresh = {
+        "weight_set_id": "fresh_action",
+        "component_weight_multipliers": {
+            "movement_ranker": {"projected_score_delta_next_window": 1.05}
+        },
+    }
+    registry = {
+        "schema_version": 1,
+        "rejected_weight_sets": [
+            {
+                "weight_set_id": "score_pressure",
+                "status": "reject",
+                "candidate_fingerprint": mod.weight_set_fingerprint(rejected),
+                "blockers": ["win_count_delta_below_threshold"],
+            }
+        ],
+    }
+
+    selected, skipped = mod._filter_rejected_weight_sets(
+        [
+            {"weight_set_id": "baseline", "components": {}},
+            renamed_rejected,
+            fresh,
+        ],
+        baseline_weight_set_id="baseline",
+        registry=registry,
+        allow_rejected=False,
+    )
+
+    assert [item["weight_set_id"] for item in selected] == ["baseline", "fresh_action"]
+    assert skipped == [
+        {
+            "weight_set_id": "same_knobs_new_name",
+            "candidate_fingerprint": mod.weight_set_fingerprint(rejected),
+            "matched_rejected_weight_set_id": "score_pressure",
+            "blockers": ["win_count_delta_below_threshold"],
+            "source_analysis_path": "",
+        }
+    ]
+
+
+def test_hash_seed_guard_reexecs_cli_with_deterministic_seed(monkeypatch) -> None:
+    mod = _load_script_module()
+    calls = []
+
+    def fake_execvpe(executable, argv, env):
+        calls.append((executable, list(argv), dict(env)))
+        raise RuntimeError("reexec")
+
+    monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    monkeypatch.delenv("WH40K_ALLOW_RANDOM_HASH_SEED", raising=False)
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+    monkeypatch.setattr(mod.sys, "argv", ["run_ranker_weight_sweep.py", "--example"])
+
+    with pytest.raises(RuntimeError, match="reexec"):
+        mod._ensure_deterministic_python_hash_seed()
+
+    assert calls
+    assert calls[0][2]["PYTHONHASHSEED"] == "0"
+    assert calls[0][1] == [mod.sys.executable, "run_ranker_weight_sweep.py", "--example"]
 
 
 def test_ranker_weight_sweep_main_writes_report_and_baseline_delta(monkeypatch, tmp_path) -> None:

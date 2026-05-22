@@ -1,0 +1,24 @@
+{
+  "weight_sets": [
+    {
+      "component_weight_multipliers": {
+        "charge_ranker": {
+          "commander_charge_alignment": 1.1,
+          "commander_charge_probability": 1.2,
+          "projected_trade_ev": 1.05
+        },
+        "fight_ranker": {
+          "commander_fight_alignment": 1.1,
+          "commander_fight_activation_priority": 1.2,
+          "projected_trade_ev": 1.05
+        },
+        "movement_ranker": {
+          "commander_charge_lane_score": 1.2,
+          "commander_future_phase_ev": 1.15
+        }
+      },
+      "description": "Increase melee plan follow-through across movement, charge, and fight ranking.",
+      "weight_set_id": "melee_commitment_pressure"
+    }
+  ]
+}

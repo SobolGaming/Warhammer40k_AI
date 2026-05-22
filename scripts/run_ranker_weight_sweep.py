@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,22 @@ from typing import Any, Iterable, Mapping
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
+
+DETERMINISTIC_PYTHON_HASH_SEED = "0"
+
+
+def _ensure_deterministic_python_hash_seed() -> None:
+    if os.environ.get("WH40K_ALLOW_RANDOM_HASH_SEED") == "1":
+        return
+    if os.environ.get("PYTHONHASHSEED") == DETERMINISTIC_PYTHON_HASH_SEED:
+        return
+    env = dict(os.environ)
+    env["PYTHONHASHSEED"] = DETERMINISTIC_PYTHON_HASH_SEED
+    os.execvpe(sys.executable, [sys.executable, *sys.argv], env)
+
+
+if __name__ == "__main__":
+    _ensure_deterministic_python_hash_seed()
 
 import run_general_profile_eval as profile_eval
 from extract_ranker_training_rows import build_ranker_coverage_report, candidate_rows_from_records
@@ -28,6 +45,17 @@ from warhammer40k_ai.engine.ai_policy_orchestrator import AIPolicyOrchestrator
 ROOT = SCRIPT_DIR.parents[0]
 DEFAULT_OUTPUT_DIR = ROOT / "data" / "ranker_weight_sweeps" / "current"
 DEFAULT_BASELINE_WEIGHT_SET_ID = "baseline"
+DEFAULT_REJECTION_REGISTRY = ROOT / "data" / "ranker_weight_sweeps" / "rejected_weight_sets.json"
+FINGERPRINT_IGNORED_WEIGHT_SET_KEYS = frozenset(
+    {
+        "created_at_utc",
+        "description",
+        "id",
+        "metadata",
+        "notes",
+        "weight_set_id",
+    }
+)
 
 
 def _json_safe(value: Any) -> Any:
@@ -86,6 +114,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sweep-report-output",
         default="",
         help="Aggregate sweep report JSON. Defaults to <output-dir>/weight_sweep_report.json.",
+    )
+    parser.add_argument(
+        "--rejection-registry",
+        default=str(DEFAULT_REJECTION_REGISTRY),
+        help="Rejected weight-set registry. Rejected functional fingerprints are skipped by default.",
+    )
+    parser.add_argument(
+        "--allow-rejected-weight-sets",
+        action="store_true",
+        help="Include weight sets even when their functional fingerprint is present in the rejection registry.",
     )
     parser.add_argument("--max-phase-steps", type=int, default=50)
     parser.add_argument("--decision-record-max", type=int, default=4096)
@@ -147,6 +185,88 @@ def _normalize_weight_set(raw: Any) -> dict[str, Any]:
     item["weight_set_id"] = weight_set_id
     item["components"] = _as_dict(item.get("components"))
     return item
+
+
+def _fingerprintable_weight_set(weight_set: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_weight_set(weight_set)
+    return {
+        str(key): _json_safe(value)
+        for key, value in sorted(normalized.items())
+        if str(key) not in FINGERPRINT_IGNORED_WEIGHT_SET_KEYS
+    }
+
+
+def weight_set_fingerprint(weight_set: Mapping[str, Any]) -> str:
+    payload = json.dumps(
+        _fingerprintable_weight_set(weight_set),
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _load_rejection_registry(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"schema_version": 1, "rejected_weight_sets": []}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected rejection registry JSON object at {path}.")
+    raw_entries = payload.get("rejected_weight_sets", [])
+    if not isinstance(raw_entries, list):
+        raise ValueError(f"Expected rejected_weight_sets list in rejection registry: {path}.")
+    return {"schema_version": int(payload.get("schema_version", 1) or 1), "rejected_weight_sets": list(raw_entries)}
+
+
+def _rejected_entries_by_fingerprint(registry: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    entries: dict[str, dict[str, Any]] = {}
+    for raw in list(registry.get("rejected_weight_sets", []) or []):
+        if not isinstance(raw, dict):
+            continue
+        status = str(raw.get("status", "reject") or "reject")
+        if status != "reject":
+            continue
+        fingerprint = str(raw.get("candidate_fingerprint", "") or "").strip()
+        if fingerprint:
+            entries[fingerprint] = dict(raw)
+    return dict(sorted(entries.items()))
+
+
+def _filter_rejected_weight_sets(
+    weight_sets: list[dict[str, Any]],
+    *,
+    baseline_weight_set_id: str,
+    registry: Mapping[str, Any],
+    allow_rejected: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if bool(allow_rejected):
+        return weight_sets, []
+    rejected_by_fingerprint = _rejected_entries_by_fingerprint(registry)
+    if not rejected_by_fingerprint:
+        return weight_sets, []
+    baseline_id = str(baseline_weight_set_id or DEFAULT_BASELINE_WEIGHT_SET_ID)
+    selected: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for weight_set in weight_sets:
+        weight_set_id = str(weight_set.get("weight_set_id", "") or "")
+        if weight_set_id == baseline_id:
+            selected.append(weight_set)
+            continue
+        fingerprint = weight_set_fingerprint(weight_set)
+        rejection = rejected_by_fingerprint.get(fingerprint)
+        if rejection is None:
+            selected.append(weight_set)
+            continue
+        skipped.append(
+            {
+                "weight_set_id": weight_set_id,
+                "candidate_fingerprint": fingerprint,
+                "matched_rejected_weight_set_id": str(rejection.get("weight_set_id", "") or ""),
+                "blockers": list(rejection.get("blockers", []) or []),
+                "source_analysis_path": str(rejection.get("source_analysis_path", "") or ""),
+            }
+        )
+    return selected, skipped
 
 
 def _component_spec(weight_set: Mapping[str, Any], component_name: str) -> dict[str, Any]:
@@ -421,6 +541,33 @@ def main() -> int:
         str(args.weight_sets or ""),
         baseline_weight_set_id=str(args.baseline_weight_set_id or DEFAULT_BASELINE_WEIGHT_SET_ID),
     )
+    rejection_registry_path = _resolve_path(str(args.rejection_registry or ""), default=DEFAULT_REJECTION_REGISTRY)
+    rejection_registry = _load_rejection_registry(rejection_registry_path)
+    requested_candidate_count = sum(
+        1
+        for weight_set in weight_sets
+        if str(weight_set.get("weight_set_id", "") or "") != str(args.baseline_weight_set_id or DEFAULT_BASELINE_WEIGHT_SET_ID)
+    )
+    weight_sets, skipped_rejected_weight_sets = _filter_rejected_weight_sets(
+        weight_sets,
+        baseline_weight_set_id=str(args.baseline_weight_set_id or DEFAULT_BASELINE_WEIGHT_SET_ID),
+        registry=rejection_registry,
+        allow_rejected=bool(args.allow_rejected_weight_sets),
+    )
+    selected_candidate_count = sum(
+        1
+        for weight_set in weight_sets
+        if str(weight_set.get("weight_set_id", "") or "") != str(args.baseline_weight_set_id or DEFAULT_BASELINE_WEIGHT_SET_ID)
+    )
+    if requested_candidate_count > 0 and selected_candidate_count == 0:
+        skipped_ids = ", ".join(str(item.get("weight_set_id", "") or "") for item in skipped_rejected_weight_sets)
+        raise ValueError(
+            "All non-baseline weight sets are marked rejected. "
+            f"Provide fresh candidates or pass --allow-rejected-weight-sets. Skipped: {skipped_ids}"
+        )
+    if skipped_rejected_weight_sets:
+        skipped_ids = ", ".join(str(item.get("weight_set_id", "") or "") for item in skipped_rejected_weight_sets)
+        print(f"Skipped rejected weight sets: {skipped_ids}")
     rows: list[dict[str, Any]] = []
     for weight_set in weight_sets:
         rows.append(
@@ -459,6 +606,8 @@ def main() -> int:
         "weight_set_count": int(len(rows)),
         "profile_pair_count": int(len(profile_pairs)),
         "smoke_status": dict(smoke_status),
+        "rejection_registry_path": str(rejection_registry_path.resolve()),
+        "skipped_rejected_weight_sets": skipped_rejected_weight_sets,
         "rows": ordered_rows,
     }
     report_path = _resolve_path(
