@@ -5,6 +5,7 @@ from typing import Iterable, Optional, Sequence
 from ..decision_dispatcher import _validate_choice_from_options
 from ..decisions import DecisionOption, DecisionRequest, DecisionResult
 from ...utility.entity_ids import maybe_entity_id
+from ...utility.unit_models import unit_group_members, unit_group_models
 import logging
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,25 @@ def _iter_player_armies(game: object):
             yield player, army
 
 
+def _iter_lookup_models(unit: object):
+    seen: set[str] = set()
+    for model in unit_group_models(unit, include_pending=True):
+        model_id = str(maybe_entity_id(model) or "").strip()
+        if model_id and model_id in seen:
+            continue
+        if model_id:
+            seen.add(model_id)
+        yield model
+    for member in unit_group_members(unit):
+        for model in list(getattr(member, "models_lost", []) or []):
+            model_id = str(maybe_entity_id(model) or "").strip()
+            if model_id and model_id in seen:
+                continue
+            if model_id:
+                seen.add(model_id)
+            yield model
+
+
 def _fallback_entity_lookup(game: object, entity_id: str, *, kind: str) -> Optional[object]:
     if kind == "player":
         for player in list(getattr(game, "players", []) or []):
@@ -71,10 +91,7 @@ def _fallback_entity_lookup(game: object, entity_id: str, *, kind: str) -> Optio
     if kind == "model":
         for _player, army in _iter_player_armies(game):
             for unit in list(getattr(army, "units", []) or []):
-                for model in list(getattr(unit, "models", []) or []):
-                    if _matches_entity_id(model, entity_id):
-                        return model
-                for model in list(getattr(unit, "models_lost", []) or []):
+                for model in _iter_lookup_models(unit):
                     if _matches_entity_id(model, entity_id):
                         return model
         return None
@@ -82,11 +99,7 @@ def _fallback_entity_lookup(game: object, entity_id: str, *, kind: str) -> Optio
     if kind == "wargear":
         for _player, army in _iter_player_armies(game):
             for unit in list(getattr(army, "units", []) or []):
-                for model in list(getattr(unit, "models", []) or []):
-                    for wargear in list(getattr(model, "wargear", []) or []):
-                        if _matches_entity_id(wargear, entity_id):
-                            return wargear
-                for model in list(getattr(unit, "models_lost", []) or []):
+                for model in _iter_lookup_models(unit):
                     for wargear in list(getattr(model, "wargear", []) or []):
                         if _matches_entity_id(wargear, entity_id):
                             return wargear

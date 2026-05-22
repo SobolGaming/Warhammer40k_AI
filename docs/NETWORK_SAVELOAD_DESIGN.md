@@ -109,6 +109,7 @@ Events include:
 - deterministic payload (IDs + parameters)
 - optional derived text for UI display (not used for state)
 - `unit_move_started`/`unit_move_ended` payloads include the current `phase_name` when the event log is attached to an active game, so replay/profiling can attribute fight-phase pile-in/consolidate and reactive Blood Surge movement to their owning phase window.
+- Movement/replay `model_positions` payloads for an Attached Unit cover the whole attached rules unit, including Leaders and joined support members; fight-move coherency, reactive move validation, event logging, and replay fallback lookup resolve models through the attached-unit group helpers rather than root-only `unit.models`.
 - `command_rejected` payloads include validator `errors`; rejected `RESOLVE_DECISION` events also include compact decision diagnostics (`decision_id`, `option_id`, `decision_type`, optional candidate probe ids/kinds, `payload_keys`, and counts/checksums for large arrays such as `model_positions` or `declarations`).
 - `charge_move_failed` payloads include the declared target IDs, charge roll/max distance, roll ID when available, current and declaration-time target distances when available, a `within_declaration_range` boolean for the 12" declaration gate, and a `failure_stage` classifier (`declaration_range`, `charge_roll_distance`, `endpoint_geometry`, or `target_distance_unknown`).
 

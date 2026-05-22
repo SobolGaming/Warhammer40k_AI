@@ -222,15 +222,7 @@ def _validate_heresy_begets_retribution_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or "").strip()
         if not model_id or model_id not in positions_by_id:
             continue
@@ -275,32 +267,16 @@ def _validate_predatory_pursuit_positions(
         return ("Move unit: Predatory Pursuit distance helpers are unavailable.",)
 
     moving_models = []
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive or getattr(model, "model_base", None) is None:
+    for model in alive_unit_group_models(unit, include_pending=False):
+        if getattr(model, "model_base", None) is None:
             continue
         moving_models.append(model)
     if not moving_models:
         return ()
 
     target_models = []
-    get_target_models = getattr(target_unit, "get_attached_unit_models", None)
-    raw_target_models = (
-        list(get_target_models() or [])
-        if callable(get_target_models)
-        else list(getattr(target_unit, "models", []) or [])
-    )
-    for target_model in list(raw_target_models or []):
-        if target_model is None:
-            continue
-        alive_value = getattr(target_model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive or getattr(target_model, "model_base", None) is None:
+    for target_model in alive_unit_group_models(target_unit, include_pending=False):
+        if getattr(target_model, "model_base", None) is None:
             continue
         target_models.append(target_model)
     if not target_models:
@@ -466,18 +442,10 @@ def _validate_hearthfyre_cogitated_need_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
     current_distance: float | None = None
     final_distance: float | None = None
     ox, oy, oz = objective_position
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         current_base = getattr(model, "model_base", None)
         if current_base is None:
             continue
@@ -570,15 +538,7 @@ def _validate_cursed_circlet_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
         if not model_id or model_id not in positions_by_id:
             continue
@@ -646,15 +606,7 @@ def _validate_devout_fanaticism_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
         if not model_id or model_id not in positions_by_id:
             continue
@@ -722,15 +674,7 @@ def _validate_enfolding_nightmare_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
         if not model_id or model_id not in positions_by_id:
             continue
@@ -798,15 +742,7 @@ def _validate_xenocreed_path_of_anguish_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
         if not model_id or model_id not in positions_by_id:
             continue
@@ -873,15 +809,7 @@ def _validate_surge_move_positions(
         except (TypeError, ValueError):
             continue
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
-    for model in list(models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "").strip()
         if not model_id or model_id not in positions_by_id:
             continue
@@ -1214,16 +1142,9 @@ def _unit_line_intersects(root: object, *, start_xy: tuple[float, float], end_xy
     except ImportError:
         return False
     line = LineString([tuple(start_xy), tuple(end_xy)])
-    get_models = getattr(root, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+    models = alive_unit_group_models(root, include_pending=False)
     models.sort(key=lambda m: str(get_entity_id(m) or ""))
     for model in models:
-        if model is None:
-            continue
-        alive_attr = getattr(model, "is_alive", False)
-        alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
-        if not alive:
-            continue
         model_base = getattr(model, "model_base", None)
         get_shape = getattr(model_base, "get_base_shape", None) if model_base is not None else None
         if callable(get_shape):
@@ -2057,17 +1978,9 @@ def _wraithlike_retreat_transport_requirement(
             facing = 0.0
         positions_by_id[model_id] = (x, y, z, facing)
 
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    moving_models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
     moving_bases: list[object] = []
     create_base = getattr(unit, "_create_potential_base", None)
-    for model in list(moving_models or []):
-        if model is None:
-            continue
-        alive_value = getattr(model, "is_alive", True)
-        alive = bool(alive_value() if callable(alive_value) else alive_value)
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_id = str(get_entity_id(model) or "")
         base = None
         if model_id in positions_by_id and callable(create_base):
@@ -2089,20 +2002,8 @@ def _wraithlike_retreat_transport_requirement(
         return {"required": True, "valid": False, "reason": "Move unit: Wraithlike Retreat requires alive models to move."}
 
     for transport in sorted(transports, key=lambda item: str(get_entity_id(item) or "")):
-        transport_models_getter = getattr(transport, "get_attached_unit_models", None)
-        transport_models = (
-            list(transport_models_getter() or [])
-            if callable(transport_models_getter)
-            else list(getattr(transport, "models", []) or [])
-        )
         transport_bases: list[object] = []
-        for model in list(transport_models or []):
-            if model is None:
-                continue
-            alive_value = getattr(model, "is_alive", True)
-            alive = bool(alive_value() if callable(alive_value) else alive_value)
-            if not alive:
-                continue
+        for model in alive_unit_group_models(transport, include_pending=False):
             base = getattr(model, "model_base", None)
             if base is not None:
                 transport_bases.append(base)
@@ -2530,18 +2431,7 @@ def _validate_advance_start_end_denial(
         except Exception:
             pass
 
-        try:
-            enemy_models = list(enemy_root.get_attached_unit_models() or [])
-        except Exception:
-            enemy_models = list(getattr(enemy_root, "models", []) or [])
-        alive_enemy_models: list[object] = []
-        for enemy_model in enemy_models:
-            if enemy_model is None:
-                continue
-            enemy_alive_attr = getattr(enemy_model, "is_alive", True)
-            enemy_alive = bool(enemy_alive_attr() if callable(enemy_alive_attr) else enemy_alive_attr)
-            if enemy_alive:
-                alive_enemy_models.append(enemy_model)
+        alive_enemy_models = alive_unit_group_models(enemy_root, include_pending=False)
         if not alive_enemy_models:
             continue
 
@@ -3760,11 +3650,7 @@ def _validate_resolve_coherency(game: object, request: DecisionRequest, result: 
     model = get_model(game, selected_model_id)
     if model is None:
         return (f"Model not found: {selected_model_id}",)
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    if callable(get_models):
-        unit_models = list(get_models() or [])
-    else:
-        unit_models = list(getattr(unit, "models", []) or [])
+    unit_models = unit_group_models(unit)
     if model not in unit_models:
         return ("Model does not belong to the unit.",)
     if not bool(getattr(model, "is_alive", True)):
@@ -3901,8 +3787,8 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
     if model_positions is not None:
         expected_model_ids = {
             str(get_entity_id(model) or "").strip()
-            for model in list(getattr(unit, "get_models_for_collision", lambda: [])() or [])
-            if getattr(model, "is_alive", True) and str(get_entity_id(model) or "").strip()
+            for model in alive_unit_group_models(unit, include_pending=False)
+            if str(get_entity_id(model) or "").strip()
         }
         provided_model_ids = {
             str(entry.get("model_id", "") or "").strip()

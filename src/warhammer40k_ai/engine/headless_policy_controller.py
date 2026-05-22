@@ -95,6 +95,14 @@ _HEADLESS_REDEPLOY_PLACEMENT_KINDS = {
     "normal_move_redeploy_9h",
 }
 
+_HEADLESS_MOVE_PRECHECK_PLACEMENT_KINDS = {
+    "deployment",
+    "reserves_arrival",
+    "hyperphasic_recall",
+    "subterranean_tunnel_network",
+    *_HEADLESS_REDEPLOY_PLACEMENT_KINDS,
+}
+
 _DEFAULT_SHOOTING_TARGET_PROBE_LIMIT = 8
 _STRICT_STRATEGIC_EDGE_TOUCH_TOLERANCE = 1e-4
 _UUID_VALUE_RE = re.compile(
@@ -306,7 +314,12 @@ class HeadlessPolicyDecisionController(DecisionController):
                 result_payload["skipped"] = True
             if not self._result_payload_is_structurally_resolvable(request, result_payload):
                 continue
-            if not self._candidate_passes_current_game_precheck(game, request, option_id):
+            if not self._candidate_passes_current_game_precheck(
+                game,
+                request,
+                option_id,
+                result_payload=result_payload,
+            ):
                 continue
             apply_result = self._safe_resolve_decision_command(
                 game,
@@ -333,17 +346,8 @@ class HeadlessPolicyDecisionController(DecisionController):
             payload["skipped"] = True
         if not self._result_payload_is_structurally_resolvable(request, payload):
             return False
-        if not self._candidate_passes_current_game_precheck(game, request, option_id):
+        if not self._candidate_passes_current_game_precheck(game, request, option_id, result_payload=payload):
             return False
-        if self._is_reserves_arrival_request(request):
-            validation_errors = validate_move_unit_payload(
-                game,
-                request,
-                option_payload=self._option_payload(request, option_id),
-                result_payload=payload,
-            )
-            if validation_errors:
-                return False
         apply_result = self._safe_resolve_decision_command(
             game,
             request,
@@ -2493,6 +2497,8 @@ class HeadlessPolicyDecisionController(DecisionController):
         game: object | None,
         request: DecisionRequest,
         option_id: str,
+        *,
+        result_payload: dict[str, Any] | None = None,
     ) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "")
         if decision_type == DECISION_ATTACH_LEADER:
@@ -2501,11 +2507,62 @@ class HeadlessPolicyDecisionController(DecisionController):
             return cls._support_attachment_option_is_currently_valid(game, request, option_id)
         if decision_type == DECISION_ASSIGN_TRANSPORT:
             return cls._transport_assignment_option_is_currently_valid(game, request, option_id)
+        if decision_type == DECISION_MOVE_UNIT:
+            return cls._move_unit_option_is_currently_valid(
+                game,
+                request,
+                option_id,
+                result_payload=result_payload,
+            )
         if decision_type == DECISION_SCOUT_MOVE:
             return cls._scout_move_option_is_currently_valid(game, request, option_id)
         if decision_type == DECISION_SELECT_UNIT:
             return cls._select_unit_option_is_currently_valid(game, request, option_id)
         return True
+
+    @classmethod
+    def _move_unit_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+        *,
+        result_payload: dict[str, Any] | None = None,
+    ) -> bool:
+        option_payload = cls._option_payload(request, option_id)
+        result = dict(result_payload or {})
+        action = str(
+            result.get("action", "")
+            or option_payload.get("action", "")
+            or ""
+        ).strip().lower()
+        if (
+            action in {"pass", "skip"}
+            or bool(result.get("skip", False))
+            or bool(result.get("skipped", False))
+            or bool(option_payload.get("skip", False))
+            or bool(option_payload.get("skipped", False))
+        ):
+            return True
+        model_positions = result.get("model_positions")
+        if not isinstance(model_positions, list) or not model_positions:
+            model_positions = option_payload.get("model_positions")
+        if not isinstance(model_positions, list) or not model_positions:
+            return True
+        placement_kind = str(dict(getattr(request, "context", {}) or {}).get("placement_kind", "") or "").strip().lower()
+        if placement_kind and placement_kind not in _HEADLESS_MOVE_PRECHECK_PLACEMENT_KINDS:
+            return True
+        if "model_positions" not in result:
+            result["model_positions"] = model_positions
+        if "action" not in result and action:
+            result["action"] = action
+        validation_errors = validate_move_unit_payload(
+            game,
+            request,
+            option_payload=option_payload,
+            result_payload=result,
+        )
+        return not bool(validation_errors)
 
     @classmethod
     def _scout_move_option_is_currently_valid(

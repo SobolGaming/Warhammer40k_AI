@@ -12,6 +12,7 @@ from ..pathing.api import PathQuery, plan_model_path
 from ..pathing.types import MovementType as PathMovementType
 from ..utility.calcs import validate_unit_coherency_after_movement
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import alive_unit_group_models, unit_group_models
 from .combat_timing import (
     CombatEngagementState,
     base_contact_center_distance,
@@ -65,11 +66,7 @@ def serialize_attached_unit_positions(unit: object) -> list[dict[str, Any]]:
 
 
 def attached_unit_models(unit: object) -> list[object]:
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    if callable(get_models):
-        models = list(get_models() or [])
-    else:
-        models = list(getattr(unit, "models", []) or [])
+    models = unit_group_models(unit, include_pending=False)
     models.sort(key=lambda model: str(get_entity_id(model) or ""))
     return [model for model in models if model is not None]
 
@@ -156,7 +153,7 @@ def validate_fight_move_positions(
             _apply_position_entry(model, desired)
             moved_models.append(model)
         final_positions = []
-        for model in list(getattr(unit, "models", []) or []):
+        for model in alive_unit_group_models(unit, include_pending=False):
             model_id = str(get_entity_id(model) or "").strip()
             entry = requested_by_id.get(model_id)
             if entry is None:
@@ -394,14 +391,7 @@ def _enemy_models_for_unit(*, unit: object, game: object) -> list[object]:
         alive_fn = getattr(other_unit, "is_alive", None)
         if callable(alive_fn) and not bool(alive_fn()):
             continue
-        for model in list(getattr(other_unit, "models", []) or []):
-            try:
-                alive_value = getattr(model, "is_alive", True)
-                alive = bool(alive_value() if callable(alive_value) else alive_value)
-            except Exception:
-                alive = False
-            if alive:
-                enemy_models.append(model)
+        enemy_models.extend(alive_unit_group_models(other_unit, include_pending=False))
     enemy_models.sort(key=lambda model: str(get_entity_id(model) or ""))
     return enemy_models
 
