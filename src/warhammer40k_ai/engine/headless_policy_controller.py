@@ -62,6 +62,7 @@ from ..utility.placement_search import (
     deployed_unit_bounds,
     estimate_unit_pack_footprint,
 )
+from ..utility.unit_models import alive_unit_group_models, unit_group_models
 
 _DEFAULT_SKIPPED_DECISION_TYPES = {
     DECISION_REQUEST_DICE_ROLL,
@@ -606,7 +607,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         unit: object,
     ) -> list[tuple[float, float, float]]:
         positions: list[tuple[float, float, float]] = []
-        for model in list(getattr(unit, "models", []) or []):
+        for model in unit_group_models(unit):
             location = cls._model_location(model)
             if location is None:
                 positions.append((0.0, 0.0, 0.0))
@@ -621,7 +622,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         *,
         pending_models: list[object],
     ) -> bool:
-        unit_models = list(getattr(unit, "models", []) or [])
+        unit_models = unit_group_models(unit)
         if not unit_models:
             return True
         pending_ids = {
@@ -925,10 +926,8 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     @classmethod
     def _redeploy_models_by_id(cls, unit: object) -> dict[str, object]:
-        get_models = getattr(unit, "get_attached_unit_models", None)
-        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
         out: dict[str, object] = {}
-        for model in list(models or []):
+        for model in unit_group_models(unit):
             model_id = str(maybe_entity_id(model) or "").strip()
             if model_id and model_id not in out:
                 out[model_id] = model
@@ -1169,16 +1168,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         if not callable(find_position) and not callable(validate_position):
             return None
 
-        get_members = getattr(root, "get_attached_unit_members", None)
-        members = list(get_members() or []) if callable(get_members) else [root]
-        attached_models: list[object] = []
-        for member in list(members or []):
-            if member is None:
-                continue
-            attached_models.extend(list(getattr(member, "models", []) or []))
-        if not attached_models:
-            get_models = getattr(root, "get_attached_unit_models", None)
-            attached_models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        attached_models = unit_group_models(root)
         identified_models = [
             model
             for model in attached_models
@@ -1295,10 +1285,8 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     @classmethod
     def _attached_alive_models(cls, unit: object) -> list[object]:
-        get_models = getattr(unit, "get_attached_unit_models", None)
-        models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
         return sorted(
-            [model for model in models if model is not None and cls._alive(model)],
+            [model for model in alive_unit_group_models(unit) if model is not None and cls._alive(model)],
             key=cls._entity_sort_key,
         )
 
@@ -1585,7 +1573,7 @@ class HeadlessPolicyDecisionController(DecisionController):
             str(maybe_entity_id(getattr(unit, "embarked_in", None)) or ""),
             int(getattr(unit, "_ability_structure_generation", 0) or 0),
             int(getattr(unit, "_ability_activity_generation", 0) or 0),
-            tuple(cls._shooting_cache_model_signature(model) for model in list(getattr(unit, "models", []) or [])),
+            tuple(cls._shooting_cache_model_signature(model) for model in unit_group_models(unit)),
         )
 
     @classmethod
@@ -2513,9 +2501,39 @@ class HeadlessPolicyDecisionController(DecisionController):
             return cls._support_attachment_option_is_currently_valid(game, request, option_id)
         if decision_type == DECISION_ASSIGN_TRANSPORT:
             return cls._transport_assignment_option_is_currently_valid(game, request, option_id)
+        if decision_type == DECISION_SCOUT_MOVE:
+            return cls._scout_move_option_is_currently_valid(game, request, option_id)
         if decision_type == DECISION_SELECT_UNIT:
             return cls._select_unit_option_is_currently_valid(game, request, option_id)
         return True
+
+    @classmethod
+    def _scout_move_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+    ) -> bool:
+        payload = cls._option_payload(request, option_id)
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action in {"pass", "skip"} or bool(payload.get("skip", False)) or bool(payload.get("skipped", False)):
+            return True
+        if action and action != "scout":
+            return True
+
+        unit_id = str(payload.get("unit_id", "") or "").strip()
+        if not unit_id:
+            unit_id = str(dict(getattr(request, "context", {}) or {}).get("unit_id", "") or "").strip()
+        unit = cls._resolve_unit(game, unit_id)
+        if unit is None:
+            return False
+
+        from .decision_handlers.deployment import _model_positions_from_payload, _validate_scout_model_positions
+
+        model_positions = _model_positions_from_payload(payload, {})
+        if not model_positions:
+            return True
+        return not bool(_validate_scout_model_positions(game, unit, model_positions))
 
     @classmethod
     def _select_unit_option_is_currently_valid(
@@ -3427,9 +3445,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         get_root = getattr(anchor_unit, "get_attached_unit_root", None)
         anchor_root = get_root() if callable(get_root) else anchor_unit
         anchor_positions: list[tuple[float, float]] = []
-        for model in list(getattr(anchor_root, "models", []) or []):
-            if not getattr(model, "is_alive", True):
-                continue
+        for model in alive_unit_group_models(anchor_root, include_pending=False):
             get_location = getattr(model, "get_location", None)
             if not callable(get_location):
                 continue
@@ -3585,13 +3601,7 @@ class HeadlessPolicyDecisionController(DecisionController):
 
     @staticmethod
     def _alive_models_for_anchor_geometry(unit: object) -> list[object]:
-        models: list[object] = []
-        for model in list(getattr(unit, "models", []) or []):
-            alive_attr = getattr(model, "is_alive", True)
-            alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
-            if alive:
-                models.append(model)
-        return models
+        return alive_unit_group_models(unit, include_pending=False)
 
     def _strategic_anchor_facing(
         self,
@@ -4089,14 +4099,14 @@ class HeadlessPolicyDecisionController(DecisionController):
     @staticmethod
     def _deep_strike_scan_steps(unit: object) -> tuple[float, float, float]:
         largest = HeadlessPolicyDecisionController._largest_model_radius(unit)
-        models = int(len(list(getattr(unit, "models", []) or [])) or 1)
+        models = int(len(unit_group_models(unit)) or 1)
         base_step = max(1.5, min(5.0, (largest * 2.0) + (0.2 * models)))
         return (base_step * 2.0, base_step, max(1.0, base_step / 2.0))
 
     @staticmethod
     def _strategic_edge_scan_step(unit: object, *, width: float, height: float) -> float:
         largest = HeadlessPolicyDecisionController._largest_model_radius(unit)
-        models = int(len(list(getattr(unit, "models", []) or [])) or 1)
+        models = int(len(unit_group_models(unit)) or 1)
         unit_span = max(2.0, (largest * 2.0) + (0.4 * models))
         board_min = max(1.0, min(float(width), float(height)))
         return float(max(1.0, min(4.0, min(unit_span, board_min / 8.0))))
@@ -4104,7 +4114,7 @@ class HeadlessPolicyDecisionController(DecisionController):
     @staticmethod
     def _largest_model_radius(unit: object) -> float:
         largest = 0.0
-        for model in list(getattr(unit, "models", []) or []):
+        for model in unit_group_models(unit):
             base = getattr(model, "model_base", None)
             if base is None:
                 continue
@@ -4181,7 +4191,7 @@ class HeadlessPolicyDecisionController(DecisionController):
     @staticmethod
     def _strategic_edge_offset_preference(unit: object) -> float:
         largest_model_radius = 0.0
-        for model in list(getattr(unit, "models", []) or []):
+        for model in unit_group_models(unit):
             base = getattr(model, "model_base", None)
             if base is None:
                 continue

@@ -8,6 +8,7 @@ from typing import Any, Iterable, List
 
 from .ref_codec import encode_refs
 from ..utility.entity_ids import maybe_entity_id
+from ..utility.unit_models import alive_unit_group_models
 
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
@@ -485,7 +486,7 @@ class DeterministicEventLog:
         phase_name = self._current_phase_name()
         if phase_name:
             payload["phase_name"] = phase_name
-        models = list(getattr(unit, "models", []) or []) if unit is not None else []
+        models = alive_unit_group_models(unit, include_pending=False) if unit is not None else []
         positions = []
         for model in models:
             try:

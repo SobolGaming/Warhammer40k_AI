@@ -23,7 +23,7 @@ from ...rules.imperial_agents_shadow_assignment import (
 )
 from ...utility.aura_utils import distance_between_bases_3d
 from ...utility.entity_ids import get_entity_id
-from ...utility.unit_models import alive_unit_group_models, unit_group_models
+from ...utility.unit_models import alive_unit_group_models, unit_group_members, unit_group_models
 
 
 def _find_option(request: DecisionRequest, option_id: str) -> DecisionOption | None:
@@ -88,6 +88,7 @@ def _validate_scout_model_positions(game: object, unit: object, model_positions:
                     enemy_models.append(enemy_model)
     create_base = getattr(unit, "_create_potential_base", None)
 
+    proposed_bases: list[tuple[str, object, object]] = []
     for entry in model_positions:
         if not isinstance(entry, dict):
             return ("Model position entry must be a dict.",)
@@ -115,9 +116,59 @@ def _validate_scout_model_positions(game: object, unit: object, model_positions:
         if callable(create_base):
             facing = entry.get("facing", getattr(getattr(model, "model_base", None), "facing", 0.0))
             potential_base = create_base(x, y, z, float(facing), model=model)
+            proposed_bases.append((model_id, model, potential_base))
             for enemy_model in enemy_models:
                 if float(distance_between_bases_3d(potential_base, enemy_model.model_base)) < 9.0:
                     return ("Scout model position ends within 9 inches of an enemy model.",)
+
+    for idx, (model_id, _model, base) in enumerate(proposed_bases):
+        collides = getattr(base, "collides_with", None)
+        if not callable(collides):
+            continue
+        for other_model_id, _other_model, other_base in proposed_bases[idx + 1 :]:
+            if bool(collides(other_base)):
+                return (f"Scout model position overlaps another model in the unit: {model_id}, {other_model_id}",)
+
+    if game_map is not None and proposed_bases:
+        own_members = set(unit_group_members(unit))
+        get_friendly_units = getattr(game_map, "get_friendly_units", None)
+        if callable(get_friendly_units):
+            friendly_units = list(get_friendly_units(unit) or [])
+        else:
+            own_army_getter = getattr(unit, "get_parent_army", None)
+            own_army = own_army_getter() if callable(own_army_getter) else getattr(unit, "parent_army", None)
+            friendly_units = []
+            for candidate in list(getattr(game_map, "units", []) or []):
+                if candidate is None:
+                    continue
+                candidate_army_getter = getattr(candidate, "get_parent_army", None)
+                candidate_army = (
+                    candidate_army_getter()
+                    if callable(candidate_army_getter)
+                    else getattr(candidate, "parent_army", None)
+                )
+                if candidate_army is own_army:
+                    friendly_units.append(candidate)
+        for friendly_unit in friendly_units:
+            if friendly_unit is None:
+                continue
+            friendly_root_getter = getattr(friendly_unit, "get_attached_unit_root", None)
+            friendly_root = friendly_root_getter() if callable(friendly_root_getter) else friendly_unit
+            if friendly_unit in own_members or friendly_root in own_members:
+                continue
+            is_alive = getattr(friendly_unit, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if not bool(getattr(friendly_unit, "deployed", False)):
+                continue
+            for friendly_model in alive_unit_group_models(friendly_unit, include_pending=False):
+                friendly_base = getattr(friendly_model, "model_base", None)
+                if friendly_base is None:
+                    continue
+                for model_id, _model, proposed_base in proposed_bases:
+                    collides = getattr(proposed_base, "collides_with", None)
+                    if callable(collides) and bool(collides(friendly_base)):
+                        return (f"Scout model position overlaps a friendly model: {model_id}",)
     return ()
 
 

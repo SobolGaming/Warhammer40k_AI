@@ -161,11 +161,62 @@ class BlessingsOfKhorneManager:
                 continue
             # Allow matching by name for convenience
             for dk, d in self.definitions.items():
-                if d.name.strip().upper() == kk:
+                definition = self._definition_for_key(dk)
+                if definition.name.strip().upper() == kk:
                     if dk not in out:
                         out.append(dk)
                     break
         return out
+
+    @staticmethod
+    def _coerce_recipe(recipe: object) -> DiceRecipe:
+        if isinstance(recipe, DiceRecipe):
+            return recipe
+        if isinstance(recipe, dict):
+            return DiceRecipe(
+                count=int(recipe.get("count", 0) or 0),
+                min_value=int(recipe.get("min_value", 0) or 0),
+                require_matching=bool(recipe.get("require_matching", True)),
+            )
+        return DiceRecipe(
+            count=int(getattr(recipe, "count", 0) or 0),
+            min_value=int(getattr(recipe, "min_value", 0) or 0),
+            require_matching=bool(getattr(recipe, "require_matching", True)),
+        )
+
+    @classmethod
+    def _coerce_definition(cls, definition: object) -> BlessingDefinition:
+        if isinstance(definition, BlessingDefinition):
+            return definition
+        if isinstance(definition, dict):
+            recipes = tuple(cls._coerce_recipe(recipe) for recipe in list(definition.get("recipes", []) or []))
+            return BlessingDefinition(
+                key=str(definition.get("key", "") or ""),
+                name=str(definition.get("name", "") or ""),
+                recipes=recipes,
+                short_effect=str(definition.get("short_effect", "") or ""),
+            )
+        recipes = tuple(cls._coerce_recipe(recipe) for recipe in list(getattr(definition, "recipes", []) or []))
+        return BlessingDefinition(
+            key=str(getattr(definition, "key", "") or ""),
+            name=str(getattr(definition, "name", "") or ""),
+            recipes=recipes,
+            short_effect=str(getattr(definition, "short_effect", "") or ""),
+        )
+
+    def _definition_for_key(self, key: str) -> BlessingDefinition:
+        key_u = str(key or "").strip().upper()
+        definition = self.definitions[key_u]
+        coerced = self._coerce_definition(definition)
+        if coerced.key != key_u:
+            coerced = BlessingDefinition(
+                key=key_u,
+                name=coerced.name,
+                recipes=coerced.recipes,
+                short_effect=coerced.short_effect,
+            )
+        self.definitions[key_u] = coerced
+        return coerced
 
     def get_unit_specific_blessings(self, unit, *, battle_round: int) -> set[str]:
         if unit is None:
@@ -326,7 +377,8 @@ class BlessingsOfKhorneManager:
         for k, d in self.definitions.items():
             if k in ctx.already_active_keys:
                 continue
-            if self._has_any_recipe(ctx.dice, d.recipes):
+            definition = self._definition_for_key(k)
+            if self._has_any_recipe(ctx.dice, definition.recipes):
                 keys.append(k)
         return keys
 
@@ -376,13 +428,14 @@ class BlessingsOfKhorneManager:
                 # Try by name match
                 key = None
                 for dk, d in self.definitions.items():
-                    if d.name.strip().lower() == str(k).strip().lower():
+                    definition = self._definition_for_key(dk)
+                    if definition.name.strip().lower() == str(k).strip().lower():
                         key = dk
                         break
                 if key is None:
                     raise ValueError(f"Unknown Blessing: {k}")
             if key in ctx.already_active_keys:
-                raise ValueError(f"Blessing already active this battle round: {self.definitions[key].name}")
+                raise ValueError(f"Blessing already active this battle round: {self._definition_for_key(key).name}")
             if key not in chosen:
                 chosen.append(key)
 
@@ -559,7 +612,7 @@ class BlessingsOfKhorneManager:
                 label = "Use Reborn in Blood"
             else:
                 label = "No Blessings" if not selected else "Activate " + " + ".join(
-                    self.definitions[key].name for key in selected
+                    self._definition_for_key(key).name for key in selected
                 )
             payload = {
                 "army_id": str(army_id),
@@ -796,7 +849,7 @@ class BlessingsOfKhorneManager:
         """
         # Order blessings by "hardness" (higher required min_value first, then count)
         def _hardness(k: str) -> tuple[int, int, int]:
-            d = self.definitions[k]
+            d = self._definition_for_key(k)
             # Hardest recipe first
             best = max((r.min_value, r.count) for r in d.recipes)
             return (best[0], best[1], len(d.recipes))
@@ -810,7 +863,7 @@ class BlessingsOfKhorneManager:
             if i >= len(keys):
                 return True
             k = keys[i]
-            d = self.definitions[k]
+            d = self._definition_for_key(k)
             # Try recipes in descending strictness
             recipes = sorted(list(d.recipes), key=lambda r: (r.min_value, r.count), reverse=True)
             for r in recipes:

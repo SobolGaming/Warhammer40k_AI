@@ -48,6 +48,45 @@ class TestBlessingsOfKhorne(unittest.TestCase):
         self.assertTrue(mgr.is_blessing_active("DECAPITATING_STRIKES", battle_round=1))
         self.assertTrue(mgr.is_blessing_active("WARP_BLADES", battle_round=1))
 
+    def test_replay_snapshot_dict_definitions_allocate_blessings(self):
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
+
+        mgr = BlessingsOfKhorneManager()
+        mgr.definitions = {
+            key: {
+                "key": definition.key,
+                "name": definition.name,
+                "recipes": [
+                    {
+                        "count": recipe.count,
+                        "min_value": recipe.min_value,
+                        "require_matching": recipe.require_matching,
+                    }
+                    for recipe in definition.recipes
+                ],
+                "short_effect": definition.short_effect,
+            }
+            for key, definition in mgr.definitions.items()
+        }
+        mgr.on_battle_round_start(1)
+        ctx = BlessingsRollContext(
+            timing=BlessingsTiming.START_OF_BATTLE_ROUND,
+            battle_round=1,
+            dice=[6, 2, 6, 3, 5, 3, 4, 1],
+            rerolls_allowed=0,
+            rerolled_indices=[],
+            max_activations=2,
+            counts_toward_baseline_limit=True,
+            already_active_keys=set(),
+            reborn_in_blood_available=False,
+        )
+
+        res = mgr.apply_choice(ctx, selected_blessing_keys=["UNBRIDLED_BLOODLUST", "WARP_BLADES"])
+
+        self.assertEqual(set(res["activated"]), {"UNBRIDLED_BLOODLUST", "WARP_BLADES"})
+        self.assertTrue(mgr.is_blessing_active("UNBRIDLED_BLOODLUST", battle_round=1))
+        self.assertTrue(mgr.is_blessing_active("WARP_BLADES", battle_round=1))
+
     def test_favoured_rerolls_up_to_two_indices(self):
         from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsTiming
 

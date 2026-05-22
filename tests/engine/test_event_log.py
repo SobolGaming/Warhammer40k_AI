@@ -137,6 +137,27 @@ def test_unit_move_events_logged():
     assert pos["facing"] == 5000
 
 
+def test_unit_move_ended_event_logs_attached_unit_models():
+    bodyguard_model = SimpleNamespace(id="m1", get_location=lambda: (1.0, 2.0, 0.0, 0.0))
+    leader_model = SimpleNamespace(id="m2", get_location=lambda: (3.0, 4.0, 0.0, 0.25))
+    leader = SimpleNamespace(id="leader", models=[leader_model])
+    unit = SimpleNamespace(id="unit", models=[bodyguard_model])
+    unit.get_attached_unit_root = lambda: unit
+    unit.get_attached_unit_members = lambda: [unit, leader]
+    leader.get_attached_unit_root = lambda: unit
+    leader.get_attached_unit_members = lambda: [unit, leader]
+    game = Game(Battlefield(width=60, height=44), players=[])
+    game.turn = 1
+
+    game.event_system.publish("unit_move_ended", unit=unit, action="advance")
+
+    ended = [e for e in game.event_log.events if e.event_type == "unit_move_ended"]
+    assert ended
+    positions = ended[-1].payload["model_positions"]
+    assert {entry["model_id"] for entry in positions} == {"m1", "m2"}
+    assert len(positions) == 2
+
+
 def test_destroy_events_logged():
     attacker_model = SimpleNamespace(id="am1")
     attacker_unit = SimpleNamespace(id="au1")

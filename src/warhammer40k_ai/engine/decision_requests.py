@@ -4174,7 +4174,9 @@ def build_declare_selected_units_gain_deep_strike_requests(
 def _unit_anchor_location(unit: object) -> tuple[float, float, float] | None:
     if unit is None:
         return None
-    for model in list(getattr(unit, "models", []) or []):
+    from ..utility.unit_models import unit_group_models
+
+    for model in unit_group_models(unit):
         alive = getattr(model, "is_alive", True)
         if callable(alive):
             alive = bool(alive())
@@ -4279,7 +4281,9 @@ def _scout_model_positions_for_destination(
     dy = float(destination[1]) - float(origin[1])
     dz = float(destination[2]) - float(origin[2])
     positions: list[dict[str, object]] = []
-    for model in list(getattr(unit, "models", []) or []):
+    from ..utility.unit_models import unit_group_models
+
+    for model in unit_group_models(unit):
         model_id = str(get_entity_id(model) or "")
         if not model_id:
             continue

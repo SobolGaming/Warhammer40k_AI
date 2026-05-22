@@ -1,10 +1,13 @@
 from warhammer40k_ai.engine.decision_kinds import DECISION_SCOUT_MOVE
 from warhammer40k_ai.engine.decision_requests import build_scout_move_request
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
@@ -127,3 +130,98 @@ def test_headless_scout_move_applies_generated_model_positions_without_pathfindi
     assert [round(float(value), 6) for value in actual_position[:3]] == [
         round(float(value), 6) for value in expected_position
     ]
+
+
+def test_scout_move_rejects_final_friendly_model_overlap():
+    game, p1, _p2, unit1, _unit2 = _build_remote_only_game()
+    blocker = _make_unit("Friendly Blocker", scout_distance=0.0)
+    p1.get_army().add_unit(blocker)
+    unit1.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    blocker.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+    game.map.units = [unit1, blocker]
+    game.rebuild_entity_registry()
+    option = DecisionOption.create(
+        "Scout into blocker",
+        payload={
+            "unit_id": get_entity_id(unit1),
+            "action": "scout",
+            "destination": [6.0, 0.0, 0.0],
+            "model_positions": [
+                {
+                    "model_id": get_entity_id(unit1.models[0]),
+                    "position": [6.0, 0.0, 0.0],
+                    "facing": 0.0,
+                }
+            ],
+        },
+    )
+    request = DecisionRequest.create(
+        DECISION_SCOUT_MOVE,
+        "Scout move for Scout Unit A",
+        player_id=p1.id,
+        options=[option],
+        context={"unit_id": get_entity_id(unit1), "selection_kind": "scout_move"},
+    )
+    game.request_decision(request)
+
+    result = resolve_decision_command(game, request, option.option_id, player_id=p1.id)
+
+    assert result.ok is False
+    assert "friendly model" in " ".join(result.errors)
+
+
+def test_headless_scout_precheck_skips_final_friendly_model_overlap():
+    game, p1, _p2, unit1, _unit2 = _build_remote_only_game()
+    blocker = _make_unit("Friendly Blocker", scout_distance=0.0)
+    p1.get_army().add_unit(blocker)
+    unit1.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    blocker.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+    game.map.units = [unit1, blocker]
+    game.rebuild_entity_registry()
+    invalid_option = DecisionOption.create(
+        "Scout into blocker",
+        payload={
+            "unit_id": get_entity_id(unit1),
+            "action": "scout",
+            "destination": [6.0, 0.0, 0.0],
+            "model_positions": [
+                {
+                    "model_id": get_entity_id(unit1.models[0]),
+                    "position": [6.0, 0.0, 0.0],
+                    "facing": 0.0,
+                }
+            ],
+        },
+    )
+    skip_option = DecisionOption.create(
+        "Skip",
+        payload={
+            "unit_id": get_entity_id(unit1),
+            "action": "skip",
+            "skip": True,
+        },
+    )
+    request = DecisionRequest.create(
+        DECISION_SCOUT_MOVE,
+        "Scout move for Scout Unit A",
+        player_id=p1.id,
+        options=[invalid_option, skip_option],
+        context={"unit_id": get_entity_id(unit1), "selection_kind": "scout_move"},
+    )
+
+    assert (
+        HeadlessPolicyDecisionController._candidate_passes_current_game_precheck(
+            game,
+            request,
+            invalid_option.option_id,
+        )
+        is False
+    )
+    assert (
+        HeadlessPolicyDecisionController._candidate_passes_current_game_precheck(
+            game,
+            request,
+            skip_option.option_id,
+        )
+        is True
+    )
