@@ -4,6 +4,7 @@ from typing import Any
 
 from ..utility.call_utils import call_with_supported_kwargs
 from ..utility.profiling_sections import profiled_section
+from ..utility.unit_models import unit_group_models
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
@@ -15,7 +16,7 @@ def _safe_float(value: object, default: float = 0.0) -> float:
 
 def snapshot_unit_model_state(unit: object) -> list[tuple[object, float, float, float, float]]:
     snapshot: list[tuple[object, float, float, float, float]] = []
-    for model in list(getattr(unit, "models", []) or []):
+    for model in unit_group_models(unit):
         getter = getattr(model, "get_location", None)
         base = getattr(model, "model_base", None)
         if callable(getter):

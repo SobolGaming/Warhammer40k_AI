@@ -17149,7 +17149,9 @@ class ActionsMovementMixin:
         pivot_degrees: Optional[float] = None,
     ) -> bool:
         """Resolve AIRCRAFT Normal move (straight line, minimum 20", no max; optional post-move pivot)."""
-        if not self.models:
+        models = unit_group_models(self, include_pending=False)
+        alive_models = alive_unit_group_models(self, include_pending=False)
+        if not models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
 
@@ -17159,7 +17161,7 @@ class ActionsMovementMixin:
             return False
 
         # Use first alive model as reference
-        model = next((m for m in self.models if getattr(m, "is_alive", False)), None)
+        model = alive_models[0] if alive_models else None
         if model is None:
             logger.error(f"Cannot move unit {self.name}: no valid models")
             return False
@@ -17235,9 +17237,7 @@ class ActionsMovementMixin:
 
         # Compute minimum forward distance required for all models (base-to-base >= 20")
         required_forward = 0.0
-        for m in self.models:
-            if not getattr(m, "is_alive", False):
-                continue
+        for m in alive_models:
             try:
                 required_forward = max(required_forward, _required_forward_distance_for_model(m))
             except Exception:
@@ -17246,9 +17246,7 @@ class ActionsMovementMixin:
         def _forward_move_within_boundary(dist: float) -> bool:
             if game_map is None:
                 return True
-            for m in self.models:
-                if not getattr(m, "is_alive", False):
-                    continue
+            for m in alive_models:
                 new_x = float(m.model_base.x) + forward_x * dist
                 new_y = float(m.model_base.y) + forward_y * dist
                 if not game_map.is_within_boundary(m, (new_x, new_y)):
@@ -17311,9 +17309,7 @@ class ActionsMovementMixin:
 
         # Build proposed positions
         proposed = []
-        for m in self.models:
-            if not getattr(m, "is_alive", False):
-                continue
+        for m in alive_models:
             new_x = float(m.model_base.x) + move_dx
             new_y = float(m.model_base.y) + move_dy
             new_z = game_map.get_height_at_point(new_x, new_y) if game_map else float(m.model_base.z)
@@ -17334,9 +17330,7 @@ class ActionsMovementMixin:
             for enemy in game_map.get_enemy_units(self):
                 if not enemy.is_alive() or not enemy.deployed:
                     continue
-                for em in enemy.models:
-                    if not getattr(em, "is_alive", False):
-                        continue
+                for em in alive_unit_group_models(enemy, include_pending=False):
                     for m, nx, ny, nz in proposed:
                         test_base = self._create_potential_base(nx, ny, nz, facing, model=m)
                         horiz = float(horizontal_distance_between_bases_2d(test_base, em.model_base))
@@ -17447,6 +17441,8 @@ class ActionsMovementMixin:
         """
         if bool(getattr(self, "is_aircraft", False)):
             return self._aircraft_normal_move(destination, game_map, pivot_degrees=aircraft_pivot_degrees)
+        models = unit_group_models(self, include_pending=False)
+        alive_models = alive_unit_group_models(self, include_pending=False)
         movement_lock_mode, movement_lock_source = self._movement_lock_mode_and_source()
         if movement_lock_mode == "remain_stationary":
             source_name = movement_lock_source or "movement lock"
@@ -17456,7 +17452,7 @@ class ActionsMovementMixin:
             except Exception:
                 pass
             return False
-        if not self.models:
+        if not models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
 
@@ -17466,11 +17462,11 @@ class ActionsMovementMixin:
             return False
 
         # Get starting position from first model for feedback
-        if not self.models or not self.models[0].is_alive:
+        if not alive_models:
             logger.error(f"Cannot move unit {self.name}: no valid models")
             return False
 
-        first_model = self.models[0]
+        first_model = alive_models[0]
         if callable(getattr(first_model, "get_location", None)):
             first_model_pos = first_model.get_location()
         else:
@@ -17489,7 +17485,7 @@ class ActionsMovementMixin:
 
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
         original_model_positions = []
-        for model in self.models:
+        for model in models:
             original_model_positions.append(model.get_location())
 
         # Get the movement range from the first model (assuming all models have the same movement).
@@ -17696,7 +17692,7 @@ class ActionsMovementMixin:
         successful_moves = 0
 
         # Move each model individually using optimized pathfinding
-        for model_index, (model, model_destination) in enumerate(zip(self.models, potential_positions)):
+        for model_index, (model, model_destination) in enumerate(zip(models, potential_positions)):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting to move from {model_start} to {model_destination}")
 
@@ -17794,14 +17790,14 @@ class ActionsMovementMixin:
             logger.info(f"{self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
             for i, original_pos in enumerate(original_model_positions):
-                if i < len(self.models):
-                    self.models[i].set_location(*original_pos)
+                if i < len(models):
+                    models[i].set_location(*original_pos)
             return False
 
         # CRITICAL VALIDATION: Check for illegal overlaps after movement
         # This catches cases where models might be overlapping with enemies after movement
-        if self.models and self.models[0].is_alive:
-            final_position = self.models[0].get_location()
+        if first_model is not None and getattr(first_model, "is_alive", False):
+            final_position = first_model.get_location()
             end_x, end_y = final_position[0], final_position[1]
             end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
@@ -17810,22 +17806,20 @@ class ActionsMovementMixin:
 
         # Check for base overlaps with enemy models
         enemy_units = game_map.get_enemy_units(self)
-        for model in self.models:
+        for model in alive_unit_group_models(self, include_pending=False):
             if not model.is_alive:
                 continue
             for enemy_unit in enemy_units:
                 if not enemy_unit.is_alive() or not enemy_unit.deployed:
                     continue
-                for enemy_model in enemy_unit.models:
-                    if not enemy_model.is_alive:
-                        continue
+                for enemy_model in alive_unit_group_models(enemy_unit, include_pending=False):
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
                         logger.info(f"{self.name} cannot move - {model.name} would overlap with {enemy_model.name} from {enemy_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
-                            if i < len(self.models):
-                                self.models[i].set_location(*original_pos)
+                            if i < len(models):
+                                models[i].set_location(*original_pos)
                         return False
 
         # Calculate actual distance the unit moved (rules-aware)
@@ -17841,8 +17835,8 @@ class ActionsMovementMixin:
         action_name = 'advanced' if advance else 'moved'
         logger.info(f"{self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
 
-        if successful_moves < len(self.models):
-            logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+        if successful_moves < len(models):
+            logger.info(f" Note: Only {successful_moves}/{len(models)} models could move to valid positions")
 
         logger.info(f"Unit {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.advanced_this_round = advance
@@ -17872,11 +17866,13 @@ class ActionsMovementMixin:
         if bool(getattr(self, "is_aircraft", False)):
             logger.info(f"{self.name} cannot declare charges (AIRCRAFT)")
             return False
+        models = unit_group_models(self, include_pending=False)
+        alive_models = alive_unit_group_models(self, include_pending=False)
         # Mission Actions: a unit performing an Action is not eligible to declare a charge
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
             logger.info(f"{self.name} is performing an Action and cannot declare a charge this turn")
             return False
-        if not self.models:
+        if not models:
             logger.error(f"Cannot charge move unit {self.name}: no models in unit")
             return False
 
@@ -17890,11 +17886,11 @@ class ActionsMovementMixin:
             pass
 
         # Get starting position from first model
-        if not self.models or not self.models[0].is_alive:
+        if not alive_models:
             logger.error(f"Cannot charge move unit {self.name}: no valid models")
             return False
 
-        first_model = self.models[0]
+        first_model = alive_models[0]
         if callable(getattr(first_model, "get_location", None)):
             first_model_pos = first_model.get_location()
         else:
@@ -17913,7 +17909,7 @@ class ActionsMovementMixin:
 
         # Store original model positions for potential rollback
         original_model_positions = []
-        for model in self.models:
+        for model in models:
             model_pos = model.get_location()
             original_model_positions.append(model_pos)
 
@@ -17939,7 +17935,7 @@ class ActionsMovementMixin:
             logger.error(f"ERROR: {self.name} cannot charge - one or more targets are invalid.")
             return False
         # Charge toward specific target unit (primary)
-        all_enemy_models = [model for model in targets[0].models if model.is_alive]
+        all_enemy_models = alive_unit_group_models(targets[0], include_pending=False)
         logger.info(f"{self.name} charging specifically toward {targets[0].name} ({len(all_enemy_models)} models)")
         if not all_enemy_models:
             logger.info(f"{self.name} cannot charge - no alive models in target unit {targets[0].name}")
@@ -17948,9 +17944,9 @@ class ActionsMovementMixin:
         successful_moves = 0
 
         # FAST PATH FOR SINGLE MODEL UNITS - use pathfinding but skip formation complexity
-        if len(self.models) == 1:
+        if len(models) == 1:
             logger.info(f"{self.name} using single-model charge path")
-            model = self.models[0]
+            model = models[0]
             model_start = model.get_location()
 
             # Calculate straight-line distance to destination (rules-aware)
@@ -18022,7 +18018,7 @@ class ActionsMovementMixin:
             # Use formation positioning if available, otherwise fall back to individual positioning
             if potential_positions is not None:
                 # Use formation positioning with enhanced pathfinding validation
-                for model, model_destination in zip(self.models, potential_positions):
+                for model, model_destination in zip(models, potential_positions):
                     model_start = model.get_location()
 
                     # Calculate distance for this model
@@ -18080,9 +18076,9 @@ class ActionsMovementMixin:
                 logger.info(f"{self.name} charge failed - no valid formation found, trying individual positioning")
 
             # If formation failed or had limited success, try individual model positioning
-            if successful_moves < len(self.models) // 2:  # If less than half succeeded
+            if successful_moves < len(models) // 2:  # If less than half succeeded
                 # Move each model individually using enhanced pathfinding
-                for model in self.models:
+                for model in models:
                     model_start = model.get_location()
 
                     # Find the closest enemy model to this model
@@ -18186,34 +18182,32 @@ class ActionsMovementMixin:
         # CRITICAL VALIDATION: Final check for any overlaps after all models positioned
         # This catches edge cases where models might still overlap despite individual validation
         friendly_units = game_map.get_friendly_units(self)
-        for model in self.models:
+        for model in alive_unit_group_models(self, include_pending=False):
             if not model.is_alive:
                 continue
             for friendly_unit in friendly_units:
                 if friendly_unit == self or not friendly_unit.is_alive() or not friendly_unit.deployed:
                     continue
-                for friendly_model in friendly_unit.models:
-                    if not friendly_model.is_alive:
-                        continue
+                for friendly_model in alive_unit_group_models(friendly_unit, include_pending=False):
                     # Check if this model's base overlaps with the friendly model's base
                     if model.model_base.collides_with(friendly_model.model_base):
                         logger.info(f"{self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
-                            if i < len(self.models):
-                                self.models[i].set_location(*original_pos)
+                            if i < len(models):
+                                models[i].set_location(*original_pos)
                         return False
 
         # Coherency validation: charge moves must end in coherency (movement ending out of coherency is not allowed)
         try:
             from ...utility.calcs import validate_unit_coherency_after_movement
-            final_positions = [m.get_location() for m in self.models]
+            final_positions = [m.get_location() for m in models]
             is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
             if not is_coherent:
                 logger.info(f"{self.name} charge move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
                 for i, original_pos in enumerate(original_model_positions):
-                    if i < len(self.models):
-                        self.models[i].set_location(*original_pos)
+                    if i < len(models):
+                        models[i].set_location(*original_pos)
                 return False
         except Exception as e:
             # If coherency validation itself fails, fail-fast rather than silently allowing illegal states.
@@ -18224,13 +18218,13 @@ class ActionsMovementMixin:
         if not ok:
             logger.info(f"{self.name} charge move rejected: {reason}")
             for i, original_pos in enumerate(original_model_positions):
-                if i < len(self.models):
-                    self.models[i].set_location(*original_pos)
+                if i < len(models):
+                    models[i].set_location(*original_pos)
             return False
 
         # Get final position for feedback from first model
-        if self.models and self.models[0].is_alive:
-            final_position = self.models[0].get_location()
+        if first_model is not None and getattr(first_model, "is_alive", False):
+            final_position = first_model.get_location()
             end_x, end_y = final_position[0], final_position[1]
             end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
@@ -18249,8 +18243,8 @@ class ActionsMovementMixin:
         # Provide detailed feedback
         logger.info(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
 
-        if successful_moves < len(self.models):
-            logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+        if successful_moves < len(models):
+            logger.info(f" Note: Only {successful_moves}/{len(models)} models could move to valid positions")
 
         # Mark unit as having moved this round
         self.round_state.moved_this_round = True
@@ -19582,16 +19576,18 @@ class ActionsMovementMixin:
                 return False
 
         # Execute Fall Back movement for each model
-        if not self.models:
+        models = unit_group_models(self, include_pending=False)
+        alive_models = alive_unit_group_models(self, include_pending=False)
+        if not models:
             logger.error(f"Cannot fall back unit {self.name}: no models in unit")
             return False
 
         # Get starting position from first model
-        if not self.models or not self.models[0].is_alive:
+        if not alive_models:
             logger.error(f"Cannot fall back unit {self.name}: no valid models")
             return False
 
-        first_model = self.models[0]
+        first_model = alive_models[0]
         if callable(getattr(first_model, "get_location", None)):
             first_model_pos = first_model.get_location()
         else:
@@ -19638,7 +19634,7 @@ class ActionsMovementMixin:
         successful_moves = 0
         total_models_moved_over_enemies = 0
 
-        for model, model_destination in zip(self.models, potential_positions):
+        for model, model_destination in zip(models, potential_positions):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting to fall back from {model_start} to {model_destination}")
 
@@ -19759,15 +19755,13 @@ class ActionsMovementMixin:
         # CRITICAL VALIDATION: Check for illegal overlaps after fall back
         # Fall back has special rules - units can move over enemies but cannot end overlapping
         enemy_units = game_map.get_enemy_units(self)
-        for model in self.models:
+        for model in alive_unit_group_models(self, include_pending=False):
             if not model.is_alive:
                 continue
             for enemy_unit in enemy_units:
                 if not enemy_unit.is_alive() or not enemy_unit.deployed:
                     continue
-                for enemy_model in enemy_unit.models:
-                    if not enemy_model.is_alive:
-                        continue
+                for enemy_model in alive_unit_group_models(enemy_unit, include_pending=False):
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
                         logger.info(f"{self.name} cannot fall back - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
@@ -19776,8 +19770,8 @@ class ActionsMovementMixin:
                         return False
 
         # Get final position for feedback from first model
-        if self.models and self.models[0].is_alive:
-            final_position = self.models[0].get_location()
+        if first_model is not None and getattr(first_model, "is_alive", False):
+            final_position = first_model.get_location()
             end_x, end_y = final_position[0], final_position[1]
             end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
@@ -19799,8 +19793,8 @@ class ActionsMovementMixin:
         if total_models_moved_over_enemies > 0:
             logger.info(f" {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
 
-        if successful_moves < len(self.models):
-            remaining_models = len(self.models)
+        if successful_moves < len(models):
+            remaining_models = len(models)
             logger.info(f" Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
 
         logger.info(f"Unit {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
@@ -22697,7 +22691,9 @@ class ActionsMovementMixin:
         Returns:
             bool: True if scout move was successful
         """
-        if not self.models:
+        models = unit_group_models(self, include_pending=False)
+        alive_models = alive_unit_group_models(self, include_pending=False)
+        if not models:
             logger.error(f"Cannot scout move unit {self.name}: no models in unit")
             return False
 
@@ -22718,11 +22714,12 @@ class ActionsMovementMixin:
             return False
 
         # Get starting position from first model
-        if not self.models or not self.models[0].is_alive:
+        if not alive_models:
             logger.error(f"Cannot scout move unit {self.name}: no valid models")
             return False
 
-        first_model_pos = self.models[0].get_location()
+        first_model = alive_models[0]
+        first_model_pos = first_model.get_location()
         if not first_model_pos:
             logger.error(f"Cannot scout move unit {self.name}: first model has no position")
             return False
@@ -22757,11 +22754,17 @@ class ActionsMovementMixin:
 
         # Check scout restriction: cannot end within 9" of enemy models (base-to-base closest-point distance).
         from ...utility.aura_utils import distance_between_bases_3d
-        enemy_models = [em for eu in game_map.get_enemy_units(self) if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
+        enemy_models = [
+            em
+            for eu in game_map.get_enemy_units(self)
+            if eu.is_alive() and eu.deployed
+            for em in alive_unit_group_models(eu, include_pending=False)
+        ]
+        moving_models = models
         for idx, (x, y, z, facing) in enumerate(potential_positions):
-            if idx >= len(self.models):
+            if idx >= len(moving_models):
                 break
-            mb = self._create_potential_base(x, y, z, facing, model=self.models[idx])
+            mb = self._create_potential_base(x, y, z, facing, model=moving_models[idx])
             for em in enemy_models:
                 if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
                     logger.info(f"{self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
@@ -22769,12 +22772,12 @@ class ActionsMovementMixin:
 
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
         original_model_positions = []
-        for model in self.models:
+        for model in moving_models:
             original_model_positions.append(model.get_location())
 
         successful_moves = 0
 
-        for model, model_destination in zip(self.models, potential_positions):
+        for model, model_destination in zip(moving_models, potential_positions):
             model_start = model.get_location()
             logging.debug(f"Model {model._id} {model.name} attempting scout move from {model_start} to {model_destination}")
 
@@ -22794,7 +22797,7 @@ class ActionsMovementMixin:
 
             # Find model index for pathfinding
             model_index = None
-            for i, m in enumerate(self.models):
+            for i, m in enumerate(moving_models):
                 if m == model:
                     model_index = i
                     break
@@ -22881,7 +22884,7 @@ class ActionsMovementMixin:
 
         # Get final positions of all models
         final_positions = []
-        for model in self.models:
+        for model in moving_models:
             final_positions.append(model.get_location())
 
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
@@ -22890,34 +22893,32 @@ class ActionsMovementMixin:
             logger.info(f"{self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
             for i, original_pos in enumerate(original_model_positions):
-                if i < len(self.models):
-                    self.models[i].set_location(*original_pos)
+                if i < len(moving_models):
+                    moving_models[i].set_location(*original_pos)
             return False
 
         # CRITICAL VALIDATION: Check for illegal overlaps after scout move
         # Scout moves cannot end overlapping with enemy models
         enemy_units = game_map.get_enemy_units(self)
-        for model in self.models:
+        for model in alive_unit_group_models(self, include_pending=False):
             if not model.is_alive:
                 continue
             for enemy_unit in enemy_units:
                 if not enemy_unit.is_alive() or not enemy_unit.deployed:
                     continue
-                for enemy_model in enemy_unit.models:
-                    if not enemy_model.is_alive:
-                        continue
+                for enemy_model in alive_unit_group_models(enemy_unit, include_pending=False):
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
                         logger.info(f"{self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
-                            if i < len(self.models):
-                                self.models[i].set_location(*original_pos)
+                            if i < len(moving_models):
+                                moving_models[i].set_location(*original_pos)
                         return False
 
         # Get final position for feedback from first model
-        if self.models and self.models[0].is_alive:
-            final_position = self.models[0].get_location()
+        if first_model is not None and getattr(first_model, "is_alive", False):
+            final_position = first_model.get_location()
             end_x, end_y = final_position[0], final_position[1]
             end_z = final_position[2] if len(final_position) > 2 else start_z
         else:
@@ -22939,8 +22940,8 @@ class ActionsMovementMixin:
         # Provide detailed feedback
         logger.info(f"{self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
 
-        if successful_moves < len(self.models):
-            logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
+        if successful_moves < len(moving_models):
+            logger.info(f" Note: Only {successful_moves}/{len(moving_models)} models could scout move to valid positions")
 
         logger.info(f"Unit {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         return True

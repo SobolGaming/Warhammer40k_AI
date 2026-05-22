@@ -7,6 +7,7 @@ from typing import Any
 
 from .path_witness import current_model_positions
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import unit_group_models
 
 _FIRST_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
 MOVEMENT_DISTANCE_EPSILON = 1e-4
@@ -73,8 +74,7 @@ def model_normal_move_limit(unit: object, model: object | None, game: object | N
 
 
 def unit_normal_move_limit(unit: object, game: object | None = None) -> float:
-    get_models = getattr(unit, "get_attached_unit_models", None)
-    models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
+    models = unit_group_models(unit, include_pending=False)
     limits: list[float] = []
     for model in models:
         if model is None:
@@ -104,7 +104,7 @@ def movement_distance_profile(
     }
     models_by_id = {
         str(get_entity_id(model) or ""): model
-        for model in list(getattr(unit, "models", []) or [])
+        for model in unit_group_models(unit, include_pending=False)
         if model is not None and str(get_entity_id(model) or "")
     }
     entries: list[ModelMovementDistance] = []

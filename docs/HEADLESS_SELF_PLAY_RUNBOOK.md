@@ -426,6 +426,7 @@ Viewer controls:
 
 Viewer notes:
 - Replay controls render in a separate floating dialog pane instead of the battlefield HUD, can be dragged from anywhere on the panel, and may hang partly off-screen while leaving a visible grab strip.
+- The Replay Controls pane shows the decision actor as a player slot plus replay army label, with controller kind and a short player id on the next line.
 - Bottom action/dice panes are rebuilt for the selected replay decision on every seek, so stepping backward clears future log entries.
 - Deployment `MOVE_UNIT` replay entries now expand into numbered `(x, y, z, facing)` model placements in the Replay Controls pane instead of only showing the anchor label.
 

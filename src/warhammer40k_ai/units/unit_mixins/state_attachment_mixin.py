@@ -186,7 +186,7 @@ class StateAttachmentMixin:
         models = list(getattr(self, "models", []) or [])
         try:
             if self is self.get_attached_unit_root():
-                models = list(self._get_bodyguard_support_models() or [])
+                models = list(self.get_attached_unit_models() or [])
         except Exception:
             pass
         alive_count = len([

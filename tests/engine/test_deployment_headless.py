@@ -13,6 +13,8 @@ from warhammer40k_ai.engine.deployment import DeploymentDecisionMaker, Deploymen
 from warhammer40k_ai.engine.deployment_ranker import DEFAULT_DEPLOYMENT_RANKER_FEATURE_KEYS
 from warhammer40k_ai.engine.deployment_headless import DeterministicDeploymentDecisionMaker
 from warhammer40k_ai.engine.game_mixins.setup_deployment_reserves_mixin import GameSetupDeploymentReservesMixin
+from warhammer40k_ai.utility.calcs import validate_unit_coherency_after_movement
+from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
 class _StubBase:
@@ -1353,6 +1355,129 @@ def test_headless_deployment_large_unit_uses_fast_grid_before_prospective_builde
     payload = list(candidates[0].get("model_positions", []) or [])
     assert len(payload) == 9
     assert game.seen_model_position_count == 9
+
+
+def test_headless_deployment_fast_grid_places_attached_leader_with_bodyguard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FlatMap:
+        terrain_features: list[object] = []
+        units: list[object] = []
+
+        @staticmethod
+        def get_height_at_point(_x: float, _y: float) -> float:
+            return 0.0
+
+        @staticmethod
+        def get_enemy_models(_unit: object) -> list[object]:
+            return []
+
+        @staticmethod
+        def get_friendly_units(_unit: object) -> list[object]:
+            return []
+
+    class _AttachedBodyguard(_StubUnit):
+        def __init__(self, unit_id: str, *, map_obj: object) -> None:
+            super().__init__(unit_id, must_start_in_reserves=False, map_obj=map_obj)
+            self.models = [_StubModel(f"{unit_id}:model:{idx}") for idx in range(5)]
+            self.attached_leaders = []
+
+        def get_attached_unit_members(self):
+            return [self, *list(self.attached_leaders or [])]
+
+        def calculate_model_positions(
+            self,
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=None,
+            search_context=None,
+        ):
+            del x, y, game_map, avoid_friendly_units, boundary_repulsors, search_context
+            raise AssertionError("attached 5+1 deployment should use fast grid for all six models")
+
+    class _StubGame:
+        def __init__(self, map_obj: object) -> None:
+            self.players = []
+            self.map = map_obj
+            self.battlefield = type("BF", (), {"width": 60.0, "height": 44.0})()
+            self.seen_model_position_count = 0
+
+        def is_valid_deployment_position(self, _unit, _x: float, _y: float, _player_id: str, **kwargs) -> bool:
+            self.seen_model_position_count = len(list(kwargs.get("model_positions", []) or []))
+            return True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.deployment_headless.validate_decision", lambda *_args, **_kwargs: ())
+
+    game_map = _FlatMap()
+    game = _StubGame(game_map)
+    bodyguard = _AttachedBodyguard("unit:warp_spiders", map_obj=game_map)
+    leader = _StubUnit("unit:lhykhis", must_start_in_reserves=False, map_obj=game_map)
+    leader.models = [_StubModel("unit:lhykhis:model:0")]
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+    army = _StubArmy([bodyguard, leader])
+    player = _StubPlayer(army, player_id="player:test")
+    army.player = player
+    bodyguard._army = army
+    leader._army = army
+
+    maker = DeterministicDeploymentDecisionMaker(game=game, placement_candidate_limit=1)
+    monkeypatch.setattr(
+        maker,
+        "_deployment_anchor_candidate_groups",
+        lambda *_args, **_kwargs: [("single_anchor", [(10.0, 10.0)])],
+    )
+
+    candidates = maker.build_deployment_move_candidates(
+        bodyguard,
+        {"name": "zone", "x_range": [0.0, 30.0], "y_range": [0.0, 20.0]},
+        already_deployed=[],
+        max_candidates=1,
+    )
+
+    assert candidates
+    model_ids = [
+        str(entry.get("model_id", "") or "")
+        for entry in list(candidates[0].get("model_positions", []) or [])
+    ]
+    assert len(model_ids) == 6
+    assert "unit:lhykhis:model:0" in model_ids
+    assert game.seen_model_position_count == 6
+
+
+def test_attached_deployment_coherency_uses_leader_model_count() -> None:
+    class _Model:
+        def __init__(self, model_id: str) -> None:
+            self.id = model_id
+            self._id = model_id
+            self.is_alive = True
+            self.model_base = Base(BaseType.CIRCULAR, 0.5)
+
+    class _Unit:
+        def __init__(self, unit_id: str, model_count: int) -> None:
+            self.id = unit_id
+            self._id = unit_id
+            self.name = unit_id
+            self.models = [_Model(f"{unit_id}:model:{idx}") for idx in range(model_count)]
+            self.attached_leaders = []
+
+        def get_attached_unit_members(self):
+            return [self, *list(self.attached_leaders or [])]
+
+    bodyguard = _Unit("Warp Spiders", 5)
+    leader = _Unit("Lhykhis", 1)
+    leader.attached_to = bodyguard
+    bodyguard.attached_leaders = [leader]
+
+    positions = [(float(index) * 1.1, 0.0, 0.0) for index in range(6)]
+
+    assert validate_unit_coherency_after_movement(
+        bodyguard,
+        positions,
+        ignore_pending=False,
+    ) == (True, [])
 
 
 def test_headless_deployment_near_edge_anchor_is_not_quick_rejected_when_payload_fits(

@@ -6,6 +6,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ..utility.entity_ids import get_entity_id
 from ..utility.rng import resolve_rng
+from ..utility.unit_models import alive_unit_group_models
 import logging
 logger = logging.getLogger(__name__)
 
@@ -910,9 +911,7 @@ class BehindEnemyLinesSecondary(SecondaryMissionCard):
                 if not zone:
                     return False
                 # Any alive model wholly within; approximate by all alive models in zone
-                for m in unit.models:
-                    if not m.is_alive:
-                        continue
+                for m in alive_unit_group_models(unit, include_pending=False):
                     pos = m.get_location()
                     if not pos or not zone.contains_point(pos[0], pos[1]):
                         return False
@@ -1484,9 +1483,7 @@ class DisplayOfMightSecondary(SecondaryMissionCard):
         def _wholly_in_nml(unit):
             try:
                 # wholly in NML: all alive models outside both DZs
-                for m in unit.models:
-                    if not m.is_alive:
-                        continue
+                for m in alive_unit_group_models(unit, include_pending=False):
                     pos = m.get_location()
                     if not pos:
                         return False

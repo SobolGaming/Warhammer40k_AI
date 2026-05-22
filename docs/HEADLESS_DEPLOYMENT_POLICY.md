@@ -16,6 +16,9 @@ This document describes deterministic headless placement behavior for deployment
   each anchor when calling both `Game.is_valid_deployment_position(...)` and the authoritative
   `MOVE_UNIT` Decision API validation. This avoids recomputing formation placement for the same
   candidate during setup profiling runs.
+- Attached units are placed as one rules unit: generated deployment payloads, `allowed_model_ids`,
+  footprint estimates, coherency checks, and replay/path witnesses include Bodyguard models plus
+  attached Leaders and joined support models.
 - Standard deployment quick-rejects use the estimated packed unit width/depth when rejecting anchors
   near deployment-zone edges, which prevents large multi-model units from invoking full placement
   synthesis for obviously edge-clipped anchors.

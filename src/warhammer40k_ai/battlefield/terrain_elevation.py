@@ -6,6 +6,7 @@ from shapely.errors import GEOSException
 from shapely.geometry import Point
 
 from ..utility.constants import RUINS_FLOOR_THICKNESS
+from ..utility.unit_models import alive_unit_group_models
 from .terrain_runtime import TerrainType
 from .terrain_visibility import build_reason_trace_entry
 
@@ -386,7 +387,7 @@ def get_plunging_fire_context(game_map: object, attacker: object, target: object
     result["attacker_on_qualifying_elevated_section"] = attacker_z >= 3.0
     result["legacy_height_qualifies"] = attacker_z >= 6.0
 
-    alive_targets = [model for model in list(getattr(target, "models", []) or []) if bool(getattr(model, "is_alive", True))]
+    alive_targets = alive_unit_group_models(target, include_pending=False)
     if alive_targets:
         ground_level_flags = [abs(_model_z(model)) < 1.0 for model in alive_targets]
         result["target_contains_ground_level_models"] = any(ground_level_flags)

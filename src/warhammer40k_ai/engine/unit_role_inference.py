@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from ..utility.entity_ids import maybe_entity_id
+from ..utility.unit_models import unit_group_models
 
 
 ROLE_ANCHOR = "anchor"
@@ -64,7 +65,7 @@ def _bool_method(unit: object, method_name: str) -> bool:
 
 
 def _unit_move_characteristic(unit: object) -> float:
-    models = list(getattr(unit, "models", []) or [])
+    models = unit_group_models(unit, include_pending=False)
     if not models:
         return 0.0
     total = 0.0
@@ -108,7 +109,7 @@ def infer_unit_role_profile(unit: object) -> UnitRoleProfile:
     unit_id = str(maybe_entity_id(unit) or "")
     unit_name = str(getattr(unit, "name", "Unit") or "Unit")
     keywords = _keyword_set(unit)
-    model_count = float(len(list(getattr(unit, "models", []) or [])))
+    model_count = float(len(unit_group_models(unit, include_pending=False)))
     move_score = max(0.0, _unit_move_characteristic(unit))
     durable_score = min(2.0, model_count / 8.0)
 

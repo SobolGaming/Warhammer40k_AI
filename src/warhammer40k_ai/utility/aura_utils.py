@@ -10,6 +10,7 @@ from shapely.geometry import Point as ShapelyPoint
 from shapely.errors import ShapelyError
 from ..engine.combat_timing import CombatEngagementState, engagement_state_for_models
 from .army_ownership import same_army, unit_parent_army
+from .unit_models import alive_unit_group_models
 
 
 _BASE_SHAPE_DISTANCE_2D_CACHE_MAX = 131072
@@ -609,10 +610,7 @@ def unit_within_horizontal_distance_of_point(unit, x: float, y: float, radius: f
         return False
     if r < 0:
         return False
-    models = list(getattr(unit, "models", []) or [])
-    for m in models:
-        if not getattr(m, "is_alive", True):
-            continue
+    for m in alive_unit_group_models(unit, include_pending=False):
         if horizontal_distance_point_to_model_base_2d(m, x, y) <= r + 1e-6:
             return True
     return False
@@ -697,8 +695,8 @@ def linked_fire_origin_is_visible(bearer_unit, origin_unit, *, game_map=None) ->
     can_see_fn = getattr(game_map, "can_model_see_model", None)
     if not callable(can_see_fn):
         return False
-    bearer_models = [m for m in (getattr(bearer_unit, "models", []) or []) if _model_is_alive(m)]
-    origin_models = [m for m in (getattr(origin_unit, "models", []) or []) if _model_is_alive(m)]
+    bearer_models = alive_unit_group_models(bearer_unit, include_pending=False)
+    origin_models = alive_unit_group_models(origin_unit, include_pending=False)
     if not bearer_models or not origin_models:
         return False
     for bearer_model in bearer_models:

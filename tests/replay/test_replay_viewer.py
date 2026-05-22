@@ -144,6 +144,55 @@ def test_overlay_lines_use_prebattle_label_when_setup_is_incomplete() -> None:
     assert ("phase: COMMAND_PHASE | turn 1", replay_viewer.OVERLAY_TEXT) not in lines
 
 
+def test_overlay_lines_show_actor_player_slot_and_replay_army_label() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    fake_reader = SimpleNamespace(
+        get_step=lambda _idx: SimpleNamespace(
+            chosen_option_id="opt-1",
+            phase="COMMAND_PHASE",
+            turn_id=1,
+            decision_type="DECLARE_RESERVES",
+            actor_player_id="player-2",
+            controller_kind="human_remote",
+            chosen_action_id="action-1",
+            wall_clock_ms=5,
+            time_budget_ms=150,
+        ),
+        get_request_payload=lambda _idx: {
+            "prompt": "Allocate reserves for this army.",
+            "options": [
+                {
+                    "option_id": "opt-1",
+                    "label": "Teacher allocation",
+                    "payload": {"action_id": "action-1"},
+                }
+            ],
+        },
+        get_decision_record=lambda _idx: {"outcome": {"immediate_deltas": {}}},
+        get_events_for_decision=lambda _idx: [{"type": "decision_requested"}],
+    )
+    game = SimpleNamespace(
+        setup_complete=False,
+        setup_phase=SimpleNamespace(name="DECLARE_BATTLE_FORMATIONS"),
+        players=[
+            SimpleNamespace(id="player-1", name="Player 1"),
+            SimpleNamespace(id="player-2", name="Player 2"),
+        ],
+    )
+
+    lines = replay_viewer._overlay_lines(
+        fake_reader,
+        {"label": "WE_Daemonkin_2000_vs_Aeldari_Warhost_2000"},
+        "/tmp/replay.sqlite3",
+        21,
+        1285,
+        game,
+    )
+
+    assert ("actor: Player 2 - Aeldari_Warhost_2000", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("controller: human_remote | id player-2", replay_viewer.OVERLAY_MUTED) in lines
+
+
 def test_load_reader_resolves_filesystem_safe_session_path(monkeypatch, tmp_path) -> None:
     replay_viewer = _load_replay_viewer_module()
     fake_reader = object()

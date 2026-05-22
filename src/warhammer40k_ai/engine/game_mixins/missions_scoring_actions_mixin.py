@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
 from ..reserve_metadata import ensure_reserve_start_metadata
+from ...utility.unit_models import alive_unit_group_models
 import logging
 logger = logging.getLogger(__name__)
 
@@ -1153,12 +1154,11 @@ class GameMissionsScoringActionsMixin:
         zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
         if not zone:
             return False
-        # Use first alive model position
-        for model in unit.models:
-            if model.is_alive:
-                pos = model.get_location()
-                if pos and hasattr(zone, 'contains_point') and zone.contains_point(pos[0], pos[1]):
-                    return True
+        # Use any alive model position from the attached unit aggregate.
+        for model in alive_unit_group_models(unit, include_pending=False):
+            pos = model.get_location()
+            if pos and hasattr(zone, 'contains_point') and zone.contains_point(pos[0], pos[1]):
+                return True
         return False
 
     def _objective_in_player_deployment(self, player: Player, objective_point) -> bool:
@@ -1169,9 +1169,7 @@ class GameMissionsScoringActionsMixin:
         return hasattr(zone, 'contains_point') and zone.contains_point(objective_point.x, objective_point.y)
 
     def _unit_within_any_terrain_feature(self, unit: 'Unit') -> bool:
-        for model in unit.models:
-            if not model.is_alive:
-                continue
+        for model in alive_unit_group_models(unit, include_pending=False):
             base_geom = model.model_base.get_base_shape()
             for t in self.map.terrain_features:
                 if base_geom.intersects(t.footprint):
@@ -1186,9 +1184,7 @@ class GameMissionsScoringActionsMixin:
             if not loc:
                 continue
             area = _ShPoint(loc.x, loc.y).buffer(loc.control_radius)
-            for model in unit.models:
-                if not model.is_alive:
-                    continue
+            for model in alive_unit_group_models(unit, include_pending=False):
                 base = model.model_base
                 if hasattr(base, 'get_base_shape') and hasattr(area, 'intersects'):
                     base_geom = base.get_base_shape()
@@ -1376,9 +1372,7 @@ class GameMissionsScoringActionsMixin:
         # Must be within 1" of the unit
         from ...utility.aura_utils import horizontal_distance_point_to_model_base_2d
         in_1 = False
-        for m in getattr(unit, "models", []) or []:
-            if not getattr(m, "is_alive", True):
-                continue
+        for m in alive_unit_group_models(unit, include_pending=False):
             if horizontal_distance_point_to_model_base_2d(m, x, y) <= 1.0 + 1e-6:
                 in_1 = True
                 break
@@ -1616,6 +1610,8 @@ class GameMissionsScoringActionsMixin:
                     unit.round_state.performing_action_name = None
                     unit.round_state.action_locked_until_turn_end = False
                 continue
+            unit_models = alive_unit_group_models(unit, include_pending=False)
+            unit_reference_location = unit_models[0].get_location() if unit_models else (0, 0, 0)
 
             if action_name == 'TERRAFORM':
                 # Must still be within range of same objective and control it
@@ -1645,7 +1641,7 @@ class GameMissionsScoringActionsMixin:
                 self.completed_actions_this_turn.append({
                     'player': actor,
                     'action_name': 'SABOTAGE',
-                    'unit_location': unit.get_closest_model_position_to_target(unit.models[0].get_location() if unit.models else (0, 0, 0))
+                    'unit_location': unit.get_closest_model_position_to_target(unit_reference_location)
                 })
                 unit.round_state.performing_action_name = None
                 unit.round_state.action_locked_until_turn_end = False
@@ -1677,7 +1673,7 @@ class GameMissionsScoringActionsMixin:
                 opp = opponents[0] if opponents else None
                 zones = self.deployment_zones.get(opp.id, {}) if opp is not None else {}
                 zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
-                pos = unit.models[0].get_location() if unit.models else (0, 0, 0)
+                pos = unit_reference_location
                 if zone and hasattr(zone, 'contains_point') and zone.contains_point(pos[0], pos[1]):
                     completes = True
                 else:
@@ -1690,7 +1686,7 @@ class GameMissionsScoringActionsMixin:
                     self.completed_actions_this_turn.append({
                         'player': actor,
                         'action_name': 'ESTABLISH_LOCUS',
-                        'unit_location': unit.models[0].get_location() if unit.models else (0, 0, 0),
+                        'unit_location': unit_reference_location,
                     })
                 unit.round_state.performing_action_name = None
                 unit.round_state.action_locked_until_turn_end = False
@@ -1712,7 +1708,7 @@ class GameMissionsScoringActionsMixin:
                 self.completed_actions_this_turn.append({
                     'player': actor,
                     'action_name': 'THE_RITUAL',
-                    'unit_location': unit.models[0].get_location() if unit.models else (0, 0, 0),
+                    'unit_location': unit_reference_location,
                 })
                 unit.round_state.performing_action_name = None
                 unit.round_state.action_locked_until_turn_end = False
@@ -1733,7 +1729,7 @@ class GameMissionsScoringActionsMixin:
                         'player': actor,
                         'action_name': 'MOVE_HAZARD',
                         'objective': hazard_obj,
-                        'unit_location': unit.models[0].get_location() if unit.models else (0, 0, 0),
+                        'unit_location': unit_reference_location,
                     })
                 unit.round_state.performing_action_name = None
                 unit.round_state.action_locked_until_turn_end = False

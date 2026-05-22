@@ -8,6 +8,7 @@ from shapely.ops import unary_union
 
 from .terrain_runtime import TerrainType
 from .terrain_visibility import build_reason_trace_entry, is_fully_visible_due_to_terrain
+from ..utility.unit_models import alive_unit_group_models
 
 
 def _unit_root(unit: object | None) -> object | None:
@@ -137,9 +138,7 @@ def get_benefit_of_cover_for_ranged_attack(
             )
             return result
 
-        for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-            if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
-                continue
+        for attacker_model in alive_unit_group_models(attacking_unit, include_pending=False):
             if is_fully_visible_due_to_terrain(attacker_model, target_model, terrain):
                 continue
             result["has_benefit_of_cover"] = True
@@ -232,9 +231,7 @@ def get_benefit_of_cover_from_fortifications(
         if footprint is None or bounding_box is None:
             continue
         proxy = SimpleNamespace(footprint=footprint, bounding_box=bounding_box)
-        for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-            if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
-                continue
+        for attacker_model in alive_unit_group_models(attacking_unit, include_pending=False):
             if is_fully_visible_due_to_terrain(attacker_model, target_model, proxy):
                 continue
             result["has_benefit_of_cover"] = True
@@ -357,9 +354,7 @@ def get_selfless_protector_bonus_for_ranged_attack(
         if footprint is None or bounding_box is None:
             continue
         proxy = SimpleNamespace(footprint=footprint, bounding_box=bounding_box)
-        for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-            if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
-                continue
+        for attacker_model in alive_unit_group_models(attacking_unit, include_pending=False):
             if is_fully_visible_due_to_terrain(attacker_model, target_model, proxy):
                 continue
             result["applies"] = True
@@ -456,9 +451,7 @@ def get_defence_line_bonus_for_ranged_attack(
         if footprint is None or bounding_box is None:
             continue
         proxy = SimpleNamespace(footprint=footprint, bounding_box=bounding_box)
-        for attacker_model in list(getattr(attacking_unit, "models", []) or []):
-            if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
-                continue
+        for attacker_model in alive_unit_group_models(attacking_unit, include_pending=False):
             if is_fully_visible_due_to_terrain(attacker_model, target_model, proxy):
                 continue
             result["applies"] = True

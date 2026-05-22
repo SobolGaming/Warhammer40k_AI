@@ -37,6 +37,7 @@ from ..utility.placement_search import (
     stable_board_occupancy_key,
 )
 from ..utility.profiling_sections import profiled_section
+from ..utility.unit_models import alive_unit_group_models, unit_group_models
 
 
 class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
@@ -781,11 +782,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         )
         if bounds is None:
             return []
-        alive_models = [
-            model
-            for model in list(getattr(unit, "models", []) or [])
-            if model is not None and bool(getattr(model, "is_alive", True))
-        ]
+        alive_models = alive_unit_group_models(unit)
         if len(alive_models) <= 5:
             if self._relaxed_anchor_limit_uses_default:
                 relaxed_limit = 3072
@@ -1045,11 +1042,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         if bounds is None:
             return []
         min_x, max_x, min_y, max_y = bounds
-        alive_models = [
-            model
-            for model in list(getattr(unit, "models", []) or [])
-            if model is not None and bool(getattr(model, "is_alive", True))
-        ]
+        alive_models = alive_unit_group_models(unit)
         edge_step = 0.5 if len(alive_models) <= 3 else 1.0
         edge_limit = 512 if len(alive_models) <= 3 else 256
         xs = self._edge_first_axis_points(min_x, max_x, step=edge_step, margin=0.0)
@@ -1285,7 +1278,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
         game_map = getattr(self.game, "map", None)
         if game_map is None:
             return []
-        models = [model for model in list(getattr(unit, "models", []) or []) if model is not None]
+        models = unit_group_models(unit)
         if not self._can_build_fast_grid_deployment(unit):
             return []
         radii = [max(0.1, float(model_longest_radius(model) or 0.0)) for model in models]
@@ -1316,17 +1309,17 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
 
     @staticmethod
     def _can_build_fast_grid_deployment(unit: object) -> bool:
-        count = len([model for model in list(getattr(unit, "models", []) or []) if model is not None])
+        count = len(unit_group_models(unit))
         return count == 1 or count >= 6
 
     @staticmethod
     def _uses_fast_grid_deployment(unit: object) -> bool:
-        count = len([model for model in list(getattr(unit, "models", []) or []) if model is not None])
+        count = len(unit_group_models(unit))
         return count >= 6
 
     @staticmethod
     def _refines_surface_variants(unit: object) -> bool:
-        count = len([model for model in list(getattr(unit, "models", []) or []) if model is not None])
+        count = len(unit_group_models(unit))
         return count <= 5
 
     @staticmethod
@@ -1368,7 +1361,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
             calculate_facing=False,
             resolve_surface_height=False,
         )
-        models = list(getattr(unit, "models", []) or [])
+        models = unit_group_models(unit)
         if not model_positions or len(model_positions) != len(models):
             return []
         payload_positions: list[dict] = []
@@ -1446,7 +1439,7 @@ class DeterministicDeploymentDecisionMaker(DeploymentDecisionMaker):
                 for base_positions in list(position_sets or [])
                 if base_positions
             ]
-        models = list(getattr(unit, "models", []) or [])
+        models = unit_group_models(unit)
         per_model_surfaces: list[list[float]] = []
 
         variants: list[list[dict]] = []

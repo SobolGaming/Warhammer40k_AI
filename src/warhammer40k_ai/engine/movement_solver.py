@@ -18,6 +18,7 @@ from .movement_intent import MovementIntent
 from .path_witness import build_model_path_witness_for_unit, current_model_positions
 from .time_manager import WorkBudget
 from ..utility.profiling_sections import profile_section, profiled_section
+from ..utility.unit_models import unit_group_models
 
 
 def _work_budget_exhausted(budget: WorkBudget | None) -> bool:
@@ -76,7 +77,7 @@ def _entry_position(entry: dict[str, Any]) -> tuple[float, float, float]:
 
 
 def _model_entries(unit: object) -> list[object]:
-    models = list(getattr(unit, "models", []) or [])
+    models = unit_group_models(unit, include_pending=False)
     models.sort(key=lambda model: str(getattr(model, "id", "") or getattr(model, "_id", "") or ""))
     return [model for model in models if model is not None]
 

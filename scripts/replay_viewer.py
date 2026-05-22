@@ -93,6 +93,56 @@ def _window_title(metadata: dict[str, object], source_label: str, decision_idx: 
     return f"Warhammer 40,000 Replay Viewer - {descriptor} [{decision_idx}/{total_decisions}]"
 
 
+def _replay_label_armies(metadata: dict[str, object], source_label: str) -> tuple[str, str]:
+    label = str(metadata.get("label", "") or "").strip()
+    descriptor = label or Path(source_label).stem
+    if "_vs_" not in descriptor:
+        return "", ""
+    player1_label, player2_label = descriptor.split("_vs_", 1)
+    return player1_label.strip(), player2_label.strip()
+
+
+def _player_army_label(player: object) -> str:
+    get_army = getattr(player, "get_army", None)
+    army = get_army() if callable(get_army) else getattr(player, "army", None)
+    if army is None:
+        return ""
+    for attr_name in ("name", "label", "faction"):
+        value = str(getattr(army, attr_name, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _actor_player_label(
+    game: object,
+    actor_player_id: str,
+    metadata: dict[str, object],
+    source_label: str,
+) -> str:
+    actor_id = str(actor_player_id or "").strip()
+    if not actor_id:
+        return "unknown player"
+    replay_army_labels = _replay_label_armies(metadata, source_label)
+    for index, player in enumerate(list(getattr(game, "players", []) or [])):
+        player_id = str(getattr(player, "id", "") or "").strip()
+        if player_id != actor_id:
+            continue
+        slot_label = f"Player {index + 1}"
+        player_name = str(getattr(player, "name", "") or "").strip()
+        label = player_name if player_name else slot_label
+        if label.lower() == slot_label.lower():
+            label = slot_label
+        else:
+            label = f"{slot_label}: {label}"
+        army_label = replay_army_labels[index] if index < len(replay_army_labels) else ""
+        army_label = str(army_label or _player_army_label(player)).strip()
+        if army_label:
+            label = f"{label} - {army_label}"
+        return label
+    return f"unknown player {actor_id[:8]}"
+
+
 def _step_jump(event: pygame.event.Event, total_decisions: int, current_idx: int) -> int | None:
     if event.key == pygame.K_HOME:
         return 0
@@ -260,7 +310,13 @@ def _overlay_lines(
         else:
             lines.append((f"phase: {step.phase} | turn {step.turn_id}", OVERLAY_TEXT))
             lines.append((f"decision type: {step.decision_type}", OVERLAY_TEXT))
-        lines.append((f"actor {step.actor_player_id} ({step.controller_kind})", OVERLAY_MUTED))
+        actor_label = _actor_player_label(game, str(step.actor_player_id), metadata, source_label)
+        actor_id = str(step.actor_player_id or "").strip()
+        lines.append((f"actor: {actor_label}", OVERLAY_TEXT))
+        if actor_id:
+            lines.append((f"controller: {step.controller_kind} | id {actor_id[:8]}", OVERLAY_MUTED))
+        else:
+            lines.append((f"controller: {step.controller_kind}", OVERLAY_MUTED))
         if prompt:
             for wrapped in _wrap_text(f"prompt: {prompt}", width=68):
                 lines.append((wrapped, OVERLAY_TEXT))

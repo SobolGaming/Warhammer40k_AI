@@ -457,7 +457,7 @@ class PositioningFightMovementMixin:
         closest_model = None
         closest_distance = float('inf')
 
-        for model in self.models:
+        for model in alive_unit_group_models(self):
             if not model.is_alive:
                 continue
             model_pos = model.get_location()
@@ -476,7 +476,7 @@ class PositioningFightMovementMixin:
 
     def is_point_inside(self, x, y):
         # Check if point is within any model's base
-        for model in self.models:
+        for model in alive_unit_group_models(self):
             if not model.is_alive:
                 continue
             model_pos = model.get_location()
@@ -593,7 +593,7 @@ class PositioningFightMovementMixin:
                 closest_enemy_distance = float('inf')
                 closest_enemy_pos = None
 
-                for model in unit.models:
+                for model in alive_unit_group_models(unit):
                     if model.is_alive:
                         enemy_pos = model.get_location()
                         distance = get_dist(x - enemy_pos[0], y - enemy_pos[1])
@@ -638,7 +638,7 @@ class PositioningFightMovementMixin:
                                 calculate_facing: bool = True,
                                 resolve_surface_height: bool = True):
         """
-        Computes (x, y, z, facing) for each model in self.models.
+        Computes (x, y, z, facing) for each model in this rules unit.
         Tries formation templates (block, wedge, circle, column) built
         with safe spacing based on base size; falls back to per-model A*.
 
@@ -659,24 +659,26 @@ class PositioningFightMovementMixin:
             cached_formation_templates,
             estimated_unit_pack_spacing,
         )
+        from ...utility.unit_models import unit_group_models
 
-        if not self.models:
+        models = unit_group_models(self)
+        if not models:
             return []
 
         if boundary_repulsors is None:
             boundary_repulsors = []
 
-        logger.debug(f"DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
+        logger.debug(f"DEBUG: calculate_model_positions for {self.name} ({len(models)} models)")
         logger.debug(f"DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
         logger.debug(f"DEBUG: avoid_friendly_units: {avoid_friendly_units}")
         logger.debug(f"DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
 
-        if len(self.models) == 1:
+        if len(models) == 1:
             # Exact-placement callers expect the requested anchor itself; later validation
             # decides whether that anchor is legal for deployment/reserves/scout flows.
-            z = game_map.get_surface_height_for_model(self.models[0], start_x, start_y) if bool(resolve_surface_height) else 0.0
+            z = game_map.get_surface_height_for_model(models[0], start_x, start_y) if bool(resolve_surface_height) else 0.0
             f = self.calculate_strategic_facing(start_x, start_y, game_map) if bool(calculate_facing) else 0.0
-            self.models[0].set_location(float(start_x), float(start_y), float(z), float(f))
+            models[0].set_location(float(start_x), float(start_y), float(z), float(f))
             return [(float(start_x), float(start_y), float(z), float(f))]
 
         if search_context is None:
@@ -711,7 +713,7 @@ class PositioningFightMovementMixin:
         logger.debug("DEBUG: Computed spacing: %.2f inches", float(spacing))
 
         # 5) Build formation templates
-        templates = cached_formation_templates(len(self.models), spacing)
+        templates = cached_formation_templates(len(models), spacing)
         logger.debug(f"DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
 
         origin_2d = np.array((start_x, start_y), float)
@@ -725,7 +727,7 @@ class PositioningFightMovementMixin:
             pts2d = offsets + origin_2d
             for x, y in pts2d:
                 z = (
-                    game_map.get_surface_height_for_model(self.models[len(world)], x, y)
+                    game_map.get_surface_height_for_model(models[len(world)], x, y)
                     if bool(resolve_surface_height)
                     else 0.0
                 )
@@ -740,7 +742,7 @@ class PositioningFightMovementMixin:
                 model_y = origin_2d[1] + dy
 
                 # Create temporary model base at this position
-                temp_model = self.models[i] if i < len(self.models) else self.models[0]
+                temp_model = models[i] if i < len(models) else models[0]
                 temp_base = temp_model.model_base.get_base_shape()
                 temp_base_positioned = translate(temp_base,
                                                model_x - temp_base.centroid.x,
@@ -781,7 +783,7 @@ class PositioningFightMovementMixin:
                 # precompute friendly polys at current trial positions
                 friendly = []
                 for idx, pos in enumerate(world):
-                    base = self.models[idx].model_base.get_base_shape()
+                    base = models[idx].model_base.get_base_shape()
                     friendly.append(
                         translate(base,
                                 pos[0] - base.centroid.x,
@@ -818,7 +820,7 @@ class PositioningFightMovementMixin:
                         pos[0] += (vx / norm) * grid_step
                         pos[1] += (vy / norm) * grid_step
                         pos[2] = (
-                            game_map.get_surface_height_for_model(self.models[i], pos[0], pos[1])
+                            game_map.get_surface_height_for_model(models[i], pos[0], pos[1])
                             if bool(resolve_surface_height)
                             else 0.0
                         )
@@ -836,8 +838,8 @@ class PositioningFightMovementMixin:
             target_min = 0.25
             for _ in range(attract_iters):
                 moved = False
-                for i, m1 in enumerate(self.models):
-                    for j, m2 in enumerate(self.models[i+1:], start=i+1):
+                for i, m1 in enumerate(models):
+                    for j, m2 in enumerate(models[i+1:], start=i+1):
                         d = m1.model_base.edge_to_edge_distance(m2.model_base)
                         if d > target_min + 1e-6:
                             # move each halfway toward the other
@@ -856,7 +858,7 @@ class PositioningFightMovementMixin:
             # Final overlap catcher
             final_polys = []
             for idx, pos in enumerate(world):
-                base = self.models[idx].model_base.get_base_shape()
+                base = models[idx].model_base.get_base_shape()
                 final_polys.append(
                     translate(base,
                             pos[0] - base.centroid.x,
@@ -877,7 +879,7 @@ class PositioningFightMovementMixin:
                 continue
 
             # Commit & coherency-graph check
-            for m, pos in zip(self.models, world):
+            for m, pos in zip(models, world):
                 m.set_location(*pos)
 
             coherency_ok = self.check_coherency_graph()
@@ -899,7 +901,8 @@ class PositioningFightMovementMixin:
     def _create_potential_base(self, x: float, y: float, z: float, facing: float, model: Model = None):
         # Create a new base with the same properties as the specified model's base
         if model is None:
-            model = self.models[0]  # Default to first model
+            models = unit_group_models(self)
+            model = models[0]  # Default to first model
         new_base = clone_base(model.model_base)
         new_base.set_position(float(x), float(y), float(z))
         new_base.set_facing(facing)
@@ -911,14 +914,15 @@ class PositioningFightMovementMixin:
         if not positions:
             return False
 
-        if len(self.models) == 1:
+        models = unit_group_models(self)
+        if len(models) == 1:
             return False
 
         new_base = self._create_potential_base(x, y, z, facing, model)
 
         for i, pos in enumerate(positions):
             # Use the corresponding model for each position
-            other_model = self.models[i] if i < len(self.models) else self.models[0]
+            other_model = models[i] if i < len(models) else models[0]
             other_base = self._create_potential_base(pos[0], pos[1], pos[2], pos[3], other_model)
             if new_base.collides_with(other_base):
                 logger.debug(f"Collision detected!")
@@ -939,7 +943,8 @@ class PositioningFightMovementMixin:
 
         for i, pos in enumerate(positions):
             # Use the corresponding model for each position
-            other_model = self.models[i] if i < len(self.models) else self.models[0]
+            models = unit_group_models(self)
+            other_model = models[i] if i < len(models) else models[0]
             other_base = self._create_potential_base(pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, pos[3] if len(pos) > 3 else facing, other_model)
             # 10th ed coherency: <=2" horizontal (base edge-to-edge) AND <=5" vertical (base-to-base)
             try:
@@ -961,10 +966,13 @@ class PositioningFightMovementMixin:
         has the required number of neighbors within edge-to-edge
         coherency_distance.
 
-        - Units of 1\u20135 models: each model needs at least 1 neighbor.
-        - Units of 6+ models: each model needs at least 2 neighbors.
+        - Units of 2-6 models: each model needs at least 1 neighbor.
+        - Units of 7+ models: each model needs at least 2 neighbors.
         """
-        models = self.models
+        from ...utility.unit_models import unit_group_models
+
+        models = unit_group_models(self)
+        required_neighbors = 0 if len(models) <= 1 else 2 if len(models) >= 7 else 1
 
         for i, m1 in enumerate(models):
             neighbors = 0
@@ -980,10 +988,10 @@ class PositioningFightMovementMixin:
                     vertical = float('inf')
                 if horizontal <= self.coherency_distance + 1e-6 and vertical <= 5.0 + 1e-6:
                     neighbors += 1
-                if neighbors >= self.required_neighbors:
+                if neighbors >= required_neighbors:
                     break
 
-            if neighbors < self.required_neighbors:
+            if neighbors < required_neighbors:
                 return False
 
         return True
@@ -991,7 +999,8 @@ class PositioningFightMovementMixin:
 
     def _is_valid_position(self, x: float, y: float, z: float, facing: float, game_map: 'Map', placed_positions: List[Tuple[float, float, float, float]], model: Model = None) -> bool:
         if model is None:
-            model = self.models[0]  # Use the first model as a reference
+            models = unit_group_models(self)
+            model = models[0]  # Use the first model as a reference
         if not game_map.is_within_boundary(model, (x, y)):
             return False
         if self._check_collision_with_obstacles_or_terrain(game_map, model, (x, y)):
@@ -1013,7 +1022,7 @@ class PositioningFightMovementMixin:
             return self.max_shooting_range
 
         max_range = 0
-        for model in self.models:
+        for model in unit_group_models(self):
             max_range = max(max_range, model.maximum_range())
         self.max_shooting_range = max_range
         return max_range

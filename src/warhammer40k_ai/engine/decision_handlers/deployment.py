@@ -23,6 +23,7 @@ from ...rules.imperial_agents_shadow_assignment import (
 )
 from ...utility.aura_utils import distance_between_bases_3d
 from ...utility.entity_ids import get_entity_id
+from ...utility.unit_models import alive_unit_group_models, unit_group_models
 
 
 def _find_option(request: DecisionRequest, option_id: str) -> DecisionOption | None:
@@ -67,7 +68,7 @@ def _destination_from_payload(payload: dict, result_payload: dict):
 def _validate_scout_model_positions(game: object, unit: object, model_positions: list) -> Sequence[str]:
     unit_models_by_id = {
         str(get_entity_id(model) or ""): model
-        for model in list(getattr(unit, "models", []) or [])
+        for model in unit_group_models(unit)
         if str(get_entity_id(model) or "")
     }
     scout_distance = _scout_distance_for_unit(unit)
@@ -81,7 +82,7 @@ def _validate_scout_model_positions(game: object, unit: object, model_positions:
                 continue
             if not bool(getattr(enemy_unit, "deployed", False)):
                 continue
-            for enemy_model in list(getattr(enemy_unit, "models", []) or []):
+            for enemy_model in alive_unit_group_models(enemy_unit, include_pending=False):
                 enemy_alive = getattr(enemy_model, "is_alive", False)
                 if bool(enemy_alive() if callable(enemy_alive) else enemy_alive):
                     enemy_models.append(enemy_model)
@@ -600,7 +601,8 @@ def _apply_scout_move(game: object, request: DecisionRequest, result: DecisionRe
         raise RuntimeError("Scout move destination missing.")
     x = float(dest[0])
     y = float(dest[1])
-    z = float(dest[2]) if len(dest) > 2 else float(getattr(unit.models[0].model_base, "z", 0.0))
+    models = unit_group_models(unit)
+    z = float(dest[2]) if len(dest) > 2 else float(getattr(models[0].model_base, "z", 0.0) if models else 0.0)
     if not unit.scout_move((x, y, z), getattr(game, "map", None)):
         raise RuntimeError("Scout move failed.")
     return None

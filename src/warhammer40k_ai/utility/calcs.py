@@ -17,6 +17,7 @@ from shapely import STRtree
 from ..battlefield.control_queries import control_region_centroid, control_region_shape
 from ..battlefield.objective_sites import resolve_objective_id, resolve_objective_site
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
+from ..utility.unit_models import alive_unit_group_models, unit_group_models
 from ..pathing.sweep import swept_footprint
 from ..pathing.types import MovementProfile, MovementType, Pose
 from ..pathing.rules_profile import (
@@ -399,7 +400,7 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
     return blocking_polygons
 
 def _unit_has_flying_base(unit: 'Unit') -> bool:
-    models = getattr(unit, "models", None) or []
+    models = unit_group_models(unit, include_pending=False)
     if not models:
         return False
     base = getattr(models[0], "model_base", None)
@@ -518,10 +519,7 @@ def check_friendly_ending_collision(model: 'Model', end_pos: Tuple[float, float,
         if friendly_unit == model.parent_unit or not friendly_unit.is_alive() or not friendly_unit.deployed:
             continue
             
-        for friendly_model in friendly_unit.models:
-            if not friendly_model.is_alive:
-                continue
-                
+        for friendly_model in alive_unit_group_models(friendly_unit, include_pending=False):
             if temp_base.collides_with(friendly_model.model_base):
                 return True
                 
@@ -2133,8 +2131,8 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 for unit in game_map.units:
                     if not _units_share_army_identity(unit, model.parent_unit):
                         continue
-                    for other_model in unit.models:
-                        if other_model is model or not other_model.is_alive:
+                    for other_model in alive_unit_group_models(unit, include_pending=False):
+                        if other_model is model:
                             continue
                         try:
                             other_shape = other_model.model_base.get_base_shape()
@@ -2172,12 +2170,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     continue
             except Exception:
                 continue
-            for other_model in list(getattr(unit, "models", []) or []):
-                try:
-                    if not getattr(other_model, "is_alive", True):
-                        continue
-                except Exception:
-                    continue
+            for other_model in alive_unit_group_models(unit, include_pending=False):
                 try:
                     other_shape = other_model.model_base.get_base_shape()
                     if test_shape.intersects(other_shape):
@@ -2208,12 +2201,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     continue
             except Exception:
                 continue
-            for other_model in list(getattr(unit, "models", []) or []):
-                try:
-                    if not getattr(other_model, "is_alive", True):
-                        continue
-                except Exception:
-                    continue
+            for other_model in alive_unit_group_models(unit, include_pending=False):
                 try:
                     other_shape = other_model.model_base.get_base_shape()
                     if test_shape.intersects(other_shape):
@@ -2385,9 +2373,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                             continue
                     except Exception:
                         continue
-                    for enemy_model in getattr(unit, "models", []) or []:
-                        if not getattr(enemy_model, "is_alive", False):
-                            continue
+                    for enemy_model in alive_unit_group_models(unit, include_pending=False):
                         horiz = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
                         vert = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
                         if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
@@ -2411,9 +2397,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 continue
             if get_entity_id(unit) in charge_target_ids:
                 continue
-            for enemy_model in getattr(unit, "models", []) or []:
-                if not getattr(enemy_model, "is_alive", False):
-                    continue
+            for enemy_model in alive_unit_group_models(unit, include_pending=False):
                 horiz = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
                 vert = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
                 if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
@@ -2435,9 +2419,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         except Exception:
             pass
         in_engagement_range = False
-        for enemy_model in target_unit.models:
-            if not enemy_model.is_alive:
-                continue
+        for enemy_model in alive_unit_group_models(target_unit, include_pending=False):
             from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
             horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
             vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
@@ -2462,9 +2444,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
         for unit in game_map.units:
             if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
-            for enemy_model in unit.models:
-                if not enemy_model.is_alive:
-                    continue
+            for enemy_model in alive_unit_group_models(unit, include_pending=False):
                 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                 horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
                 vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
@@ -2675,9 +2655,7 @@ def _enemy_models_moved_over_by_sweep(
     for enemy_unit in list(enemy_units or []):
         if not _unit_is_valid_enemy_for_move_over(enemy_unit):
             continue
-        for enemy_model in list(getattr(enemy_unit, "models", ()) or ()):
-            if enemy_model is None or not bool(getattr(enemy_model, "is_alive", False)):
-                continue
+        for enemy_model in alive_unit_group_models(enemy_unit, include_pending=False):
             model_id = _entity_key(enemy_model)
             if model_id in seen_model_ids:
                 continue
@@ -2850,9 +2828,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         temp_base.set_position(position[0], position[1], position[2])
 
         in_engagement_range = False
-        for enemy_model in target_unit.models:
-            if not enemy_model.is_alive:
-                continue
+        for enemy_model in alive_unit_group_models(target_unit, include_pending=False):
 
             # Calculate edge-to-edge distance (same as engagement detection)
             from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
@@ -2887,9 +2863,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         for unit in game_map.units:
             if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
-            for enemy_model in unit.models:
-                if not enemy_model.is_alive:
-                    continue
+            for enemy_model in alive_unit_group_models(unit, include_pending=False):
 
                 # Calculate edge-to-edge distance (same as engagement detection)
                 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
@@ -2950,7 +2924,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                         except Exception:
                             pass
                 try:
-                    unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
+                    unit_models = alive_unit_group_models(unit, include_pending=False)
                 except Exception:
                     unit_models = []
                 if not unit_models:
@@ -3023,21 +2997,20 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                                 continue
                         except Exception:
                             pass
-                for enemy_model in unit.models:
-                    if enemy_model.is_alive:
-                        # Optimization: exclude enemies too far away to matter for pile-in
-                        from ..utility.aura_utils import distance_between_bases_3d
-                        current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
-                        if current_distance <= max_relevant_distance:
-                            enemy_models.append(enemy_model)
-                        # Debug: show excluded enemies
-                        else:
-                            logger.debug(
-                                "Excluding %s from pile-in validation - too far away (%.2f > %.2f)",
-                                getattr(enemy_model, "name", "?"),
-                                current_distance,
-                                max_relevant_distance,
-                            )
+                for enemy_model in alive_unit_group_models(unit, include_pending=False):
+                    # Optimization: exclude enemies too far away to matter for pile-in
+                    from ..utility.aura_utils import distance_between_bases_3d
+                    current_distance = float(distance_between_bases_3d(current_base, enemy_model.model_base))
+                    if current_distance <= max_relevant_distance:
+                        enemy_models.append(enemy_model)
+                    # Debug: show excluded enemies
+                    else:
+                        logger.debug(
+                            "Excluding %s from pile-in validation - too far away (%.2f > %.2f)",
+                            getattr(enemy_model, "name", "?"),
+                            current_distance,
+                            max_relevant_distance,
+                        )
 
             if not enemy_models:
                 return {'valid': False, 'reason': 'No enemy models within pile-in range for validation'}
@@ -3203,7 +3176,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     except Exception:
                         pass
             try:
-                unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
+                unit_models = alive_unit_group_models(unit, include_pending=False)
             except Exception:
                 unit_models = []
             if not unit_models:
@@ -3310,9 +3283,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                             continue
                     except Exception:
                         pass
-            for enemy_model in getattr(unit, 'models', []) or []:
-                if not getattr(enemy_model, 'is_alive', False):
-                    continue
+            for enemy_model in alive_unit_group_models(unit, include_pending=False):
                 # Filter to models that matter for "engagement possible" check
                 from ..utility.aura_utils import distance_between_bases_3d
                 dist = float(distance_between_bases_3d(current_base, enemy_model.model_base))
@@ -3424,7 +3395,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                             except Exception:
                                 pass
                     try:
-                        unit_models = [m for m in unit.models if getattr(m, "is_alive", False)]
+                        unit_models = alive_unit_group_models(unit, include_pending=False)
                     except Exception:
                         unit_models = []
                     if not unit_models:
@@ -3532,9 +3503,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         for unit in game_map.units:
             if _units_share_army_identity(unit, model.parent_unit) or not unit.is_alive() or not unit.deployed:
                 continue
-            for enemy_model in unit.models:
-                if not enemy_model.is_alive:
-                    continue
+            for enemy_model in alive_unit_group_models(unit, include_pending=False):
                 # Use edge-to-edge distance for accurate measurement
                 from ..utility.aura_utils import distance_between_bases_3d
                 distance = float(distance_between_bases_3d(temp_base, enemy_model.model_base))
@@ -3561,7 +3530,8 @@ def check_unit_coherency(unit: 'Unit') -> dict:
     Returns:
         dict: {'coherent': bool, 'reason': str, 'non_coherent_models': List[int]}
     """
-    alive_indices = [i for i, m in enumerate(unit.models) if getattr(m, 'is_alive', True)]
+    models = unit_group_models(unit)
+    alive_indices = [i for i, m in enumerate(models) if getattr(m, 'is_alive', True)]
     alive_count = len(alive_indices)
 
     if alive_count <= 1:
@@ -3577,7 +3547,7 @@ def check_unit_coherency(unit: 'Unit') -> dict:
                 continue
             # model_base.coherency_distance() implements (<=2" horizontal AND <=5" vertical) as "0.0 means coherent"
             try:
-                if unit.models[i].model_base.coherency_distance(unit.models[j].model_base) <= 0.0:
+                if models[i].model_base.coherency_distance(models[j].model_base) <= 0.0:
                     neighbors += 1
                     if neighbors >= required_neighbors:
                         break
@@ -3620,8 +3590,9 @@ def validate_unit_coherency_after_movement(
     # - For 7+ models: each model must be within coherency of at least 2 other models.
     # - For 1 model: always coherent.
 
+    models = unit_group_models(unit, include_pending=not ignore_pending)
     alive_indices = [
-        i for i, m in enumerate(unit.models)
+        i for i, m in enumerate(models)
         if getattr(m, 'is_alive', True) and (not ignore_pending or not getattr(m, "_pending_placement", False))
     ]
     alive_count = len(alive_indices)
@@ -3632,7 +3603,7 @@ def validate_unit_coherency_after_movement(
 
     # Map positions to model indices robustly (some callers pass only alive positions)
     positions_by_index: dict[int, Tuple[float, float, float]] = {}
-    if len(new_positions) == len(unit.models):
+    if len(new_positions) == len(models):
         for i in alive_indices:
             pos = new_positions[i]
             positions_by_index[i] = (pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0)
@@ -3642,7 +3613,7 @@ def validate_unit_coherency_after_movement(
             positions_by_index[i] = (pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0)
     else:
         logger.warning(
-            f"Coherency check: positions length ({len(new_positions)}) does not match unit models ({len(unit.models)}) "
+            f"Coherency check: positions length ({len(new_positions)}) does not match unit models ({len(models)}) "
             f"or alive models ({alive_count}) for unit {unit.name}"
         )
         return False, []
@@ -3657,7 +3628,7 @@ def validate_unit_coherency_after_movement(
 
     # Count coherent neighbors for each alive model
     for i in alive_indices:
-        model_i = unit.models[i]
+        model_i = models[i]
         pos_i = positions_by_index[i]
         neighbors = 0
 
@@ -3675,7 +3646,7 @@ def validate_unit_coherency_after_movement(
         for j in alive_indices:
             if i == j:
                 continue
-            model_j = unit.models[j]
+            model_j = models[j]
             pos_j = positions_by_index[j]
 
             # Vertical is base-to-base (not model top/bottom)
@@ -3730,7 +3701,7 @@ def process_unit_movement_with_coherency_check(unit: 'Unit', model_movements: Li
     # Calculate final positions for all models
     final_positions = []
     
-    for i, model in enumerate(unit.models):
+    for i, model in enumerate(unit_group_models(unit)):
         # Check if this model has a movement path
         moved = False
         for model_index, path in model_movements:
@@ -3907,7 +3878,8 @@ def footprint_from_offsets(offsets, unit):
     polys = []
     # Get position from first alive model
     first_model = None
-    for model in unit.models:
+    models = unit_group_models(unit)
+    for model in models:
         if model.is_alive:
             first_model = model
             break
@@ -3916,7 +3888,7 @@ def footprint_from_offsets(offsets, unit):
         return Polygon()  # Return empty polygon if no alive models
 
     cx, cy = first_model.get_location()[:2]
-    for (dx,dy), m in zip(offsets, unit.models):
+    for (dx,dy), m in zip(offsets, models):
         base = m.model_base.get_base_shape()
         polys.append(translate(base, cx+dx - m.model_base.x,
                                 cy+dy - m.model_base.y))

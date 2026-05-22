@@ -3,6 +3,7 @@ from __future__ import annotations
 from ._shared import *  # noqa: F401,F403
 from .. import game_setup_flow
 from ..prospective_positions import calculate_prospective_model_positions
+from ...utility.unit_models import alive_unit_group_models, unit_group_models
 import logging
 logger = logging.getLogger(__name__)
 
@@ -865,7 +866,7 @@ class GameSetupDeploymentReservesMixin:
     def _is_position_too_crowded(self, x: float, y: float, unit: 'Unit', player_id: str) -> bool:
         """Quick check if a position is too close to existing units to likely succeed."""
         # Much more reasonable minimum distance - just need to avoid immediate overlap
-        min_distance = max(2.0, len(unit.models) * 0.4)  # Reduced from 4.0 and 0.8
+        min_distance = max(2.0, len(unit_group_models(unit)) * 0.4)  # Reduced from 4.0 and 0.8
         
         # Check distance to all deployed units
         for player in self.players:
@@ -877,12 +878,11 @@ class GameSetupDeploymentReservesMixin:
                 
                 # Check distance to closest model in existing unit
                 closest_distance = float('inf')
-                for model in existing_unit.models:
-                    if model.is_alive:
-                        model_pos = model.get_location()
-                        if model_pos:
-                            distance = ((x - model_pos[0]) ** 2 + (y - model_pos[1]) ** 2) ** 0.5
-                            closest_distance = min(closest_distance, distance)
+                for model in alive_unit_group_models(existing_unit, include_pending=False):
+                    model_pos = model.get_location()
+                    if model_pos:
+                        distance = ((x - model_pos[0]) ** 2 + (y - model_pos[1]) ** 2) ** 0.5
+                        closest_distance = min(closest_distance, distance)
 
                 if closest_distance < min_distance:
                     return True
@@ -917,7 +917,7 @@ class GameSetupDeploymentReservesMixin:
         parent_army = unit.get_parent_army()
         player_id = parent_army.player.id if parent_army and parent_army.player else None
         if player_id and not unit.has_infiltrate():
-            for model, position in zip(unit.models, model_positions):
+            for model, position in zip(unit_group_models(unit), model_positions):
                 model_x, model_y = position[0], position[1]
                 if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_id):
                     logger.error("CRITICAL: Auto-deployment validation failed - "
@@ -936,18 +936,19 @@ class GameSetupDeploymentReservesMixin:
         """Simple model positioning for auto-deployment without complex validation."""
         import math
         
-        if len(unit.models) == 1:
+        models = unit_group_models(unit)
+        if len(models) == 1:
             # Single model - place at center
-            unit.models[0].set_location(center_x, center_y, center_z, 0.0)
+            models[0].set_location(center_x, center_y, center_z, 0.0)
         else:
             # Multiple models - arrange in a simple circle or line
             coherency_distance = unit.coherency_distance
-            models_per_row = min(len(unit.models), 5)  # Max 5 models per row
-            
-            for i, model in enumerate(unit.models):
-                if len(unit.models) <= 5:
+            models_per_row = min(len(models), 5)  # Max 5 models per row
+
+            for i, model in enumerate(models):
+                if len(models) <= 5:
                     # Small unit - arrange in a line
-                    offset_x = (i - (len(unit.models) - 1) / 2) * (coherency_distance * 0.8)
+                    offset_x = (i - (len(models) - 1) / 2) * (coherency_distance * 0.8)
                     model_x = center_x + offset_x
                     model_y = center_y
                 else:
@@ -1108,7 +1109,7 @@ class GameSetupDeploymentReservesMixin:
             if player.id != player_id and player.get_army():
                 for unit in player.get_army().units:
                     if unit.deployed and unit.reserve_status == 'deployed':
-                        for model in unit.models:
+                        for model in alive_unit_group_models(unit, include_pending=False):
                             model_x, model_y = model.get_location()[:2]
                             distance = ((x - model_x) ** 2 + (y - model_y) ** 2) ** 0.5
                             min_distance = min(min_distance, distance)
@@ -1226,7 +1227,7 @@ class GameSetupDeploymentReservesMixin:
                 return True
             base_entries: list[tuple[str, object]] = []
             create_potential_base = getattr(unit, "_create_potential_base", None)
-            for idx, (model, position) in enumerate(zip(unit.models, model_positions)):
+            for idx, (model, position) in enumerate(zip(unit_group_models(unit), model_positions)):
                 model_x = float(position[0])
                 model_y = float(position[1])
                 model_z = float(position[2]) if len(position) > 2 else 0.0
@@ -1283,7 +1284,7 @@ class GameSetupDeploymentReservesMixin:
                 return False
 
             from ...battlefield.map import validate_ruins_placement
-            for model, position in zip(unit.models, resolved_model_positions):
+            for model, position in zip(unit_group_models(unit), resolved_model_positions):
                 model_x, model_y = position[0], position[1]
 
                 # Check if any part of the model is in enemy deployment zone
@@ -1352,7 +1353,7 @@ class GameSetupDeploymentReservesMixin:
                 return False
 
             from ...battlefield.map import validate_ruins_placement
-            for model, position in zip(unit.models, resolved_model_positions):
+            for model, position in zip(unit_group_models(unit), resolved_model_positions):
                 model_x, model_y, model_z = position[0], position[1], position[2]
 
                 # Check if this model would be wholly within the deployment zone
@@ -1750,10 +1751,11 @@ class GameSetupDeploymentReservesMixin:
                     continue
                 if controller is None and sticky_controller is None:
                     continue
+                unit_models = unit_group_models(unit)
                 for idx, (x, y, z, facing) in enumerate(prospective):
-                    if idx >= len(getattr(unit, "models", []) or []):
+                    if idx >= len(unit_models):
                         break
-                    base = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+                    base = unit._create_potential_base(x, y, z, facing, model=unit_models[idx])
                     obj_x = float(getattr(location, "x", 0.0) or 0.0)
                     obj_y = float(getattr(location, "y", 0.0) or 0.0)
                     base_x = float(getattr(base, "x", obj_x) or obj_x)
@@ -1832,10 +1834,11 @@ class GameSetupDeploymentReservesMixin:
                 enemy_models.append(model)
             if not enemy_models:
                 continue
+            unit_models = unit_group_models(unit)
             for idx, (x, y, z, facing) in enumerate(prospective):
-                if idx >= len(getattr(unit, "models", []) or []):
+                if idx >= len(unit_models):
                     break
-                base = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+                base = unit._create_potential_base(x, y, z, facing, model=unit_models[idx])
                 for em in enemy_models:
                     for rinfo in ranges:
                         source_model_id = ""
@@ -2008,12 +2011,13 @@ class GameSetupDeploymentReservesMixin:
         if not friendly_units:
             return False
 
+        root_models = unit_group_models(root)
         for idx, (x, y, z, facing) in enumerate(prospective):
-            if idx >= len(getattr(root, "models", []) or []):
+            if idx >= len(root_models):
                 break
-            base = root._create_potential_base(x, y, z, facing, model=root.models[idx])
+            base = root._create_potential_base(x, y, z, facing, model=root_models[idx])
             for spotter in list(friendly_units or []):
-                for model in list(getattr(spotter, "models", []) or []):
+                for model in alive_unit_group_models(spotter, include_pending=False):
                     model_alive_attr = getattr(model, "is_alive", True)
                     model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
                     if not model_alive:
@@ -2592,7 +2596,7 @@ class GameSetupDeploymentReservesMixin:
         if army is not None:
             player = getattr(army, "player", None)
             player_id = getattr(player, "id", None) if player is not None else None
-        allowed_model_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or []) if m is not None]
+        allowed_model_ids = [get_entity_id(m) for m in unit_group_models(unit) if m is not None]
         context = {
             "unit_id": unit_id,
             "movement_type": "deploy",
@@ -4234,7 +4238,7 @@ class GameSetupDeploymentReservesMixin:
             )
         ]
         player_id = getattr(player, "id", None) if player is not None else None
-        allowed_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or [])]
+        allowed_ids = [get_entity_id(m) for m in unit_group_models(unit)]
         ctx = {
             "unit_id": unit_id,
             "movement_type": "deploy",

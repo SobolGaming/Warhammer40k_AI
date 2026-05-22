@@ -42,7 +42,7 @@ def validate_ruins_placement(
                 continue
         else:
             any_intersection = False
-            for model in list(getattr(unit, "models", []) or []):
+            for model in _unit_collision_models(unit):
                 model_pos = model.get_location()
                 if not model_pos:
                     continue

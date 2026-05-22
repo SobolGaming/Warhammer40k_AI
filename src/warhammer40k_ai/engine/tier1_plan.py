@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import alive_unit_group_models
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,7 @@ def _unit_priority_tiers(player: object) -> dict[str, list[str]]:
         if not deployed:
             continue
         max_move = 0
-        for model in list(getattr(unit, "models", []) or []):
+        for model in alive_unit_group_models(unit, include_pending=False):
             value = getattr(model, "_movement", None)
             if value is None:
                 value = getattr(model, "movement", 0)

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import alive_unit_group_models, unit_group_models
 
 
 POSTURE_STAGE = "stage"
@@ -162,7 +163,7 @@ def _unit_keywords(unit: object) -> set[str]:
     keywords: list[object] = []
     keywords.extend(list(getattr(unit, "keywords", []) or []))
     keywords.extend(list(getattr(unit, "faction_keywords", []) or []))
-    for model in list(getattr(unit, "models", []) or []):
+    for model in unit_group_models(unit, include_pending=False):
         keywords.extend(list(getattr(model, "keywords", []) or []))
         keywords.extend(list(getattr(model, "faction_keywords", []) or []))
     return {str(keyword).strip().upper() for keyword in keywords if str(keyword).strip()}
@@ -183,7 +184,7 @@ def _unit_text_blob(unit: object) -> str:
             parts.extend(str(item) for item in value)
         elif value is not None:
             parts.append(str(value))
-    for model in list(getattr(unit, "models", []) or []):
+    for model in unit_group_models(unit, include_pending=False):
         parts.append(str(getattr(model, "name", "") or ""))
         for wargear in list(getattr(model, "wargear", []) or []):
             parts.append(str(getattr(wargear, "name", "") or getattr(wargear, "id", "") or ""))
@@ -240,7 +241,7 @@ def _has_scout(unit: object) -> bool:
 
 def _wounds(unit: object) -> float:
     total = 0.0
-    models = list(getattr(unit, "models", []) or [])
+    models = alive_unit_group_models(unit, include_pending=False)
     if models:
         for model in models:
             total += max(0.0, _floatish(getattr(model, "wounds", 1), 1.0))
@@ -251,7 +252,7 @@ def _wounds(unit: object) -> float:
 
 def _objective_control(unit: object) -> float:
     total = 0.0
-    models = list(getattr(unit, "models", []) or [])
+    models = alive_unit_group_models(unit, include_pending=False)
     if models:
         for model in models:
             total += max(0.0, _floatish(getattr(model, "objective_control", 1), 1.0))
@@ -272,7 +273,7 @@ def _unit_weapon_value(unit: object, *, ranged: bool) -> float:
     total = 0.0
     wargear_items: list[object] = []
     wargear_items.extend(list(getattr(unit, "wargear", []) or []))
-    for model in list(getattr(unit, "models", []) or []):
+    for model in unit_group_models(unit, include_pending=False):
         wargear_items.extend(list(getattr(model, "wargear", []) or []))
     for wargear in wargear_items:
         is_ranged = getattr(wargear, "is_ranged", None)

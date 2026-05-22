@@ -17,6 +17,7 @@ from ..roster.player import Player
 from ..utility.calcs import get_dist
 from ..utility.decision_utils import resolve_decision_command
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
+from ..utility.unit_models import unit_group_models
 from .missions import OfficialMission, MissionRegistry, DeploymentZoneType, create_objectives_from_mission
 
 if TYPE_CHECKING:
@@ -835,7 +836,7 @@ class DeploymentManager:
         if not options:
             raise RuntimeError(f"Deployment move request for {getattr(unit, 'name', 'Unit')} has no valid options.")
 
-        allowed_model_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or [])]
+        allowed_model_ids = [get_entity_id(m) for m in unit_group_models(unit)]
         context = {
             "unit_id": unit_id,
             "movement_type": "deploy",
@@ -939,10 +940,11 @@ class DeploymentManager:
             avoid_friendly_units=False,
             boundary_repulsors=boundary_repulsors,
         )
-        if not model_positions or len(model_positions) != len(getattr(unit, "models", []) or []):
+        models = unit_group_models(unit)
+        if not model_positions or len(model_positions) != len(models):
             raise RuntimeError(f"Unable to calculate deployment positions for {getattr(unit, 'name', 'Unit')}.")
         payload_positions: List[dict] = []
-        for model, pos in zip(unit.models, model_positions):
+        for model, pos in zip(models, model_positions):
             model_id = get_entity_id(model)
             model_x, model_y, model_z, model_facing = pos
             payload_positions.append(
@@ -975,7 +977,7 @@ class DeploymentManager:
         if callable(destroy_fn):
             destroy_fn(unit, game_map=getattr(self.game, "map", None))
         else:
-            for model in list(getattr(unit, "models", []) or []):
+            for model in unit_group_models(unit):
                 if hasattr(model, "is_alive"):
                     model.is_alive = False
 
@@ -1263,16 +1265,17 @@ class DeploymentManager:
         
         # Calculate model positions within the unit
         # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+        models = unit_group_models(unit)
         model_positions = unit.calculate_model_positions(x, y, self.game.map, avoid_friendly_units=False)
-        
-        if model_positions and len(model_positions) == len(unit.models):
+
+        if model_positions and len(model_positions) == len(models):
             # Use calculated positions
-            for model, pos in zip(unit.models, model_positions):
+            for model, pos in zip(models, model_positions):
                 model_x, model_y, model_z, model_facing = pos
                 model.set_location(model_x, model_y, model_z, model_facing)
         else:
             # Default positioning
-            for i, model in enumerate(unit.models):
+            for i, model in enumerate(models):
                 model_x = x + (i % 3) * 0.5
                 model_y = y + (i // 3) * 0.5
                 model_z = self.game.map.get_height_at_point(model_x, model_y)
@@ -1469,7 +1472,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             logger.info(f"\nReserve Limits: {limits['max_units']}/{limits['total_units']} units, {limits['max_points']}/{limits['total_points']} points")
             
             for unit in army.units:
-                logger.info(f"\n{unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
+                logger.info(f"\n{unit.name} ({len(unit_group_models(unit))} models, {unit.get_unit_cost()} pts)")
 
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):

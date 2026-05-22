@@ -4073,15 +4073,15 @@ class LateGameplayMixin:
             if model_positions is None:
                 logger.warning(f"Could not find valid formation for {self.name} arriving from reserves - using default placement")
                 # Default: place all models at the unit position
-                for model in self.models:
+                for model in unit_group_models(self):
                     model.set_location(position[0], position[1], position[2], 0.0)
             else:
-                for model, model_pos in zip(self.models, model_positions):
+                for model, model_pos in zip(unit_group_models(self), model_positions):
                     model.set_location(model_pos[0], model_pos[1], model_pos[2], model_pos[3])
         except Exception as e:
             logger.warning(f"Could not calculate model positions for {self.name} arriving from reserves: {e}")
             # Default: place all models at the unit position
-            for model in self.models:
+            for model in unit_group_models(self):
                 model.set_location(position[0], position[1], position[2], 0.0)
         
         # Unit position is now determined by model positions
@@ -4177,7 +4177,7 @@ class LateGameplayMixin:
         else:
             logger.info(f"{self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
         
-        models_to_test = self.models.copy()  # Copy to avoid modifying list while iterating
+        models_to_test = list(alive_unit_group_models(self))  # Copy to avoid modifying list while iterating
         models_destroyed = 0
         mod = int(roll_modifier or 0)
         reroll_failed_tests = False
@@ -4240,7 +4240,8 @@ class LateGameplayMixin:
                         logger.info(f"Model {i+1}: Rolled {roll}, re-rolled {reroll_roll} - DESTROYED! ")
                     else:
                         logger.info(f"Model {i+1}: Rolled {roll} - DESTROYED! ")
-                self.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
+                owner = getattr(model, "parent_unit", None) or self
+                owner.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
                 models_destroyed += 1
             else:
                 # Model survives

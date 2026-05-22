@@ -27,6 +27,7 @@ from ...utility.dice import DiceCollection
 from ...utility.attack_roll_parser import AttackRollCondition, AttackRollRule, AttackRollEffect, parse_attack_roll_text
 from ..status_effects import StatusEffect, BattleShockEffect
 from ...utility.entity_ids import get_entity_id
+from ...utility.unit_models import alive_unit_group_models, unit_group_models
 from ...engine.decision_port import get_decision_provider
 
 import uuid

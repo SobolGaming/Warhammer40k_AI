@@ -146,6 +146,27 @@ def test_forced_reserves_arrival_request_has_non_voluntary_failure_option() -> N
     assert request.context["reserve_last_arrival_failure"] == "previous_failure"
 
 
+def test_reserves_arrival_request_allowed_models_include_attached_leader() -> None:
+    player, _army, unit = _build_reserve_unit()
+    leader_model = SimpleNamespace(id="model:leader", _id="model:leader")
+    leader = SimpleNamespace(
+        id="unit:leader",
+        _id="unit:leader",
+        name="Attached Leader",
+        models=[leader_model],
+        attached_to=unit,
+    )
+    unit.attached_leaders = [leader]
+    unit.get_attached_unit_members = lambda: [unit, leader]
+    game = _ReserveRequestGame()
+    game.players = [player]
+
+    request = game._build_reserves_arrival_request(unit, allow_skip=False)
+
+    assert request is not None
+    assert request.context["allowed_model_ids"] == ["model:one", "model:leader"]
+
+
 def test_forced_reserves_arrival_failure_skip_validates_only_with_failure_flag() -> None:
     player, army, unit = _build_reserve_unit()
     game = SimpleNamespace(players=[player], map=SimpleNamespace(units=[]))

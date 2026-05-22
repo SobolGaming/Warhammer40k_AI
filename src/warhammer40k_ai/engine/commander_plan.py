@@ -27,6 +27,7 @@ from .strategic_intent_compiler import (
     compile_general_intent_to_commander_orders,
 )
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import alive_unit_group_models, unit_group_models
 
 
 COMMANDER_STATUS_ON_PLAN = "on_plan"
@@ -881,9 +882,7 @@ def _alive(entity: object) -> bool:
 
 def _unit_wounds_estimate(unit: object) -> float:
     total = 0.0
-    for model in list(getattr(unit, "models", []) or []):
-        if not _alive(model):
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         wounds = getattr(model, "wounds", None)
         if wounds is None:
             wounds = getattr(model, "max_wounds", None)
@@ -905,9 +904,7 @@ def _unit_numeric_estimate(unit: object, attribute_name: str, default: float) ->
                 return float(value)
             except (TypeError, ValueError):
                 pass
-    for model in list(getattr(unit, "models", []) or []):
-        if not _alive(model):
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         model_value = getattr(model, attribute_name, None)
         if model_value is None:
             continue
@@ -920,9 +917,7 @@ def _unit_numeric_estimate(unit: object, attribute_name: str, default: float) ->
 
 def _unit_objective_control_estimate(unit: object) -> float:
     total = 0.0
-    for model in list(getattr(unit, "models", []) or []):
-        if not _alive(model):
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         value = getattr(model, "objective_control", None)
         try:
             total += float(value if value is not None else 0.0)
@@ -937,7 +932,7 @@ def _unit_keywords(unit: object) -> list[str]:
     keywords: list[object] = []
     keywords.extend(list(getattr(unit, "keywords", []) or []))
     keywords.extend(list(getattr(unit, "faction_keywords", []) or []))
-    for model in list(getattr(unit, "models", []) or []):
+    for model in unit_group_models(unit, include_pending=False):
         keywords.extend(list(getattr(model, "keywords", []) or []))
         keywords.extend(list(getattr(model, "faction_keywords", []) or []))
     if bool(getattr(unit, "is_vehicle", False)):
@@ -986,9 +981,7 @@ def _weapon_mode_matches(wargear: object, mode: str) -> bool:
 
 def _iter_weapon_profile_entries(unit: object, mode: str) -> list[tuple[object, str, object]]:
     entries: list[tuple[object, str, object]] = []
-    for model in list(getattr(unit, "models", []) or []):
-        if not _alive(model):
-            continue
+    for model in alive_unit_group_models(unit, include_pending=False):
         for wargear in list(getattr(model, "wargear", []) or []):
             if wargear is None or not _weapon_mode_matches(wargear, mode):
                 continue
@@ -1240,8 +1233,8 @@ def _unit_max_ranged_range(unit: object) -> float:
 
 
 def _unit_distance_estimate(source_unit: object, target_unit: object) -> float:
-    source_models = [model for model in list(getattr(source_unit, "models", []) or []) if _alive(model)]
-    target_models = [model for model in list(getattr(target_unit, "models", []) or []) if _alive(model)]
+    source_models = alive_unit_group_models(source_unit, include_pending=False)
+    target_models = alive_unit_group_models(target_unit, include_pending=False)
     if not source_models or not target_models:
         return 0.0
     source_base = getattr(source_models[0], "model_base", None)

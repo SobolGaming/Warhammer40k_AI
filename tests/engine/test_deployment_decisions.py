@@ -272,6 +272,51 @@ def test_deployment_move_request_supports_multi_candidate_payloads_and_option_ho
     assert int(selected_payload.get("placement_candidate_index", -1) or -1) == 1
 
 
+def test_deployment_move_request_allowed_models_include_attached_leader() -> None:
+    game, _player, _other = _build_game()
+    manager = DeploymentManager(game)
+    bodyguard = _StubUnit("unit:bodyguard", "Bodyguard")
+    leader = _StubUnit("unit:leader", "Leader")
+    bodyguard.attached_leaders = [leader]
+    leader.attached_to = bodyguard
+    bodyguard.get_attached_unit_members = lambda: [bodyguard, leader]
+
+    request = manager._build_deployment_move_request(
+        bodyguard,
+        placement_candidates=[
+            {
+                "anchor": [4.0, 8.0],
+                "model_positions": [
+                    {
+                        "model_id": "unit:bodyguard:model:0",
+                        "position": [4.0, 8.0, 0.0],
+                        "facing": 0.0,
+                    },
+                    {
+                        "model_id": "unit:leader:model:0",
+                        "position": [5.0, 8.0, 0.0],
+                        "facing": 0.0,
+                    },
+                ],
+                "source": "test",
+            },
+        ],
+        deployment_zone={"name": "Zone A", "zone_type": "defender"},
+    )
+
+    assert request.context["allowed_model_ids"] == [
+        "unit:bodyguard:model:0",
+        "unit:leader:model:0",
+    ]
+    assert [
+        entry["model_id"]
+        for entry in list(request.context.get("deployment_model_positions", []) or [])
+    ] == [
+        "unit:bodyguard:model:0",
+        "unit:leader:model:0",
+    ]
+
+
 def test_execute_alternating_deployment_resolves_full_selected_move_payload(monkeypatch) -> None:
     game, defender, attacker = _build_game()
     manager = DeploymentManager(game)

@@ -14,6 +14,7 @@ from shapely.geometry import Point, Polygon
 
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import alive_unit_group_models
 
 PATH_WITNESS_SCHEMA_VERSION = "1.0.0"
 
@@ -43,11 +44,7 @@ def _extract_pose(entry: dict[str, Any]) -> tuple[float, float, float, float]:
 
 def current_model_positions(unit: object) -> list[dict[str, Any]]:
     positions: list[dict[str, Any]] = []
-    for model in sorted(list(getattr(unit, "models", []) or []), key=lambda m: str(get_entity_id(m))):
-        is_alive_value = getattr(model, "is_alive", True)
-        is_alive = bool(is_alive_value() if callable(is_alive_value) else is_alive_value)
-        if not is_alive:
-            continue
+    for model in sorted(alive_unit_group_models(unit), key=lambda m: str(get_entity_id(m))):
         getter = getattr(model, "get_location", None)
         if callable(getter):
             loc = getter()

@@ -50,6 +50,7 @@ from ...utility.deployment_special_rules import (
 from ...utility.dice import get_roll
 from ...utility.entity_ids import get_entity_id
 from ...utility.profiling_sections import profiled_section
+from ...utility.unit_models import alive_unit_group_models, unit_group_models
 
 
 def _movement_members(unit) -> list:
@@ -1133,15 +1134,16 @@ def _transponder_lock_module_turn_one_spotter_requirement_satisfied(
     if not friendly_units:
         return False
 
+    root_models = unit_group_models(root)
     for idx, (x, y, z, facing) in enumerate(prospective):
-        if idx >= len(getattr(root, "models", []) or []):
+        if idx >= len(root_models):
             break
         try:
-            base = root._create_potential_base(x, y, z, facing, model=root.models[idx])
+            base = root._create_potential_base(x, y, z, facing, model=root_models[idx])
         except Exception:
             continue
         for spotter in list(friendly_units or []):
-            for model in list(getattr(spotter, "models", []) or []):
+            for model in alive_unit_group_models(spotter, include_pending=False):
                 model_alive_attr = getattr(model, "is_alive", True)
                 model_alive = bool(model_alive_attr() if callable(model_alive_attr) else model_alive_attr)
                 if not model_alive:
@@ -1333,10 +1335,7 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
             if str(ctx.get("unit_id", "")) == str(get_entity_id(unit)):
                 return
 
-    try:
-        model = next((m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)), None)
-    except Exception:
-        model = None
+    model = next(iter(alive_unit_group_models(unit, include_pending=False)), None)
     if model is None:
         return
     try:
@@ -1785,11 +1784,7 @@ def validate_move_unit_payload(
             other_army = other_army_getter() if callable(other_army_getter) else getattr(other_unit, "parent_army", None)
             if own_army is not None and other_army is own_army:
                 continue
-            for other_model in list(getattr(other_unit, "models", []) or []):
-                other_alive_value = getattr(other_model, "is_alive", True)
-                other_alive = bool(other_alive_value() if callable(other_alive_value) else other_alive_value)
-                if not other_alive:
-                    continue
+            for other_model in alive_unit_group_models(other_unit, include_pending=False):
                 other_base = getattr(other_model, "model_base", None)
                 if other_base is None:
                     continue
@@ -2238,9 +2233,7 @@ def _validate_placement_positions(
         candidate_bases[mid] = base
 
     # Check overlap against existing models in this unit (excluding pending/placed models)
-    for other in list(getattr(unit, "models", []) or []):
-        if not getattr(other, "is_alive", True):
-            continue
+    for other in alive_unit_group_models(unit):
         if getattr(other, "_pending_placement", False):
             continue
         other_id = str(get_entity_id(other))
@@ -2264,13 +2257,7 @@ def _validate_placement_positions(
     for other_unit in list(getattr(game_map, "units", []) or []):
         if other_unit is unit:
             continue
-        try:
-            other_models = list(other_unit.get_models_for_collision() or [])
-        except Exception:
-            other_models = list(getattr(other_unit, "models", []) or [])
-        for other in list(other_models or []):
-            if not getattr(other, "is_alive", True):
-                continue
+        for other in alive_unit_group_models(other_unit, include_pending=False):
             other_base = getattr(other, "model_base", None)
             if other_base is None:
                 continue
@@ -2284,9 +2271,7 @@ def _validate_placement_positions(
     )
     if deployment_special_chain:
         chain_entries: list[tuple[str, object]] = []
-        for model in list(getattr(unit, "models", []) or []):
-            if not getattr(model, "is_alive", True):
-                continue
+        for model in alive_unit_group_models(unit):
             model_id = str(get_entity_id(model))
             base = candidate_bases.get(model_id)
             if base is None:
@@ -2299,7 +2284,7 @@ def _validate_placement_positions(
     else:
         # Coherency validation (placements must end in coherency)
         final_positions: list[tuple[float, float, float]] = []
-        for model in list(getattr(unit, "models", []) or []):
+        for model in alive_unit_group_models(unit):
             mid = str(get_entity_id(model))
             if mid in positions_by_id:
                 x, y, z, _f = positions_by_id[mid]
@@ -2394,12 +2379,7 @@ def _validate_aeldari_unshrouded_truth_positions(
         if reserve_status != "deployed":
             continue
 
-        enemy_models = list(getattr(enemy_root, "models", []) or [])
-        for enemy_model in enemy_models:
-            enemy_alive_value = getattr(enemy_model, "is_alive", True)
-            enemy_alive = bool(enemy_alive_value() if callable(enemy_alive_value) else enemy_alive_value)
-            if not enemy_alive:
-                continue
+        for enemy_model in alive_unit_group_models(enemy_root, include_pending=False):
             enemy_base = getattr(enemy_model, "model_base", None)
             if enemy_base is None:
                 continue
@@ -2472,7 +2452,7 @@ def _validate_advance_start_end_denial(
         moving_army = None
 
     moving_model_bases: list[tuple[object, object]] = []
-    for moving_model in list(getattr(unit, "models", []) or []):
+    for moving_model in alive_unit_group_models(unit, include_pending=False):
         if moving_model is None:
             continue
         moving_alive_attr = getattr(moving_model, "is_alive", True)
@@ -2700,7 +2680,7 @@ def _validate_tactica_obliqua_battleline_positions(
         )
 
     create_base = getattr(unit, "_create_potential_base", None)
-    for model in list(getattr(unit, "models", []) or []):
+    for model in alive_unit_group_models(unit, include_pending=False):
         if model is None:
             continue
         alive_value = getattr(model, "is_alive", True)
@@ -3223,15 +3203,11 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                             continue
                     except Exception:
                         continue
-                    for enemy_model in list(getattr(enemy_root, "models", []) or []):
-                        if not getattr(enemy_model, "is_alive", True):
-                            continue
+                    for enemy_model in alive_unit_group_models(enemy_root, include_pending=False):
                         enemy_base = getattr(enemy_model, "model_base", None)
                         if enemy_base is None:
                             continue
-                        for own_model in list(getattr(unit, "models", []) or []):
-                            if not getattr(own_model, "is_alive", True):
-                                continue
+                        for own_model in alive_unit_group_models(unit):
                             own_base = getattr(own_model, "model_base", None)
                             if own_base is None:
                                 continue

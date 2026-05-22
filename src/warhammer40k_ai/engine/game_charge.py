@@ -10,6 +10,7 @@ from ..units.unit import Unit
 from ..utility.charge_roll import ChargeRollSpec
 from ..utility.dice import DiceCollection, get_roll
 from ..utility.entity_ids import get_entity_id
+from ..utility.unit_models import alive_unit_group_models
 from .decision_port import get_decision_provider
 
 logger = logging.getLogger(__name__)
@@ -214,8 +215,8 @@ class ChargeService:
         from ..utility.aura_utils import distance_between_models_bases_3d
         from ..utility.calcs import MovementType
 
-        charging_models = [model for model in list(getattr(charging_unit, "models", []) or []) if getattr(model, "is_alive", False)]
-        target_models = [model for model in list(getattr(target_unit, "models", []) or []) if getattr(model, "is_alive", False)]
+        charging_models = alive_unit_group_models(charging_unit, include_pending=False)
+        target_models = alive_unit_group_models(target_unit, include_pending=False)
         if not charging_models or not target_models:
             return None
 
@@ -1251,7 +1252,8 @@ class ChargeService:
         # CRITICAL: Store original model positions BEFORE attempting movement
         # This allows proper rollback if charge fails to achieve engagement range
         original_model_positions = []
-        for model in charging_unit.models:
+        charging_models = alive_unit_group_models(charging_unit, include_pending=False)
+        for model in charging_models:
             original_model_positions.append(model.get_location())
 
         destination = self._find_charge_destination(
@@ -1288,8 +1290,8 @@ class ChargeService:
 
             # Restore original positions
             for i, original_pos in enumerate(original_model_positions):
-                if i < len(charging_unit.models):
-                    charging_unit.models[i].set_location(*original_pos)
+                if i < len(charging_models):
+                    charging_models[i].set_location(*original_pos)
 
             # Unit position is now derived from model positions, no need to restore
 
@@ -1300,8 +1302,8 @@ class ChargeService:
 
         # Restore original positions
         for i, original_pos in enumerate(original_model_positions):
-            if i < len(charging_unit.models):
-                charging_unit.models[i].set_location(*original_pos)
+            if i < len(charging_models):
+                charging_models[i].set_location(*original_pos)
 
         # Unit position is now derived from model positions, no need to restore
 

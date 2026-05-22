@@ -9,6 +9,7 @@ from shapely.strtree import STRtree
 
 from .calcs import build_formation_templates, get_terrain_blocking_polygons
 from .entity_ids import get_entity_id
+from .unit_models import alive_unit_group_models, unit_group_models
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ def model_longest_radius(model: object) -> float:
 
 def unit_largest_model_radius(unit: object) -> float:
     largest = 0.0
-    for model in list(getattr(unit, "models", []) or []):
+    for model in unit_group_models(unit):
         largest = max(float(largest), float(max(0.0, model_longest_radius(model))))
     return float(largest or 0.5)
 
@@ -68,7 +69,7 @@ def estimated_unit_pack_spacing(unit: object) -> float:
 
 
 def estimate_unit_pack_footprint(unit: object) -> dict[str, float]:
-    models = int(len(list(getattr(unit, "models", []) or [])) or 1)
+    models = int(len(unit_group_models(unit)) or 1)
     largest = unit_largest_model_radius(unit)
     spacing = estimated_unit_pack_spacing(unit)
     cols = int(max(1, int(np.ceil(np.sqrt(models)))))
@@ -91,10 +92,7 @@ def deployed_unit_bounds(unit: object) -> tuple[float, float, float, float] | No
     max_x = float("-inf")
     max_y = float("-inf")
     found = False
-    for model in list(getattr(unit, "models", []) or []):
-        alive = _alive(getattr(model, "is_alive", True))
-        if not alive:
-            continue
+    for model in alive_unit_group_models(unit):
         base = getattr(model, "model_base", None)
         if base is None:
             continue
@@ -136,7 +134,7 @@ def build_placement_search_context(
         for friendly_unit in friendly_units:
             if friendly_unit is unit:
                 continue
-            models = list(getattr(friendly_unit, "models", []) or [])
+            models = unit_group_models(friendly_unit, include_pending=False)
             blocking_models.extend(models)
             friendly_count += len(models)
 
