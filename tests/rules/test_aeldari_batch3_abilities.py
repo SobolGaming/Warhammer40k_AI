@@ -3,9 +3,15 @@ from types import SimpleNamespace
 import pytest
 
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
-from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_ALLOCATE_DAMAGE,
+    DECISION_CHOOSE_QUARRY,
+    DECISION_MOVE_UNIT,
+    DECISION_REQUEST_DICE_ROLL,
+)
 from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+from warhammer40k_ai.engine.replay_store import ReplayStoreReader, enable_decision_replay_recording
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.ability import Ability
@@ -556,6 +562,153 @@ def test_tears_of_isha_heals_when_no_destroyed_models(monkeypatch):
     req = pending[0]
     resolve_decision_command(game, req, req.options[0].option_id, player_id=p1.id)
 
+    assert target.models[0].wounds == 4
+
+
+def test_tears_of_isha_does_not_queue_full_health_targets():
+    ability = Ability(
+        "Tears of Isha (Psychic)",
+        "AE",
+        (
+            "In your Command phase, select one friendly Wraith Construct unit within 6\" of this model. "
+            "If one or more models in that unit are destroyed, you can return one destroyed model to that unit. "
+            "Otherwise, one model in that unit regains up to D3 lost wounds. Each unit can only be selected for this ability once per turn."
+        ),
+        "Datasheet",
+        "",
+    )
+    spiritseer = _make_unit("Spiritseer", abilities=[ability])
+    target = _make_unit("Wraithguard", keywords=["WRAITH CONSTRUCT"], wounds=4)
+
+    game, army1, _army2, p1, _p2 = _build_game()
+    army1.add_unit(spiritseer)
+    army1.add_unit(target)
+    game.map.units = [spiritseer, target]
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    for unit in (spiritseer, target):
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+
+    spiritseer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    target.models[0].set_location(3.0, 0.0, 0.0, 0.0)
+
+    game._on_phase_start_tears_of_isha(player=p1, phase=game.phase)
+
+    assert list(game.decision_queue.list() or []) == []
+
+
+def test_tears_of_isha_full_health_resolution_does_not_roll(monkeypatch):
+    ability = Ability(
+        "Tears of Isha (Psychic)",
+        "AE",
+        (
+            "In your Command phase, select one friendly Wraith Construct unit within 6\" of this model. "
+            "If one or more models in that unit are destroyed, you can return one destroyed model to that unit. "
+            "Otherwise, one model in that unit regains up to D3 lost wounds. Each unit can only be selected for this ability once per turn."
+        ),
+        "Datasheet",
+        "",
+    )
+    spiritseer = _make_unit("Spiritseer", abilities=[ability])
+    target = _make_unit("Wraithguard", keywords=["WRAITH CONSTRUCT"], wounds=4)
+
+    game, army1, _army2, p1, _p2 = _build_game()
+    army1.add_unit(spiritseer)
+    army1.add_unit(target)
+    game.map.units = [spiritseer, target]
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    def _fail_roll(_expr):
+        raise AssertionError("Tears of Isha should not roll when no model can regain wounds.")
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fail_roll)
+
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_QUARRY,
+        "Tears of Isha: select a unit.",
+        player_id=p1.id,
+        options=[
+            DecisionOption.create(
+                "Wraithguard",
+                payload={"target_unit_id": get_entity_id(target)},
+            )
+        ],
+        context={
+            "ability": "tears_of_isha_target",
+            "ability_name": "Tears of Isha (Psychic)",
+            "source_unit_id": get_entity_id(spiritseer),
+            "unit_id": get_entity_id(spiritseer),
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p1.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+    _apply_choose_quarry(game, request, result)
+
+    assert target.models[0].wounds == 4
+
+
+def test_tears_of_isha_replay_records_target_selection_before_d3_roll(tmp_path):
+    ability = Ability(
+        "Tears of Isha (Psychic)",
+        "AE",
+        (
+            "In your Command phase, select one friendly Wraith Construct unit within 6\" of this model. "
+            "If one or more models in that unit are destroyed, you can return one destroyed model to that unit. "
+            "Otherwise, one model in that unit regains up to D3 lost wounds. Each unit can only be selected for this ability once per turn."
+        ),
+        "Datasheet",
+        "",
+    )
+    spiritseer = _make_unit("Spiritseer", abilities=[ability])
+    target = _make_unit("Wraithguard", keywords=["WRAITH CONSTRUCT"], wounds=4)
+
+    game, army1, _army2, p1, _p2 = _build_game()
+    army1.add_unit(spiritseer)
+    army1.add_unit(target)
+    game.map.units = [spiritseer, target]
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    for unit in (spiritseer, target):
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+
+    spiritseer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    target.models[0].set_location(3.0, 0.0, 0.0, 0.0)
+    target.models[0].wounds = 3
+
+    replay_path = tmp_path / "tears_of_isha_order.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        session_id="tears-of-isha-order",
+        label="Tears of Isha Order",
+    )
+
+    game._on_phase_start_tears_of_isha(player=p1, phase=game.phase)
+    pending = list(game.decision_queue.list() or [])
+    assert pending
+    request = pending[0]
+    resolve_decision_command(game, request, request.options[0].option_id, player_id=p1.id)
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+
+    assert [step.decision_type for step in steps[:2]] == [
+        DECISION_CHOOSE_QUARRY,
+        DECISION_REQUEST_DICE_ROLL,
+    ]
     assert target.models[0].wounds == 4
 
 

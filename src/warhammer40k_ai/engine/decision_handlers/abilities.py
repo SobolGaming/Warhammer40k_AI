@@ -112,6 +112,186 @@ from ._ability_common import (
     _resolve_army,
     _resolve_player,
 )
+from ...utility.unit_models import alive_unit_group_models
+
+
+def _tears_of_isha_target_root(unit: object | None) -> object | None:
+    if unit is None:
+        return None
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    if callable(get_root):
+        try:
+            return get_root() or unit
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return unit
+    return unit
+
+
+def _tears_of_isha_wounded_models(unit: object | None) -> list[object]:
+    models = list(alive_unit_group_models(unit, include_pending=False))
+    wounded: list[object] = []
+    for model in models:
+        base_value = getattr(model, "_base_wounds", getattr(model, "wounds", 0))
+        try:
+            current_wounds = int(getattr(model, "wounds", 0) or 0)
+            base_wounds = int(base_value or 0)
+        except (TypeError, ValueError):
+            continue
+        if current_wounds < base_wounds:
+            wounded.append(model)
+    return sorted(wounded, key=lambda model: str(get_entity_id(model) or getattr(model, "_id", "") or ""))
+
+
+def tears_of_isha_target_has_recoverable_damage(unit: object | None) -> bool:
+    root = _tears_of_isha_target_root(unit)
+    if root is None:
+        return False
+    if list(getattr(root, "models_lost", []) or []):
+        return True
+    return bool(_tears_of_isha_wounded_models(root))
+
+
+def _mark_tears_of_isha_selected(
+    *,
+    target_root: object,
+    owner_id: str,
+    turn: int,
+    ability_name: str,
+) -> None:
+    special_rules = getattr(target_root, "special_rules", None)
+    if not isinstance(special_rules, dict):
+        special_rules = {}
+    special_rules["tears_of_isha_selected_turn_owner"] = owner_id
+    special_rules["tears_of_isha_selected_turn"] = int(turn or 0)
+    special_rules["tears_of_isha_selected_source"] = ability_name
+    target_root.special_rules = special_rules
+
+
+def _apply_tears_of_isha_target_effect(
+    game: object,
+    *,
+    source_unit: object,
+    target_root: object,
+    player: object | None,
+    ability_name: str,
+    owner_id: str,
+    turn: int,
+) -> object:
+    _mark_tears_of_isha_selected(
+        target_root=target_root,
+        owner_id=owner_id,
+        turn=int(turn or 0),
+        ability_name=ability_name,
+    )
+
+    destroyed = list(getattr(target_root, "models_lost", []) or [])
+    if destroyed:
+        queue_fn = getattr(game, "_queue_bodyguard_return_decision", None)
+        if callable(queue_fn):
+            queue_fn(
+                player=player,
+                leader_unit=source_unit,
+                bodyguard_unit=target_root,
+                ability={"name": ability_name},
+                remaining=1,
+                allow_skip=True,
+            )
+        return target_root
+
+    wounded = _tears_of_isha_wounded_models(target_root)
+    if not wounded:
+        return target_root
+
+    from ...utility.dice import get_roll
+    from ...utility.event_bus import append_dice
+
+    try:
+        heal = int(get_roll("D3") or 0)
+    except (TypeError, ValueError):
+        heal = 0
+    if callable(append_dice) and player is not None:
+        append_dice(player, f"{ability_name} roll: {heal}")
+    if heal <= 0:
+        return target_root
+
+    target_model = wounded[0]
+    heal_fn = getattr(target_model, "heal", None)
+    if callable(heal_fn):
+        heal_fn(int(heal))
+    try:
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(game, player, f"{ability_name}: {target_name} regains up to {int(heal)} wounds.")
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        pass
+    return target_root
+
+
+def _defer_tears_of_isha_target_effect(
+    game: object,
+    request: DecisionRequest,
+    *,
+    source_unit: object,
+    target_root: object,
+    player: object | None,
+    ability_name: str,
+    owner_id: str,
+    turn: int,
+) -> None:
+    pending = list(getattr(game, "_deferred_tears_of_isha_executions", []) or [])
+    decision_id = str(getattr(request, "decision_id", "") or "")
+    pending = [
+        entry
+        for entry in pending
+        if str(getattr(dict(entry or {}).get("request"), "decision_id", "") or "") != decision_id
+    ]
+    pending.append(
+        {
+            "request": request,
+            "source_unit": source_unit,
+            "target_root": target_root,
+            "player": player,
+            "ability_name": ability_name,
+            "owner_id": owner_id,
+            "turn": int(turn or 0),
+        }
+    )
+    setattr(game, "_deferred_tears_of_isha_executions", pending)
+
+
+def drain_deferred_tears_of_isha_executions(game: object, *, request: DecisionRequest | None = None) -> None:
+    pending = list(getattr(game, "_deferred_tears_of_isha_executions", []) or [])
+    if not pending:
+        return
+    decision_id = str(getattr(request, "decision_id", "") or "") if request is not None else ""
+    ready: list[dict] = []
+    keep: list[dict] = []
+    for item in pending:
+        entry = dict(item or {})
+        entry_request = entry.get("request")
+        entry_decision_id = str(getattr(entry_request, "decision_id", "") or "")
+        if not decision_id or entry_decision_id == decision_id:
+            ready.append(entry)
+        else:
+            keep.append(entry)
+    setattr(game, "_deferred_tears_of_isha_executions", keep)
+    for entry in ready:
+        entry_request = entry.get("request")
+        if entry_request is None:
+            continue
+        target_root = entry.get("target_root")
+        source_unit = entry.get("source_unit")
+        if target_root is None or source_unit is None:
+            continue
+        value = _apply_tears_of_isha_target_effect(
+            game,
+            source_unit=source_unit,
+            target_root=target_root,
+            player=entry.get("player"),
+            ability_name=str(entry.get("ability_name", "") or "Tears of Isha"),
+            owner_id=str(entry.get("owner_id", "") or ""),
+            turn=int(entry.get("turn", 0) or 0),
+        )
+        setattr(entry_request, "_resolved_decision_value", value)
 
 
 def _validate_choose_blessings(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -29739,85 +29919,42 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
     if str(ctx.get("ability", "") or "") == "tears_of_isha_target":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:
-            try:
-                target_root = chosen.get_attached_unit_root()
-            except Exception:
-                target_root = chosen
+            target_root = _tears_of_isha_target_root(chosen)
+            if target_root is None:
+                return chosen
             player = _resolve_player(game, request, payload)
             if player is None:
                 try:
                     player = source_unit.get_parent_army().player
-                except Exception:
+                except (AttributeError, RuntimeError, TypeError, ValueError):
                     player = None
             owner_id = str(getattr(player, "id", "") or "")
             try:
                 turn = int(getattr(game, "turn", 0) or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 turn = 0
             ability_name = str(ctx.get("ability_name", "") or "Tears of Isha").strip() or "Tears of Isha"
-            sr = getattr(target_root, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            sr["tears_of_isha_selected_turn_owner"] = owner_id
-            sr["tears_of_isha_selected_turn"] = int(turn or 0)
-            sr["tears_of_isha_selected_source"] = ability_name
-            target_root.special_rules = sr
-
-            destroyed = list(getattr(target_root, "models_lost", []) or [])
-            if destroyed:
-                queue_fn = getattr(game, "_queue_bodyguard_return_decision", None)
-                if callable(queue_fn):
-                    queue_fn(
-                        player=player,
-                        leader_unit=source_unit,
-                        bodyguard_unit=target_root,
-                        ability={"name": ability_name},
-                        remaining=1,
-                        allow_skip=True,
-                    )
+            if bool(getattr(request, "_resolution_in_progress", False)):
+                _defer_tears_of_isha_target_effect(
+                    game,
+                    request,
+                    source_unit=source_unit,
+                    target_root=target_root,
+                    player=player,
+                    ability_name=ability_name,
+                    owner_id=owner_id,
+                    turn=int(turn or 0),
+                )
                 return chosen
-
-            try:
-                from ...utility.dice import get_roll
-                from ...utility.event_bus import append_dice
-            except Exception:
-                get_roll = None
-                append_dice = None
-            heal = get_roll("D3")
-            if callable(append_dice) and player is not None:
-                append_dice(player, f"{ability_name} roll: {heal}")
-            if heal <= 0:
-                return chosen
-            try:
-                models = list(target_root.get_attached_unit_models() or [])
-            except Exception:
-                models = list(getattr(target_root, "models", []) or [])
-            wounded = []
-            for m in models:
-                try:
-                    if not getattr(m, "is_alive", True):
-                        continue
-                except Exception:
-                    continue
-                base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
-                if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
-                    wounded.append(m)
-            if not wounded:
-                return chosen
-            try:
-                wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
-            except Exception:
-                wounded = list(wounded)
-            target_model = wounded[0]
-            try:
-                target_model.heal(int(heal))
-            except Exception:
-                pass
-            try:
-                tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
-            except Exception:
-                pass
+            _apply_tears_of_isha_target_effect(
+                game,
+                source_unit=source_unit,
+                target_root=target_root,
+                player=player,
+                ability_name=ability_name,
+                owner_id=owner_id,
+                turn=int(turn or 0),
+            )
     if str(ctx.get("ability", "") or "") == "spawn_termagants_target":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None:

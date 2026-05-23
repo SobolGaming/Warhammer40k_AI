@@ -19456,6 +19456,8 @@ class GamePhaseHandlersMixin:
 
     def _on_phase_start_tears_of_isha(self, player=None, phase=None, **_kwargs) -> None:
         """Spiritseer: Tears of Isha selection at start of Command phase."""
+        from ..decision_handlers.abilities import tears_of_isha_target_has_recoverable_damage
+
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "COMMAND_PHASE":
             return
@@ -19570,6 +19572,8 @@ class GamePhaseHandlersMixin:
                         except Exception:
                             pass
                         if not _unit_has_keyword(root, keyword):
+                            continue
+                        if not tears_of_isha_target_has_recoverable_damage(root):
                             continue
                         sr = getattr(root, "special_rules", None)
                         if isinstance(sr, dict):

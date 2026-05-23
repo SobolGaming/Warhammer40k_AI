@@ -13593,6 +13593,10 @@ class GameRuleEventService(GameServiceBase):
                 from .decision_handlers.shooting import drain_deferred_declare_shots_executions
 
                 drain_deferred_declare_shots_executions(self, request=request)
+            if str(getattr(request, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY:
+                from .decision_handlers.abilities import drain_deferred_tears_of_isha_executions
+
+                drain_deferred_tears_of_isha_executions(self, request=request)
             self._maybe_queue_reactive_move_followup(request, result)
             self._maybe_queue_setup_reactive_followup(request, result)
             self._maybe_queue_reverberating_summons_followup(request, result)
