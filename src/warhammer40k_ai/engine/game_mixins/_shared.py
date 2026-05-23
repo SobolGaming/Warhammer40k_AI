@@ -81,7 +81,7 @@ from ...utility.game_context import game_context
 logger = logging.getLogger(__name__)
 
 
-def get_roll(spec):
+def get_roll(spec, *args, **kwargs):
     """
     Resolve dice rolls through ``warhammer40k_ai.engine.game.get_roll`` when available.
 
@@ -91,8 +91,8 @@ def get_roll(spec):
     if game_mod is not None:
         roll_fn = getattr(game_mod, "get_roll", None)
         if callable(roll_fn):
-            return roll_fn(spec)
-    return _dice_get_roll(spec)
+            return roll_fn(spec, *args, **kwargs)
+    return _dice_get_roll(spec, *args, **kwargs)
 
 if TYPE_CHECKING:
     from ...roster.army_muster import ArmyMusterRequest

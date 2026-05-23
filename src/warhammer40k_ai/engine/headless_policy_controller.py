@@ -16,6 +16,7 @@ from .decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CONFIRM_YES_NO,
     DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CHOOSE_MISSION,
@@ -63,6 +64,8 @@ from ..utility.placement_search import (
     estimate_unit_pack_footprint,
 )
 from ..utility.unit_models import alive_unit_group_models, unit_group_models
+
+_MAX_DEFERRED_HEADLESS_DRAIN_ATTEMPTS = 10000
 
 _DEFAULT_SKIPPED_DECISION_TYPES = {
     DECISION_REQUEST_DICE_ROLL,
@@ -189,6 +192,7 @@ class HeadlessPolicyDecisionController(DecisionController):
         }
         self._enable_tool_decisions = bool(enable_tool_decisions)
         self._attached = False
+        self._draining_deferred_requests = False
         self._reserves_arrival_search_metrics: list[dict[str, object]] = []
         if auto_attach and self._game is not None:
             self.attach()
@@ -218,6 +222,11 @@ class HeadlessPolicyDecisionController(DecisionController):
         if self._should_skip_request(request):
             return
         if str(getattr(request, "decision_type", "") or "") in self._skip_decision_types:
+            return
+        if (
+            int(getattr(observed_game, "_decision_resolution_depth", 0) or 0) > 0
+            and not self._request_requires_synchronous_owner(request)
+        ):
             return
 
         ranked = self._rank_legal_candidates(request)
@@ -249,6 +258,48 @@ class HeadlessPolicyDecisionController(DecisionController):
         if self._try_resolve_reserves_arrival_bruteforce(resolution_game, request):
             return
         self._resolve_first_legal_option(resolution_game, request)
+
+    def on_decision_resolved(self, game: object, request: DecisionRequest, result) -> None:
+        del request, result
+        observed_game = game if game is not None else self._game
+        if observed_game is None:
+            return
+        if int(getattr(observed_game, "_decision_resolution_depth", 0) or 0) > 0:
+            return
+        self._drain_deferred_requests(observed_game)
+
+    def _drain_deferred_requests(self, game: object) -> None:
+        if self._draining_deferred_requests:
+            return
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "peek"):
+            return
+        self._draining_deferred_requests = True
+        try:
+            attempts = 0
+            while attempts < _MAX_DEFERRED_HEADLESS_DRAIN_ATTEMPTS:
+                pending = queue.peek()
+                if pending is None:
+                    return
+                if self._should_skip_request(pending):
+                    return
+                if str(getattr(pending, "decision_type", "") or "") in self._skip_decision_types:
+                    return
+                decision_id = str(getattr(pending, "decision_id", "") or "")
+                self.on_decision_requested(game, pending)
+                attempts += 1
+                if decision_id and not self._request_no_longer_pending(game, pending):
+                    return
+        finally:
+            self._draining_deferred_requests = False
+
+    @staticmethod
+    def _request_requires_synchronous_owner(request: DecisionRequest) -> bool:
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type != DECISION_CONFIRM_YES_NO:
+            return False
+        context = dict(getattr(request, "context", {}) or {})
+        return bool(context.get("optional", False)) or bool(context.get("synchronous", False))
 
     def _should_use_ai_orchestrator(self, request: DecisionRequest, game: object | None = None) -> bool:
         decision_type = str(getattr(request, "decision_type", "") or "").strip()

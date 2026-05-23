@@ -182,6 +182,25 @@ def test_move_units_followup_queues_move_unit_after_move_choice() -> None:
     assert float(queued.context["max_distance"]) == 6.0
 
 
+def test_advance_move_request_does_not_reuse_pre_roll_planned_endpoint() -> None:
+    game, unit = _build_flow_game()
+    unit.round_state.advance_roll = 2
+    unit.round_state.planned_movement_type = "advance"
+    unit.round_state.planned_movement_distance_inches = 7.0
+    unit.round_state.planned_movement_model_positions = [
+        {"model_id": "model-1", "position": [7.0, 0.0, 0.0], "facing": 0.0}
+    ]
+
+    request = game._queue_move_units_move_request(unit, "advance")
+
+    assert request is not None
+    assert request.decision_type == DECISION_MOVE_UNIT
+    assert request.context["movement_type"] == "advance"
+    assert float(request.context["max_distance"]) == 8.0
+    assert "planned_model_positions" not in request.context
+    assert "planned_movement_distance_inches" not in request.context
+
+
 def test_transport_select_movement_action_excludes_embark_and_disembark() -> None:
     game, unit = _build_flow_game()
     unit.is_transport = True

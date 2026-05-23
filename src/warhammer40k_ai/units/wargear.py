@@ -2,6 +2,7 @@ from typing import Any, Union, Dict, List, Optional, Tuple, Sequence
 from enum import Enum, auto
 from collections import namedtuple
 import copy
+import inspect
 import uuid
 import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
@@ -26,6 +27,38 @@ if TYPE_CHECKING:
     from .model import Model
     from .unit import Unit
     from ..battlefield.map import Map
+
+
+def _get_roll_with_context(data: str, **kwargs: Any) -> int:
+    roll_fn = get_roll
+    context_kwargs = {key: value for key, value in dict(kwargs or {}).items() if value is not None}
+    if context_kwargs and _roll_callable_accepts_context(roll_fn, context_kwargs):
+        return int(roll_fn(data, **context_kwargs))
+    return int(roll_fn(data))
+
+
+def _roll_callable_accepts_context(roll_fn: Any, context_kwargs: dict[str, Any]) -> bool:
+    try:
+        signature = inspect.signature(roll_fn)
+    except (TypeError, ValueError):
+        return True
+    parameters = signature.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()):
+        return True
+    valid_keyword_kinds = {
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    }
+    for key in context_kwargs:
+        parameter = parameters.get(key)
+        if parameter is None or parameter.kind not in valid_keyword_kinds:
+            return False
+    return True
+
+
+def _name_for_log(entity: Any, default: str) -> str:
+    return str(getattr(entity, "name", "") or default)
+
 
 # Attack result data structure for comprehensive reporting
 @dataclass
@@ -11494,11 +11527,21 @@ class WargearProfile:
         attack_is_melee = _parent_wargear_is_melee()
 
         def _reroll_hit():
-            new_roll = get_roll("D6")
+            weapon_name = getattr(parent_wargear, "name", None) if parent_wargear is not None else getattr(self, "name", "Weapon")
+            weapon_name_for_log = str(weapon_name or "Weapon")
+            attacker_name_for_log = _name_for_log(attacker, "Attacker")
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            new_roll = _get_roll_with_context(
+                "D6",
+                player=player,
+                reason=f"Hit re-roll for {attacker_name_for_log} with {weapon_name_for_log}",
+                roll_type="hit",
+            )
             if log_roll:
                 try:
-                    weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker_name_for_log} with {weapon_name_for_log}")
                 except Exception:
                     pass
             return new_roll
@@ -12817,14 +12860,23 @@ class WargearProfile:
             except Exception:
                 dice_roll = None
                 miracle_used = False
+            weapon_name_for_log = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
             if dice_roll is None:
-                dice_roll = get_roll("D6")
-            weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                player = getattr(army, "player", None) if army is not None else None
+                attacker_name_for_log = _name_for_log(attacker, "Attacker")
+                dice_roll = _get_roll_with_context(
+                    "D6",
+                    player=player,
+                    reason=f"Overwatch Hit roll for {attacker_name_for_log} with {weapon_name_for_log}",
+                    roll_type="hit",
+                )
             try:
                 if miracle_used:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Overwatch Hit roll: {dice_roll} for {_name_for_log(attacker, 'Attacker')} with {weapon_name_for_log}")
                 else:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Overwatch Hit roll: {dice_roll} for {_name_for_log(attacker, 'Attacker')} with {weapon_name_for_log}")
             except Exception:
                 pass
             hit_result['roll'] = dice_roll
@@ -15033,15 +15085,25 @@ class WargearProfile:
                 dice_roll = None
                 miracle_used = False
         if dice_roll is None:
-            dice_roll = get_roll("D6")
+            weapon_name_for_log = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            attacker_name_for_log = _name_for_log(attacker, "Attacker")
+            dice_roll = _get_roll_with_context(
+                "D6",
+                player=player,
+                reason=f"Hit roll for {attacker_name_for_log} with {weapon_name_for_log}",
+                roll_type="hit",
+            )
         if log_roll:
             try:
                 # Use parent wargear name when available for log context.
-                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                weapon_name_for_log = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
                 if miracle_used:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Hit roll: {dice_roll} for {_name_for_log(attacker, 'Attacker')} with {weapon_name_for_log}")
                 else:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit roll: {dice_roll} for {_name_for_log(attacker, 'Attacker')} with {weapon_name_for_log}")
             except Exception:
                 pass
 
@@ -20210,12 +20272,26 @@ class WargearProfile:
             if target_models:
                 closest_dist = min(float(distance_between_models_bases_3d(attacker, model)) for model in target_models)
         # Provide reroll callback for wound
+        weapon_name_for_log = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
+        attacker_name_for_log = _name_for_log(attacker, "Attacker")
+        attacker_unit_for_roll = getattr(attacker, "parent_unit", None)
+        attacker_army_for_roll = (
+            attacker_unit_for_roll.get_parent_army()
+            if attacker_unit_for_roll is not None and hasattr(attacker_unit_for_roll, "get_parent_army")
+            else None
+        )
+        attacker_player_for_roll = getattr(attacker_army_for_roll, "player", None) if attacker_army_for_roll is not None else None
+
         def _reroll_wound():
-            new_roll = get_roll("D6")
+            new_roll = _get_roll_with_context(
+                "D6",
+                player=attacker_player_for_roll,
+                reason=f"Wound re-roll for {attacker_name_for_log} with {weapon_name_for_log}",
+                roll_type="wound",
+            )
             if log_roll:
                 try:
-                    weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker_name_for_log} with {weapon_name_for_log}")
                 except Exception:
                     pass
             return new_roll
@@ -22230,14 +22306,18 @@ class WargearProfile:
                 dice_roll = None
                 miracle_used = False
         if dice_roll is None:
-            dice_roll = get_roll("D6")
+            dice_roll = _get_roll_with_context(
+                "D6",
+                player=attacker_player_for_roll,
+                reason=f"Wound roll for {attacker_name_for_log} with {weapon_name_for_log}",
+                roll_type="wound",
+            )
         if log_roll:
             try:
-                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
                 if miracle_used:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker_name_for_log} with {weapon_name_for_log}")
                 else:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker_name_for_log} with {weapon_name_for_log}")
             except Exception:
                 pass
         if miracle_used:
@@ -26701,11 +26781,26 @@ class WargearProfile:
                 save_result['special_effects'].append("Shadow Field: no invulnerable re-rolls")
 
         # Provide reroll callback for save
+        save_weapon_name_for_log = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
+        save_unit_for_roll = getattr(target_model, "parent_unit", None)
+        save_army_for_roll = (
+            save_unit_for_roll.get_parent_army()
+            if save_unit_for_roll is not None and hasattr(save_unit_for_roll, "get_parent_army")
+            else None
+        )
+        save_player_for_roll = getattr(save_army_for_roll, "player", None) if save_army_for_roll is not None else None
+        target_name_for_log = _name_for_log(target_model, "Target model")
+
         def _reroll_save():
-            new_roll = get_roll("D6")
+            new_roll = _get_roll_with_context(
+                "D6",
+                player=save_player_for_roll,
+                reason=f"Save re-roll for {target_name_for_log} against {save_weapon_name_for_log}",
+                roll_type="save",
+            )
             if log_roll:
                 try:
-                    append_dice(target_model.parent_unit.get_parent_army().player, f"Save re-roll: {new_roll} (need {save_value}+) for {target_model.name}")
+                    append_dice(target_model.parent_unit.get_parent_army().player, f"Save re-roll: {new_roll} (need {save_value}+) for {target_name_for_log}")
                 except Exception:
                     pass
             return new_roll
@@ -26735,13 +26830,18 @@ class WargearProfile:
                 dice_roll = None
                 miracle_used = False
         if dice_roll is None:
-            dice_roll = get_roll("D6")
+            dice_roll = _get_roll_with_context(
+                "D6",
+                player=save_player_for_roll,
+                reason=f"Save roll for {target_name_for_log} against {save_weapon_name_for_log}",
+                roll_type="save",
+            )
         if log_roll:
             try:
                 if miracle_used:
-                    append_dice(target_model.parent_unit.get_parent_army().player, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+                    append_dice(target_model.parent_unit.get_parent_army().player, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_name_for_log}")
                 else:
-                    append_dice(target_model.parent_unit.get_parent_army().player, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+                    append_dice(target_model.parent_unit.get_parent_army().player, f"Save roll: {dice_roll} (need {save_value}+) for {target_name_for_log}")
             except Exception:
                 pass
         save_result['roll'] = dice_roll

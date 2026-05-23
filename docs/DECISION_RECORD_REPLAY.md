@@ -32,6 +32,15 @@ Replay-store persistence note:
   decision step. Decisions whose request/resolution events were already captured
   in the nearest keyframe are replayed from their stored request payload without
   consuming later events.
+- The replay recorder reserves a decision row from `decision_requested` before
+  controller auto-resolution runs, and writes decision keyframes from
+  `decision_resolved` before controller-hub follow-ups are drained. A keyframe
+  for decision N therefore represents state after decision N only, not state
+  from automatically resolved decision N+1.
+- During reconstruction, recorded `REQUEST_DICE_ROLL` outcomes are injected back
+  into live `get_roll(...)` calls. Nested dice consumed while applying a parent
+  decision therefore use the original recorded value and do not create generic
+  unlabeled replay rolls.
 - Before returning a reconstructed game, replay syncs the visible battle phase
   from the selected decision step metadata. This keeps replay-viewer HUD phase
   labels aligned with Replay Controls without changing intermediate

@@ -41,6 +41,9 @@ TEST_DYNAMIC_REQUEST_DECISION = "TEST_DYNAMIC_REQUEST_DECISION"
 TEST_ZONE_DEPENDENT_DECISION = "TEST_ZONE_DEPENDENT_DECISION"
 TEST_CHAINED_OUTER_DECISION = "TEST_CHAINED_OUTER_DECISION"
 TEST_CHAINED_INNER_DECISION = "TEST_CHAINED_INNER_DECISION"
+TEST_REENTRANT_OUTER_DECISION = "TEST_REENTRANT_OUTER_DECISION"
+TEST_REENTRANT_INNER_DECISION = "TEST_REENTRANT_INNER_DECISION"
+TEST_REENTRANT_DICE_DECISION = "TEST_REENTRANT_DICE_DECISION"
 
 
 def _build_game() -> tuple[Game, Player]:
@@ -154,6 +157,32 @@ def _register_test_chained_decision_handlers() -> None:
     )
 
 
+def _register_test_reentrant_decision_handlers() -> None:
+    if TEST_REENTRANT_OUTER_DECISION not in decision_dispatcher._HANDLERS:
+        register_decision_handler(
+            TEST_REENTRANT_OUTER_DECISION,
+            validate=lambda _game, _request, _result: (),
+            apply=_apply_test_reentrant_outer_decision,
+        )
+    if TEST_REENTRANT_INNER_DECISION in decision_dispatcher._HANDLERS:
+        return
+    register_decision_handler(
+        TEST_REENTRANT_INNER_DECISION,
+        validate=_validate_test_reentrant_inner_decision,
+        apply=_apply_test_reentrant_inner_decision,
+    )
+
+
+def _register_test_reentrant_dice_decision_handler() -> None:
+    if TEST_REENTRANT_DICE_DECISION in decision_dispatcher._HANDLERS:
+        return
+    register_decision_handler(
+        TEST_REENTRANT_DICE_DECISION,
+        validate=lambda _game, _request, _result: (),
+        apply=_apply_test_reentrant_dice_decision,
+    )
+
+
 def _apply_test_dynamic_request_command(game: Game, command: GameCommand) -> DecisionRequest:
     primary_id = str(uuid.uuid4())
     setattr(game, "_test_dynamic_entities", {"primary": primary_id})
@@ -235,6 +264,42 @@ def _validate_test_chained_inner_decision(game: Game, _request: DecisionRequest,
 
 def _apply_test_chained_inner_decision(game: Game, _request: DecisionRequest, _result: DecisionResult) -> bool:
     setattr(game, "_test_nested_inner_resolved", True)
+    return True
+
+
+def _apply_test_reentrant_outer_decision(game: Game, request: DecisionRequest, _result: DecisionResult) -> bool:
+    game.turn = int(getattr(game, "turn", 0) or 0) + 1
+    setattr(game, "_test_reentrant_outer_resolved", True)
+    inner = DecisionRequest.create(
+        TEST_REENTRANT_INNER_DECISION,
+        "Resolve reentrant follow-up",
+        player_id=request.player_id,
+        options=[DecisionOption.create("Continue", payload={})],
+    )
+    game.request_decision(inner)
+    return True
+
+
+def _validate_test_reentrant_inner_decision(game: Game, _request: DecisionRequest, _result: DecisionResult):
+    if not bool(getattr(game, "_test_reentrant_outer_resolved", False)):
+        return ("Reentrant follow-up requires the outer decision first.",)
+    return ()
+
+
+def _apply_test_reentrant_inner_decision(game: Game, _request: DecisionRequest, _result: DecisionResult) -> bool:
+    game.turn = int(getattr(game, "turn", 0) or 0) + 10
+    setattr(game, "_test_reentrant_inner_resolved", True)
+    return True
+
+
+def _apply_test_reentrant_dice_decision(game: Game, request: DecisionRequest, _result: DecisionResult) -> bool:
+    value = dice_mod.get_roll(
+        "D6",
+        player_id=request.player_id,
+        reason="Nested replay test roll",
+        roll_type="test",
+    )
+    setattr(game, "_test_reentrant_roll_value", int(value))
     return True
 
 
@@ -429,7 +494,7 @@ def test_replay_store_reconstruction_syncs_returned_game_to_step_phase(tmp_path)
     assert int(replayed_game.current_player_index) == 0
 
 
-def test_replay_store_keyframe_is_captured_after_followups(tmp_path) -> None:
+def test_replay_store_keyframe_excludes_post_resolved_followups(tmp_path) -> None:
     game, player = _build_game()
     replay_path = tmp_path / "post_settled.replay.sqlite3"
     starting_turn = int(game.turn)
@@ -451,10 +516,10 @@ def test_replay_store_keyframe_is_captured_after_followups(tmp_path) -> None:
 
     reader = ReplayStoreReader(replay_path)
     replayed_game = reader.reconstruct_game_at_decision(1, strict=True)
-    replayed_snapshot = replayed_game.save_snapshot()
 
-    assert _canonical_snapshot(replayed_snapshot) == _canonical_snapshot(expected_snapshot)
-    assert int(replayed_game.turn) == starting_turn + 1
+    assert int(game.turn) == starting_turn + 1
+    assert _canonical_snapshot(replayed_game.save_snapshot()) != _canonical_snapshot(expected_snapshot)
+    assert int(replayed_game.turn) == starting_turn
 
 
 def test_replay_store_reconstructs_steps_with_leading_command_events(tmp_path) -> None:
@@ -720,6 +785,199 @@ def test_replay_store_preserves_nested_decision_order_for_strict_replay(tmp_path
     replayed_game = reader.reconstruct_game_at_decision(2, strict=True)
     assert bool(getattr(replayed_game, "_test_nested_outer_resolved", False))
     assert bool(getattr(replayed_game, "_test_nested_inner_resolved", False))
+
+
+def test_replay_store_preserves_request_order_for_reentrant_auto_resolved_decision(tmp_path) -> None:
+    _register_test_reentrant_decision_handlers()
+    game, player = _build_game()
+    replay_path = tmp_path / "reentrant_decision_order.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-reentrant-order",
+        label="Replay Reentrant Decision Order",
+    )
+
+    def _auto_resolve_reentrant_followup(*, request=None, game=None, **_kwargs) -> None:
+        if request is None or game is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != TEST_REENTRANT_INNER_DECISION:
+            return
+        result = game.apply_command(
+            GameCommand.create(
+                CMD_RESOLVE_DECISION,
+                player_id=request.player_id,
+                payload={
+                    "decision_id": request.decision_id,
+                    "option_id": request.options[0].option_id,
+                    "result_payload": {},
+                },
+            )
+        )
+        assert bool(getattr(result, "ok", False))
+
+    game.event_system.subscribe_group("test_reentrant_auto", "decision_requested", _auto_resolve_reentrant_followup)
+
+    outer = DecisionRequest.create(
+        TEST_REENTRANT_OUTER_DECISION,
+        "Choose reentrant outer action",
+        player_id=player.id,
+        options=[DecisionOption.create("Continue", payload={})],
+    )
+    game.request_decision(outer)
+    outer_result = game.apply_command(
+        GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=player.id,
+            payload={
+                "decision_id": outer.decision_id,
+                "option_id": outer.options[0].option_id,
+                "result_payload": {},
+            },
+        )
+    )
+    assert bool(getattr(outer_result, "ok", False))
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+
+    assert [step.decision_type for step in steps] == [
+        TEST_REENTRANT_OUTER_DECISION,
+        TEST_REENTRANT_INNER_DECISION,
+    ]
+
+    replayed_game = reader.reconstruct_game_at_decision(2, strict=True)
+    assert bool(getattr(replayed_game, "_test_reentrant_outer_resolved", False))
+    assert bool(getattr(replayed_game, "_test_reentrant_inner_resolved", False))
+
+
+def test_replay_keyframe_excludes_controller_drained_followup_decision(tmp_path) -> None:
+    _register_test_reentrant_decision_handlers()
+    game, player = _build_game()
+    replay_path = tmp_path / "reentrant_controller_keyframe.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=1,
+        session_id="session-reentrant-controller-keyframe",
+        label="Replay Reentrant Controller Keyframe",
+    )
+    starting_turn = int(game.turn)
+
+    class DeferredFollowupController:
+        def handles_player(self, _player_id) -> bool:
+            return True
+
+        def on_decision_requested(self, _game, _request) -> None:
+            return None
+
+        def on_decision_resolved(self, game, _request, _result) -> None:
+            pending = game.decision_queue.peek()
+            if pending is None:
+                return
+            if str(getattr(pending, "decision_type", "") or "") != TEST_REENTRANT_INNER_DECISION:
+                return
+            result = game.apply_command(
+                GameCommand.create(
+                    CMD_RESOLVE_DECISION,
+                    player_id=pending.player_id,
+                    payload={
+                        "decision_id": pending.decision_id,
+                        "option_id": pending.options[0].option_id,
+                        "result_payload": {},
+                    },
+                )
+            )
+            assert bool(getattr(result, "ok", False))
+
+    game.add_decision_controller(DeferredFollowupController())
+
+    outer = DecisionRequest.create(
+        TEST_REENTRANT_OUTER_DECISION,
+        "Choose reentrant outer action",
+        player_id=player.id,
+        options=[DecisionOption.create("Continue", payload={})],
+    )
+    game.request_decision(outer)
+    outer_result = game.apply_command(
+        GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=player.id,
+            payload={
+                "decision_id": outer.decision_id,
+                "option_id": outer.options[0].option_id,
+                "result_payload": {},
+            },
+        )
+    )
+    assert bool(getattr(outer_result, "ok", False))
+    assert int(game.turn) == starting_turn + 11
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+    assert [step.decision_type for step in steps] == [
+        TEST_REENTRANT_OUTER_DECISION,
+        TEST_REENTRANT_INNER_DECISION,
+    ]
+
+    replayed_after_outer = reader.reconstruct_game_at_decision(1, strict=True)
+    replayed_after_inner = reader.reconstruct_game_at_decision(2, strict=True)
+
+    assert int(replayed_after_outer.turn) == starting_turn + 1
+    assert int(replayed_after_inner.turn) == starting_turn + 11
+
+
+def test_replay_reconstruction_uses_recorded_dice_for_reentrant_rolls(tmp_path) -> None:
+    _register_test_reentrant_dice_decision_handler()
+    game, player = _build_game()
+    replay_path = tmp_path / "reentrant_dice_results.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-reentrant-dice-results",
+        label="Replay Reentrant Dice Results",
+    )
+
+    request = DecisionRequest.create(
+        TEST_REENTRANT_DICE_DECISION,
+        "Resolve reentrant dice action",
+        player_id=player.id,
+        options=[DecisionOption.create("Continue", payload={})],
+    )
+    game.request_decision(request)
+    result = game.resolve_decision(
+        DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=request.options[0].option_id,
+            payload={},
+        )
+    )
+    assert bool(getattr(result, "ok", False))
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+    assert [step.decision_type for step in steps] == [
+        TEST_REENTRANT_DICE_DECISION,
+        DECISION_REQUEST_DICE_ROLL,
+    ]
+    dice_step = steps[1]
+    dice_record = reader.get_decision_record(dice_step.decision_idx)
+    roll_value = ((dice_record["outcome"]["immediate_deltas"]["value"]["dice"])[0])
+    roll_value["value"] = 6
+    roll_value["raw_value"] = 6
+    dice_record["outcome"]["immediate_deltas"]["value"]["total"] = 6
+    with sqlite3.connect(replay_path) as conn:
+        conn.execute(
+            "UPDATE decision_steps SET decision_record_blob = ? WHERE decision_idx = ?",
+            (_pack_json(dice_record), int(dice_step.decision_idx)),
+        )
+
+    replayed_game = reader.reconstruct_game_at_decision(2, strict=True)
+
+    assert int(getattr(replayed_game, "_test_reentrant_roll_value", 0) or 0) == 6
 
 
 def test_replay_store_reconstructs_steps_with_leading_dice_roll_events(tmp_path) -> None:

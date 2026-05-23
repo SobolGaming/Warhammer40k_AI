@@ -1193,9 +1193,14 @@ class ChargeService:
 
         roll_spec = str((rule or {}).get("distance_roll", "") or "D6").strip().upper() or "D6"
         from ..utility.dice import get_roll
-        base_roll = get_roll(roll_spec)
-        from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = get_roll(
+            roll_spec,
+            player=player,
+            reason=f"{source} distance roll for {unit.name}",
+            roll_type="reactive_move",
+        )
+        from ..utility.event_bus import append_dice
         if player is not None:
             append_dice(player, f"{source} roll: {int(base_roll)}\" for {unit.name}")
         return int(base_roll)

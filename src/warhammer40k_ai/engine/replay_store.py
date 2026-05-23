@@ -8,8 +8,8 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
-from types import SimpleNamespace
-from typing import Any, Iterator
+from types import MethodType, SimpleNamespace
+from typing import Any, Iterator, Optional
 import zlib
 
 from .command_kinds import CMD_EXECUTE_SETUP_PHASE, CMD_REQUEST_DECISION, CMD_RESOLVE_DECISION
@@ -413,6 +413,131 @@ class ReplayStoreRecorder:
                 (str(decision_id),),
             ).fetchone()
         return row is not None
+
+    def record_decision_request(self, game: Game, request: DecisionRequest) -> int:
+        if game is None or request is None:
+            return 0
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        if not decision_id:
+            return 0
+        event_start_id, event_end_id, events = self._capture_new_events(game)
+        request_payload = None
+        for entry in list(events or []):
+            event_type = str(entry.get("type", entry.get("event_type", "")) or "")
+            if event_type != "decision_requested":
+                continue
+            payload = dict(entry.get("payload", {}) or {})
+            if str(payload.get("decision_id", "") or "") == decision_id:
+                request_payload = payload
+                break
+        if request_payload is None:
+            request_payload = dict(getattr(request, "to_dict", lambda: {})() or {})
+        request_blob = _pack_json(request_payload)
+        actor_player_id = str(getattr(request, "player_id", None) or "")
+        controller_kind = _player_controller_kind(game, actor_player_id)
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "")
+        placeholder_candidates = []
+        for candidate in list(getattr(request, "candidates", []) or []):
+            if isinstance(candidate, dict):
+                placeholder_candidates.append(dict(candidate))
+                continue
+            placeholder_candidates.append(dict(getattr(candidate, "to_dict", lambda: {})() or {}))
+        placeholder_record = {
+            "schema_version": 1,
+            "decision_id": decision_id,
+            "decision_type": str(getattr(request, "decision_type", "") or ""),
+            "turn_id": int(getattr(game, "turn", 0) or 0),
+            "phase": phase_name,
+            "request_context": dict(getattr(request, "context", {}) or {}),
+            "candidates": placeholder_candidates,
+            "mask": list(getattr(request, "mask", []) or []),
+            "chosen_action_id": "",
+            "valid": True,
+            "outcome": {},
+        }
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
+                (decision_id,),
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO decision_steps(
+                        decision_id,
+                        turn_id,
+                        phase,
+                        actor_player_id,
+                        controller_kind,
+                        decision_type,
+                        chosen_option_id,
+                        chosen_action_id,
+                        valid,
+                        wall_clock_ms,
+                        time_budget_ms,
+                        event_start_id,
+                        event_end_id,
+                        request_blob,
+                        decision_record_blob
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, '', '', 1, 0, NULL, ?, ?, ?, ?)
+                    """,
+                    (
+                        decision_id,
+                        int(getattr(game, "turn", 0) or 0),
+                        phase_name,
+                        actor_player_id,
+                        controller_kind,
+                        str(getattr(request, "decision_type", "") or ""),
+                        int(event_start_id) if event_start_id is not None else None,
+                        int(event_end_id) if event_end_id is not None else None,
+                        request_blob,
+                        _pack_json(placeholder_record),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT decision_idx FROM decision_steps WHERE decision_id = ?",
+                    (decision_id,),
+                ).fetchone()
+            else:
+                conn.execute(
+                    """
+                    UPDATE decision_steps
+                    SET
+                        request_blob = CASE
+                            WHEN request_blob IS NULL THEN ?
+                            ELSE request_blob
+                        END,
+                        event_start_id = CASE
+                            WHEN event_start_id IS NULL THEN ?
+                            WHEN ? IS NULL THEN event_start_id
+                            WHEN ? < event_start_id THEN ?
+                            ELSE event_start_id
+                        END,
+                        event_end_id = CASE
+                            WHEN event_end_id IS NULL THEN ?
+                            WHEN ? IS NULL THEN event_end_id
+                            WHEN ? > event_end_id THEN ?
+                            ELSE event_end_id
+                        END
+                    WHERE decision_id = ?
+                    """,
+                    (
+                        request_blob,
+                        int(event_start_id) if event_start_id is not None else None,
+                        int(event_start_id) if event_start_id is not None else None,
+                        int(event_start_id) if event_start_id is not None else None,
+                        int(event_start_id) if event_start_id is not None else None,
+                        int(event_end_id) if event_end_id is not None else None,
+                        int(event_end_id) if event_end_id is not None else None,
+                        int(event_end_id) if event_end_id is not None else None,
+                        int(event_end_id) if event_end_id is not None else None,
+                        decision_id,
+                    ),
+                )
+        decision_idx = int(row["decision_idx"] or 0) if row is not None else 0
+        self.last_decision_idx = max(self.last_decision_idx, decision_idx)
+        return decision_idx
 
     def record_decision_record(self, game: Game, record: dict[str, Any]) -> int:
         if game is None:
@@ -1415,6 +1540,119 @@ class ReplayStoreReader:
         return DecisionRequest.from_dict(request_data)
 
     @staticmethod
+    def _recorded_roll_results(record: dict[str, Any]) -> dict[str, Any]:
+        outcome = dict(record.get("outcome", {}) or {})
+        immediate = dict(outcome.get("immediate_deltas", {}) or {})
+        value = immediate.get("value")
+        if not isinstance(value, dict):
+            return {}
+        dice = list(value.get("dice", []) or [])
+        if not dice:
+            return {}
+        return {
+            "dice": [dict(entry) for entry in dice if isinstance(entry, dict)],
+            "total": int(value.get("total", 0) or 0),
+            "reroll_options": list(value.get("reroll_options", []) or []),
+        }
+
+    @staticmethod
+    def _roll_queue_entry_from_record(payload: dict[str, Any], record: dict[str, Any]) -> dict[str, Any] | None:
+        from .decision_kinds import DECISION_REQUEST_DICE_ROLL
+
+        if str(dict(payload or {}).get("decision_type", "") or "") != DECISION_REQUEST_DICE_ROLL:
+            return None
+        roll_results = ReplayStoreReader._recorded_roll_results(record)
+        if not roll_results:
+            return None
+        ctx = dict(dict(payload or {}).get("context", {}) or {})
+        spec = dict(ctx.get("roll_spec", {}) or {})
+        return {
+            "player_id": dict(payload or {}).get("player_id", None),
+            "prompt": str(dict(payload or {}).get("prompt", "") or ""),
+            "reason": str(spec.get("reason", "") or ""),
+            "roll_type": str(spec.get("roll_type", ctx.get("roll_type", "")) or ""),
+            "roll_results": roll_results,
+        }
+
+    @staticmethod
+    def _recorded_roll_matches_request(entry: dict[str, Any], *, player_id: object, spec: dict, prompt: str | None) -> bool:
+        entry_player_id = entry.get("player_id", None)
+        if entry_player_id is not None and player_id is not None and str(entry_player_id) != str(player_id):
+            return False
+        entry_roll_type = str(entry.get("roll_type", "") or "")
+        spec_roll_type = str(dict(spec or {}).get("roll_type", "") or "")
+        if entry_roll_type and spec_roll_type and entry_roll_type != spec_roll_type:
+            return False
+        entry_reason = str(entry.get("reason", "") or entry.get("prompt", "") or "")
+        request_reason = str(dict(spec or {}).get("reason", "") or prompt or "")
+        return not entry_reason or not request_reason or entry_reason == request_reason
+
+    @classmethod
+    def _pop_recorded_roll_for_request(
+        cls,
+        game: Game,
+        *,
+        player_id: object,
+        spec: dict,
+        prompt: str | None,
+    ) -> dict[str, Any]:
+        queue = list(getattr(game, "_replay_recorded_roll_results_queue", []) or [])
+        if not queue:
+            return {}
+        match_index = next(
+            (
+                idx
+                for idx, entry in enumerate(queue)
+                if cls._recorded_roll_matches_request(entry, player_id=player_id, spec=spec, prompt=prompt)
+            ),
+            None,
+        )
+        if match_index is None:
+            match_index = 0
+        entry = dict(queue.pop(int(match_index)) or {})
+        setattr(game, "_replay_recorded_roll_results_queue", queue)
+        return dict(entry.get("roll_results", {}) or {})
+
+    @classmethod
+    def _install_replay_dice_request_adapter(cls, game: Game) -> None:
+        original_request_dice_roll = getattr(game, "request_dice_roll", None)
+        if not callable(original_request_dice_roll):
+            return
+
+        def _request_dice_roll_with_replay_results(
+            self: Game,
+            *,
+            player_id: Optional[str],
+            spec: dict,
+            prompt: Optional[str] = None,
+        ) -> DecisionRequest:
+            replay_spec = dict(spec or {})
+            roll_results = cls._pop_recorded_roll_for_request(
+                self,
+                player_id=player_id,
+                spec=replay_spec,
+                prompt=prompt,
+            )
+            dice = [dict(entry) for entry in list(dict(roll_results or {}).get("dice", []) or []) if isinstance(entry, dict)]
+            if dice:
+                replay_spec["fixed_dice"] = [
+                    int(entry.get("value", 0) or 0)
+                    for entry in dice
+                    if not bool(entry.get("is_derived", False))
+                ]
+                replay_spec["fixed_raw_dice"] = [
+                    int(entry.get("raw_value", entry.get("value", 0)) or entry.get("value", 0) or 0)
+                    for entry in dice
+                    if not bool(entry.get("is_derived", False))
+                ]
+                derived = [dict(entry) for entry in dice if bool(entry.get("is_derived", False))]
+                if derived:
+                    replay_spec["derived_dice"] = derived
+            return original_request_dice_roll(player_id=player_id, spec=replay_spec, prompt=prompt)
+
+        game.request_dice_roll = MethodType(_request_dice_roll_with_replay_results, game)
+
+    @staticmethod
     def _request_option_label_by_action_id(request_payload: dict[str, Any], chosen_action_id: str) -> tuple[str, int | None]:
         target_action_id = str(chosen_action_id or "")
         for idx, entry in enumerate(list(request_payload.get("options", []) or [])):
@@ -1487,6 +1725,10 @@ class ReplayStoreReader:
         game: Game | None = None,
     ) -> dict[str, Any]:
         payload = ReplayStoreReader._skip_payload_for_option(option)
+        if str(getattr(request, "decision_type", "") or "") == "REQUEST_DICE_ROLL":
+            roll_results = ReplayStoreReader._recorded_roll_results(record)
+            if roll_results:
+                payload["roll_results"] = roll_results
         recorded_payload = ReplayStoreReader._recorded_result_payload(record, chosen_action_id)
         if recorded_payload:
             if game is not None:
@@ -1771,6 +2013,29 @@ class ReplayStoreReader:
         except RuntimeError:
             return
 
+    @staticmethod
+    def _dice_request_already_resolved(game: Game, payload: dict[str, Any] | None) -> bool:
+        if not payload:
+            return False
+        from .decision_kinds import DECISION_REQUEST_DICE_ROLL
+
+        if str(dict(payload or {}).get("decision_type", "") or "") != DECISION_REQUEST_DICE_ROLL:
+            return False
+        ctx = dict(dict(payload or {}).get("context", {}) or {})
+        roll_id = ctx.get("roll_id")
+        if roll_id is None:
+            return False
+        roll_manager = getattr(game, "roll_manager", None)
+        if roll_manager is None:
+            return False
+        try:
+            state = roll_manager.get_roll(int(roll_id))
+        except (TypeError, ValueError):
+            return False
+        if state is None:
+            return False
+        return str(getattr(state, "status", "") or "") == "rolled"
+
     def _advance_until_request_pending(
         self,
         game: Game,
@@ -1879,6 +2144,17 @@ class ReplayStoreReader:
                 end_event_id = max(end_event_id, int(row["event_end_id"]))
         event_tail = self._events_between(int(keyframe["event_id"]), int(end_event_id))
         game = self._prepare_reconstruction_game(snapshot)
+        recorded_roll_queue: list[dict[str, Any]] = []
+        for row in rows:
+            if row["request_blob"] is None:
+                continue
+            row_payload = dict(_unpack_json(bytes(row["request_blob"])))
+            row_record = dict(_unpack_json(bytes(row["decision_record_blob"])))
+            queue_entry = self._roll_queue_entry_from_record(row_payload, row_record)
+            if queue_entry is not None:
+                recorded_roll_queue.append(queue_entry)
+        setattr(game, "_replay_recorded_roll_results_queue", recorded_roll_queue)
+        self._install_replay_dice_request_adapter(game)
         replay_cursor = 0
 
         for row in rows:
@@ -1887,6 +2163,8 @@ class ReplayStoreReader:
             payload = None
             if row["request_blob"] is not None:
                 payload = dict(_unpack_json(bytes(row["request_blob"])))
+            if self._dice_request_already_resolved(game, payload):
+                continue
             request, replay_cursor = self._advance_until_request_pending(
                 game,
                 event_tail,
@@ -1932,6 +2210,17 @@ def enable_decision_replay_recording(
         raise RuntimeError("Game missing event_system.")
     event_system.unsubscribe_group(REPLAY_RECORDING_GROUP)
 
+    def _on_decision_requested(
+        *,
+        request: DecisionRequest | None = None,
+        game: Game | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        active_game = game if game is not None else getattr(request, "game", None)
+        if active_game is None or request is None:
+            return
+        recorder.record_decision_request(active_game, request)
+
     def _on_decision_resolved(
         *,
         request: DecisionRequest | None = None,
@@ -1942,7 +2231,7 @@ def enable_decision_replay_recording(
         active_game = game if game is not None else getattr(request, "game", None)
         if active_game is None or request is None or result is None:
             return
-        recorder.record_resolution(active_game, request, result, defer_keyframe=True)
+        recorder.record_resolution(active_game, request, result, defer_keyframe=False)
 
     def _on_decision_settled(
         *,
@@ -1962,7 +2251,32 @@ def enable_decision_replay_recording(
             recorder.record_resolution(active_game, request, result, defer_keyframe=True)
         recorder.finalize_resolution(active_game, request)
 
+    def _place_replay_listener_after_event_log(event_name: str, callback: Any) -> None:
+        try:
+            subscribers = list(getattr(event_system, "subscribers", {}).get(event_name, []) or [])
+            replay_entry = None
+            remaining = []
+            for entry in subscribers:
+                entry_callback, group = entry
+                if entry_callback is callback and group == REPLAY_RECORDING_GROUP:
+                    replay_entry = entry
+                    continue
+                remaining.append(entry)
+            if replay_entry is None:
+                return
+            insert_at = 0
+            for index, (_callback, group) in enumerate(remaining):
+                if str(group or "") == "deterministic_event_log":
+                    insert_at = index + 1
+            remaining.insert(insert_at, replay_entry)
+            event_system.subscribers[event_name] = remaining
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_requested", _on_decision_requested)
+    _place_replay_listener_after_event_log("decision_requested", _on_decision_requested)
     event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_resolved", _on_decision_resolved)
+    _place_replay_listener_after_event_log("decision_resolved", _on_decision_resolved)
     event_system.subscribe_group(REPLAY_RECORDING_GROUP, "decision_settled", _on_decision_settled)
     setattr(game, "_decision_replay_recorder", recorder)
     setattr(game, "_decision_replay_path", str(path))

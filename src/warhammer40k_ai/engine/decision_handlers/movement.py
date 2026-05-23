@@ -1321,9 +1321,15 @@ def _store_selected_movement_plan(unit: object, action: str, result_payload: dic
     round_state = getattr(unit, "round_state", None)
     if round_state is None:
         return
+    action_key = str(action or "").strip().lower()
+    if action_key == "advance":
+        round_state.planned_movement_type = None
+        round_state.planned_movement_model_positions = None
+        round_state.planned_movement_distance_inches = None
+        return
     planned_positions = result_payload.get("planned_model_positions")
     if isinstance(planned_positions, list) and planned_positions:
-        round_state.planned_movement_type = str(action or "").strip().lower()
+        round_state.planned_movement_type = action_key
         round_state.planned_movement_model_positions = [dict(entry) for entry in planned_positions if isinstance(entry, dict)]
         round_state.planned_movement_distance_inches = result_payload.get("planned_movement_distance_inches")
         return

@@ -2199,13 +2199,6 @@ class GameRuleEventService(GameServiceBase):
                 if not m_single:
                     continue
                 single_model_regain_texts.add(low)
-                token = str(m_single.group(1) or "").strip().lower()
-                if token == "d3":
-                    amount = get_roll("D3")
-                else:
-                    amount = int(token or 0)
-                if amount <= 0:
-                    continue
                 alive_models = [m for m in list(models or []) if bool(getattr(m, "is_alive", True))]
                 if not alive_models:
                     continue
@@ -2219,6 +2212,18 @@ class GameRuleEventService(GameServiceBase):
                     continue
                 damaged.sort(key=lambda item: item[0], reverse=True)
                 _missing, target_model, base_wounds, current_wounds = damaged[0]
+                token = str(m_single.group(1) or "").strip().lower()
+                if token == "d3":
+                    amount = get_roll(
+                        "D3",
+                        player=current_player,
+                        reason=f"Command phase wound regain for {getattr(target_model, 'name', getattr(unit, 'name', 'unit'))}",
+                        roll_type="wound_regain",
+                    )
+                else:
+                    amount = int(token or 0)
+                if amount <= 0:
+                    continue
                 target_model.wounds = min(base_wounds, current_wounds + amount)
             for model in models:
                 if not bool(getattr(model, "is_alive", True)):
@@ -2248,14 +2253,21 @@ class GameRuleEventService(GameServiceBase):
                     if not m:
                         continue
                     token = str(m.group(1) or "").strip().lower()
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+                    current_wounds = int(getattr(model, "wounds", 0) or 0)
+                    if base_wounds <= current_wounds:
+                        continue
                     if token == "d3":
-                        amount = get_roll("D3")
+                        amount = get_roll(
+                            "D3",
+                            player=current_player,
+                            reason=f"Command phase wound regain for {getattr(model, 'name', getattr(unit, 'name', 'model'))}",
+                            roll_type="wound_regain",
+                        )
                     else:
                         amount = int(token or 0)
                     if amount <= 0:
                         continue
-                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
-                    current_wounds = int(getattr(model, "wounds", 0) or 0)
                     model.wounds = min(base_wounds, current_wounds + amount)
 
         processed_mutagenic_sources: set[str] = set()
@@ -13566,12 +13578,21 @@ class GameRuleEventService(GameServiceBase):
         if request is None:
             return None
         from .decision_dispatcher import dispatch_decision
+        resolution_depth = int(getattr(self, "_decision_resolution_depth", 0) or 0)
+        setattr(self, "_decision_resolution_depth", resolution_depth + 1)
         setattr(request, "_resolution_in_progress", True)
         try:
             with game_context(self):
                 apply_result = dispatch_decision(self, request, result)
         finally:
             setattr(request, "_resolution_in_progress", False)
+            if resolution_depth:
+                setattr(self, "_decision_resolution_depth", resolution_depth)
+            else:
+                try:
+                    delattr(self, "_decision_resolution_depth")
+                except AttributeError:
+                    pass
         self.decision_record_store.record_resolution(
             request,
             result,

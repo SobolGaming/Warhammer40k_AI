@@ -826,7 +826,15 @@ class GamePhaseHandlersMixin:
             "phase_step": "MOVE_UNITS",
             "selection_purpose": "ACTIVATE_MOVEMENT_UNIT",
         }
-        if planned_type == move_kind and isinstance(planned_positions, list) and planned_positions:
+        use_planned_positions = planned_type == move_kind and isinstance(planned_positions, list) and bool(planned_positions)
+        if move_kind == "advance":
+            use_planned_positions = False
+        if use_planned_positions and planned_distance is not None:
+            try:
+                use_planned_positions = float(planned_distance) <= float(max_distance) + 1e-3
+            except (TypeError, ValueError):
+                use_planned_positions = False
+        if use_planned_positions:
             context["planned_movement_type"] = move_kind
             context["planned_model_positions"] = [dict(entry) for entry in planned_positions if isinstance(entry, dict)]
             context["planned_movement_distance_inches"] = planned_distance

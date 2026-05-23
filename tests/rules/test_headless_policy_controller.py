@@ -86,6 +86,50 @@ def test_headless_policy_stops_retrying_when_apply_side_effect_removes_request()
     assert game.decision_queue.get(request.decision_id) is None
 
 
+def test_headless_policy_defers_non_dice_request_during_active_resolution() -> None:
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Choose after current decision",
+        player_id="p1",
+        options=[DecisionOption.create("Confirm", payload={"choice": True})],
+    )
+    game = _QueuePoppingFakeGame(request)
+    game._decision_resolution_depth = 1
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    assert game.commands == []
+    assert game.decision_queue.get(request.decision_id) is request
+
+    delattr(game, "_decision_resolution_depth")
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    assert game.decision_queue.get(request.decision_id) is None
+
+
+def test_headless_policy_resolves_synchronous_optional_confirmation_during_active_resolution() -> None:
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use discount?",
+        player_id="p1",
+        options=[
+            DecisionOption.create("Use", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ],
+        context={"optional": True, "ability_key": "TARGETED_STRATAGEM_DISCOUNT"},
+    )
+    game = _QueuePoppingFakeGame(request)
+    game._decision_resolution_depth = 1
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    assert len(game.commands) == 1
+    assert game.decision_queue.get(request.decision_id) is None
+
+
 class _ReserveSearchBase:
     has_circular_base = True
 

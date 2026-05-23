@@ -342,6 +342,41 @@ def test_apply_select_movement_action_executes_stationary_with_enum_value() -> N
     assert unit.round_state.remained_stationary_this_round is True
 
 
+def test_apply_select_movement_action_does_not_store_pre_roll_advance_endpoint() -> None:
+    model = _ModelStub("model-advance-plan")
+    unit = _UnitStub("unit-advance-plan", model)
+    game = _GameStub(unit)
+    option = DecisionOption.create(
+        "Advance",
+        payload={"unit_id": unit.id, "action_type": "advance"},
+    )
+    request = DecisionRequest.create(
+        DECISION_SELECT_MOVEMENT_ACTION,
+        "Select movement action",
+        player_id="player-1",
+        options=[option],
+        context={"unit_id": unit.id},
+    )
+    setattr(request, "_resolution_in_progress", True)
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={
+            "planned_model_positions": [
+                {"model_id": model._id, "position": [18.0, 0.0, 0.0], "facing": 0.0}
+            ],
+            "planned_movement_distance_inches": 18.0,
+        },
+    )
+
+    _apply_select_movement_action(game, request, result)
+
+    assert unit.round_state.planned_movement_type is None
+    assert unit.round_state.planned_movement_model_positions is None
+    assert unit.round_state.planned_movement_distance_inches is None
+
+
 def test_validate_move_unit_charge_uses_proposed_model_positions() -> None:
     model = _ModelStub("model-5")
     enemy_model = _ModelStub("enemy-model-1")
