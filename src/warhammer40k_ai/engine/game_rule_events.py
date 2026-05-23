@@ -13586,6 +13586,13 @@ class GameRuleEventService(GameServiceBase):
         if apply_result.ok:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
+            drain_select_unit = getattr(self, "_drain_deferred_select_unit_resolution_followups", None)
+            if callable(drain_select_unit):
+                drain_select_unit(request=request)
+            if str(getattr(request, "decision_type", "") or "") == DECISION_DECLARE_SHOTS:
+                from .decision_handlers.shooting import drain_deferred_declare_shots_executions
+
+                drain_deferred_declare_shots_executions(self, request=request)
             self._maybe_queue_reactive_move_followup(request, result)
             self._maybe_queue_setup_reactive_followup(request, result)
             self._maybe_queue_reverberating_summons_followup(request, result)

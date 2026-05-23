@@ -10,7 +10,7 @@ from ..utility.entity_ids import get_entity_id
 from ..utility.unit_models import unit_group_models
 
 _FIRST_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
-MOVEMENT_DISTANCE_EPSILON = 1e-4
+MOVEMENT_DISTANCE_EPSILON = 1e-3
 
 
 @dataclass(frozen=True)

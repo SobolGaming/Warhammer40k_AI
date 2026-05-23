@@ -258,12 +258,77 @@ def test_overlay_lines_expand_deployment_move_into_per_model_positions() -> None
     assert ("chosen option: Place at (49.1, 6.5)", replay_viewer.OVERLAY_TEXT) not in lines
 
 
+def test_overlay_lines_expand_movement_move_into_per_model_positions() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    fake_reader = SimpleNamespace(
+        get_step=lambda _idx: SimpleNamespace(
+            chosen_option_id="confirm",
+            phase="MOVEMENT_PHASE",
+            turn_id=1,
+            decision_type="MOVE_UNIT",
+            actor_player_id="player-2",
+            controller_kind="ai",
+            chosen_action_id="move-action",
+            wall_clock_ms=11,
+            time_budget_ms=None,
+        ),
+        get_request_payload=lambda _idx: {
+            "prompt": "Move Jain Zar (advance)",
+            "context": {"movement_type": "advance"},
+            "options": [
+                {
+                    "option_id": "confirm",
+                    "label": "Confirm",
+                    "payload": {"action": "confirm", "movement_type": "advance", "unit_id": "unit-1"},
+                }
+            ],
+        },
+        get_decision_record=lambda _idx: {
+            "outcome": {"immediate_deltas": {}},
+            "candidates": [
+                {
+                    "action_id": "move-action",
+                    "params": {
+                        "movement_type": "advance",
+                        "model_positions": [
+                            {"model_id": "m1", "position": [20.0, 30.5, 0.0], "facing": 180.0}
+                        ],
+                    },
+                    "metadata": {},
+                }
+            ],
+        },
+        get_events_for_decision=lambda _idx: [{"type": "decision_requested"}],
+    )
+
+    lines = replay_viewer._overlay_lines(
+        fake_reader,
+        {"session_id": "selfplay:000000"},
+        "/tmp/replay.sqlite3",
+        95,
+        220,
+        SimpleNamespace(setup_complete=True),
+    )
+
+    assert ("chosen advance move: 1 model", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("1. (20.0, 30.5, 0.0, 180.0)", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("chosen option: Confirm", replay_viewer.OVERLAY_TEXT) not in lines
+
+
 def test_format_roll_line_normalizes_get_roll_reason() -> None:
     replay_viewer = _load_replay_viewer_module()
 
     line = replay_viewer._format_roll_line({"reason": "get_roll(1D6)", "dice": [4], "value": 4})
 
-    assert line == "Replay roll: 4"
+    assert line == "Generic D6 roll: 4"
+
+
+def test_format_roll_line_uses_roll_type_when_reason_is_missing() -> None:
+    replay_viewer = _load_replay_viewer_module()
+
+    line = replay_viewer._format_roll_line({"roll_type": "wound", "value": 3})
+
+    assert line == "Wound roll: 3"
 
 
 def test_replay_viewer_uses_game_view_post_draw_callback_without_extra_flip(monkeypatch) -> None:
@@ -375,26 +440,42 @@ def test_build_hud_log_overrides_includes_current_decision_roll(monkeypatch) -> 
         "get_recent_actions",
         lambda player, limit=50: ["existing action"] if player is player1 else ["other action"],
     )
-    monkeypatch.setattr(
-        replay_viewer,
-        "get_recent_dice",
-        lambda player, limit=50: ["existing die"] if player is player2 else [],
-    )
-
+    all_events = [
+        {
+            "event_id": 1,
+            "type": "roll_made",
+            "payload": {
+                "player_id": "player-2",
+                "reason": "Existing die",
+                "dice": [2],
+                "value": 2,
+            },
+        },
+        {
+            "event_id": 2,
+            "type": "decision_requested",
+            "payload": {"decision_id": "decision-7"},
+        },
+        {
+            "event_id": 3,
+            "type": "roll_made",
+            "payload": {
+                "player_id": "player-1",
+                "reason": "Advance roll",
+                "dice": [5],
+                "value": 5,
+            },
+        },
+        {
+            "event_id": 4,
+            "type": "decision_resolved",
+            "payload": {"decision_id": "decision-7"},
+        },
+    ]
     fake_reader = SimpleNamespace(
-        get_events_for_decision=lambda idx: [
-            {
-                "type": "roll_made",
-                "payload": {
-                    "player_id": "player-1",
-                    "reason": "Advance roll",
-                    "dice": [5],
-                    "value": 5,
-                },
-            }
-        ]
-        if idx == 7
-        else []
+        get_step=lambda idx: SimpleNamespace(decision_id="decision-7", event_end_id=4),
+        get_events_for_decision=lambda idx: all_events[1:] if idx == 7 else [],
+        get_events_until_event_id=lambda event_id: [event for event in all_events if event["event_id"] <= event_id],
     )
 
     overrides = replay_viewer._build_hud_log_overrides(
@@ -406,7 +487,62 @@ def test_build_hud_log_overrides_includes_current_decision_roll(monkeypatch) -> 
     assert overrides["p1_actions"] == ["existing action"]
     assert overrides["p1_dice"] == ["Advance roll: 5"]
     assert overrides["p2_actions"] == ["other action"]
-    assert overrides["p2_dice"] == ["existing die"]
+    assert overrides["p2_dice"] == ["Existing die: 2"]
+
+
+def test_build_hud_log_overrides_excludes_nested_later_decision_rolls(monkeypatch) -> None:
+    replay_viewer = _load_replay_viewer_module()
+    player1 = SimpleNamespace(id="player-1", name="Player 1")
+    player2 = SimpleNamespace(id="player-2", name="Player 2")
+
+    monkeypatch.setattr(replay_viewer, "get_recent_actions", lambda _player, limit=50: [])
+
+    all_events = [
+        {
+            "event_id": 1,
+            "type": "decision_requested",
+            "payload": {"decision_id": "outer"},
+        },
+        {
+            "event_id": 2,
+            "type": "decision_resolved",
+            "payload": {"decision_id": "outer"},
+        },
+        {
+            "event_id": 3,
+            "type": "decision_requested",
+            "payload": {"decision_id": "nested"},
+        },
+        {
+            "event_id": 4,
+            "type": "roll_made",
+            "payload": {
+                "player_id": "player-2",
+                "reason": "Advance roll for later unit",
+                "dice": [6],
+                "value": 6,
+            },
+        },
+        {
+            "event_id": 5,
+            "type": "decision_resolved",
+            "payload": {"decision_id": "nested"},
+        },
+    ]
+    fake_reader = SimpleNamespace(
+        get_step=lambda idx: SimpleNamespace(decision_id="outer", event_end_id=5),
+        get_events_for_decision=lambda idx: all_events if idx == 10 else [],
+        get_events_until_event_id=lambda event_id: [event for event in all_events if event["event_id"] <= event_id],
+    )
+
+    overrides = replay_viewer._build_hud_log_overrides(
+        fake_reader,
+        10,
+        SimpleNamespace(players=[player1, player2]),
+    )
+
+    assert overrides["p1_dice"] == []
+    assert overrides["p2_dice"] == []
 
 
 def test_draw_bottom_logs_pane_prefers_hud_log_overrides(monkeypatch) -> None:

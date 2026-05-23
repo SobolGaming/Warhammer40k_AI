@@ -58,6 +58,19 @@ def _apply_select_unit(game: object, request: DecisionRequest, result: DecisionR
     selected_unit_id = str(payload.get("unit_id", "") or "").strip() or None
     selected_unit = None if pass_selected or not selected_unit_id else get_unit(game, selected_unit_id)
 
+    if bool(getattr(request, "_resolution_in_progress", False)):
+        defer_hook = getattr(game, "_defer_select_unit_resolution_followup", None)
+        if callable(defer_hook):
+            hook_value = defer_hook(
+                request=request,
+                selected_unit_id=selected_unit_id,
+                selected_unit=selected_unit,
+                payload=dict(payload),
+                pass_selected=pass_selected,
+            )
+            if hook_value is not None:
+                return hook_value
+
     hook = getattr(game, "on_select_unit_resolved", None)
     if callable(hook):
         hook_value = hook(

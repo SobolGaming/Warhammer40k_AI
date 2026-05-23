@@ -137,6 +137,43 @@ def test_unit_move_events_logged():
     assert pos["facing"] == 5000
 
 
+def test_unit_activation_boundary_events_logged():
+    player = Player("P1", control=PlayerControl.LOCAL)
+    unit = SimpleNamespace(id="u1")
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.turn = 2
+    game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+    game.event_system.publish(
+        "unit_activation_started",
+        unit=unit,
+        player=player,
+        phase_name="SHOOTING_PHASE",
+        phase_step="SHOOT_UNITS",
+        selection_purpose="ACTIVATE_SHOOTING_UNIT",
+        battle_round=2,
+    )
+    game.event_system.publish(
+        "unit_activation_ended",
+        unit=unit,
+        player=player,
+        phase_name="SHOOTING_PHASE",
+        phase_step="SHOOT_UNITS",
+        selection_purpose="ACTIVATE_SHOOTING_UNIT",
+        battle_round=2,
+    )
+
+    started = [e for e in game.event_log.events if e.event_type == "unit_activation_started"]
+    ended = [e for e in game.event_log.events if e.event_type == "unit_activation_ended"]
+    assert started[-1].payload["unit_id"] == "u1"
+    assert started[-1].payload["player_id"] == player.id
+    assert started[-1].payload["phase_name"] == "SHOOTING_PHASE"
+    assert started[-1].payload["phase_step"] == "SHOOT_UNITS"
+    assert started[-1].payload["selection_purpose"] == "ACTIVATE_SHOOTING_UNIT"
+    assert started[-1].payload["battle_round"] == 2
+    assert ended[-1].payload["unit_id"] == "u1"
+
+
 def test_unit_move_ended_event_logs_attached_unit_models():
     bodyguard_model = SimpleNamespace(id="m1", get_location=lambda: (1.0, 2.0, 0.0, 0.0))
     leader_model = SimpleNamespace(id="m2", get_location=lambda: (3.0, 4.0, 0.0, 0.25))

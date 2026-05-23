@@ -214,14 +214,22 @@ def _selected_action_payload(
         if str(candidate.get("action_id", "") or "") != target_action_id:
             continue
         params = dict(candidate.get("params", {}) or {})
+        metadata = dict(candidate.get("metadata", {}) or {})
+        resolved_payload = dict(metadata.get("resolved_result_payload", {}) or {})
         if params:
             merged = dict(payload)
             merged.update(params)
+            if resolved_payload:
+                merged.update(resolved_payload)
+            return merged
+        if resolved_payload:
+            merged = dict(payload)
+            merged.update(resolved_payload)
             return merged
     return payload
 
 
-def _selected_deployment_move_lines(
+def _selected_move_unit_lines(
     request_payload: dict[str, object],
     record: dict[str, object],
     step: object,
@@ -237,16 +245,28 @@ def _selected_deployment_move_lines(
     )
     placement_kind = str(payload.get("placement_kind", "") or context.get("placement_kind", "") or "").strip().lower()
     movement_type = str(payload.get("movement_type", "") or context.get("movement_type", "") or "").strip().lower()
-    if placement_kind != "deployment" and movement_type != "deploy":
-        return []
     positions = [
         dict(entry or {})
-        for entry in list(payload.get("model_positions", []) or context.get("deployment_model_positions", []) or [])
+        for entry in list(
+            payload.get("model_positions", [])
+            or context.get("deployment_model_positions", [])
+            or context.get("model_positions", [])
+            or []
+        )
         if isinstance(entry, dict)
     ]
     if not positions:
         return []
-    lines = [f"chosen placement: {len(positions)} models"]
+    if placement_kind == "deployment" or movement_type == "deploy":
+        summary = "chosen placement"
+    else:
+        movement_label = movement_type.replace("_", " ").strip()
+        if not movement_label or movement_label == "move":
+            summary = "chosen move"
+        else:
+            summary = f"chosen {movement_label} move"
+    model_word = "model" if len(positions) == 1 else "models"
+    lines = [f"{summary}: {len(positions)} {model_word}"]
     for idx, entry in enumerate(positions, start=1):
         pos = list(entry.get("position", []) or [])
         if len(pos) < 2:
@@ -302,7 +322,7 @@ def _overlay_lines(
         record = reader.get_decision_record(decision_idx)
         prompt = str(request_payload.get("prompt", "") or "").strip()
         chosen_label = _chosen_option_label(request_payload, str(step.chosen_option_id))
-        chosen_move_lines = _selected_deployment_move_lines(request_payload, record, step)
+        chosen_move_lines = _selected_move_unit_lines(request_payload, record, step)
         if not bool(getattr(game, "setup_complete", True)):
             setup_phase = str(getattr(getattr(game, "setup_phase", None), "name", "") or "SETUP")
             lines.append((f"setup phase: {setup_phase}", OVERLAY_TEXT))
@@ -378,10 +398,14 @@ def _format_roll_line(payload: dict[str, object]) -> str:
     if not dice_values:
         return ""
     reason = str(payload.get("reason", "") or "").strip()
-    if reason == "get_roll(1D6)":
-        reason = "Replay roll"
+    if reason.startswith("get_roll(") and reason.endswith(")"):
+        die_label = reason[len("get_roll(") : -1].strip()
+        if die_label.startswith("1D"):
+            die_label = die_label[1:]
+        reason = f"Generic {die_label} roll" if die_label else "Generic roll"
     if not reason:
-        reason = "Replay roll"
+        roll_type = str(payload.get("roll_type", "") or "").strip().replace("_", " ")
+        reason = f"{roll_type.title()} roll" if roll_type else "Replay roll"
     dice_text = ", ".join(str(value) for value in dice_values)
     total = payload.get("value")
     if len(dice_values) > 1 and isinstance(total, int):
@@ -389,21 +413,42 @@ def _format_roll_line(payload: dict[str, object]) -> str:
     return f"{reason}: {dice_text}"
 
 
-def _build_hud_log_overrides(reader: ReplayStoreReader, decision_idx: int, game) -> dict[str, list[str]]:
-    player1, player2 = _resolve_players(game)
-    overrides = {
-        "p1_actions": list(get_recent_actions(player1, limit=50)),
-        "p1_dice": list(get_recent_dice(player1, limit=50)),
-        "p2_actions": list(get_recent_actions(player2, limit=50)),
-        "p2_dice": list(get_recent_dice(player2, limit=50)),
-    }
-    if decision_idx <= 0:
-        return overrides
-    player_to_key = {
-        str(getattr(player1, "id", "") or ""): "p1_dice",
-        str(getattr(player2, "id", "") or ""): "p2_dice",
-    }
+def _selected_decision_event_end(reader: ReplayStoreReader, decision_idx: int) -> int | None:
+    if int(decision_idx) <= 0:
+        return None
+    step = reader.get_step(decision_idx)
+    decision_id = str(getattr(step, "decision_id", "") or "")
+    fallback_end = getattr(step, "event_end_id", None)
+    if not decision_id:
+        return int(fallback_end) if fallback_end is not None else None
     for event in reader.get_events_for_decision(decision_idx):
+        if str(event.get("type", "") or "") != "decision_resolved":
+            continue
+        payload = dict(event.get("payload", {}) or {})
+        if str(payload.get("decision_id", "") or "") == decision_id:
+            return int(event.get("event_id", 0) or 0)
+    return int(fallback_end) if fallback_end is not None else None
+
+
+def _replay_dice_log_overrides(
+    reader: ReplayStoreReader,
+    decision_idx: int,
+    player_to_key: dict[str, str],
+) -> dict[str, list[str]]:
+    event_end_id = _selected_decision_event_end(reader, decision_idx)
+    if event_end_id is None:
+        return {key: [] for key in player_to_key.values()}
+    get_events_until = getattr(reader, "get_events_until_event_id", None)
+    if callable(get_events_until):
+        events = list(get_events_until(event_end_id))
+    else:
+        events = [
+            event
+            for event in reader.get_events_for_decision(decision_idx)
+            if int(event.get("event_id", 0) or 0) <= int(event_end_id)
+        ]
+    lines_by_key = {key: [] for key in player_to_key.values()}
+    for event in events:
         if str(event.get("type", "") or "") != "roll_made":
             continue
         payload = dict(event.get("payload", {}) or {})
@@ -413,10 +458,30 @@ def _build_hud_log_overrides(reader: ReplayStoreReader, decision_idx: int, game)
         line = _format_roll_line(payload)
         if not line:
             continue
-        merged = list(overrides.get(player_key, []))
+        merged = list(lines_by_key.get(player_key, []))
         if line not in merged:
             merged.append(line)
-        overrides[player_key] = merged[-50:]
+        lines_by_key[player_key] = merged[-50:]
+    return lines_by_key
+
+
+def _build_hud_log_overrides(reader: ReplayStoreReader, decision_idx: int, game) -> dict[str, list[str]]:
+    player1, player2 = _resolve_players(game)
+    player_to_key = {
+        str(getattr(player1, "id", "") or ""): "p1_dice",
+        str(getattr(player2, "id", "") or ""): "p2_dice",
+    }
+    dice_overrides = (
+        _replay_dice_log_overrides(reader, decision_idx, player_to_key)
+        if int(decision_idx) > 0
+        else {"p1_dice": list(get_recent_dice(player1, limit=50)), "p2_dice": list(get_recent_dice(player2, limit=50))}
+    )
+    overrides = {
+        "p1_actions": list(get_recent_actions(player1, limit=50)),
+        "p1_dice": list(dice_overrides.get("p1_dice", [])),
+        "p2_actions": list(get_recent_actions(player2, limit=50)),
+        "p2_dice": list(dice_overrides.get("p2_dice", [])),
+    }
     return overrides
 
 

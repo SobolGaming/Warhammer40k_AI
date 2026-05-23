@@ -32,6 +32,30 @@ Replay-store persistence note:
   decision step. Decisions whose request/resolution events were already captured
   in the nearest keyframe are replayed from their stored request payload without
   consuming later events.
+- Before returning a reconstructed game, replay syncs the visible battle phase
+  from the selected decision step metadata. This keeps replay-viewer HUD phase
+  labels aligned with Replay Controls without changing intermediate
+  decision-handler replay semantics or overwriting turn-advance side effects.
+- Replay-viewer HUD dice panes are bounded to the selected decision's own
+  `decision_resolved` event. If a recorded decision step contains nested or
+  follow-on decisions in its stored event range, later rolls remain visible on
+  their own decision steps rather than leaking backward into the parent step.
+- Movement-phase replay records parent choices before their automatic follow-up
+  choices. A Move Units chain records the selected unit first, then its movement
+  action, then any required Advance roll, then the resulting `MOVE_UNIT`
+  endpoint payload.
+- Voluntary movement-phase disembark choices use the same parent contract:
+  the embarked unit is selected first, then its `DISEMBARK` choice is recorded.
+- Shooting- and fight-phase replay uses the same parent-before-child contract:
+  selected unit decisions are recorded before declaration decisions, and
+  declaration decisions are recorded before their attack-roll child decisions.
+- Selected-unit workflows publish `unit_activation_started` and
+  `unit_activation_ended` brackets; shooting and fight workflows also publish
+  phase-specific brackets so reaction windows can subscribe to stable start/end
+  boundaries.
+- Replay-viewer overlays expand `MOVE_UNIT` endpoint payloads into per-model
+  coordinates when `model_positions` are present, so movement and deployment
+  steps do not appear as only a generic Confirm option.
 - Session snapshot saves flush any replay event tail that occurred after the
   latest resolved decision and emit a terminal keyframe at the current
   `decision_idx`. Strict replay of `reconstruct_game_at_decision(decision_count)`

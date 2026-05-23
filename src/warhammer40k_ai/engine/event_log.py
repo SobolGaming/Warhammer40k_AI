@@ -173,8 +173,14 @@ class DeterministicEventLog:
         event_system.subscribe_group(EVENT_LOG_GROUP, "roll_rerolled", self._on_roll_rerolled)
         event_system.subscribe_group(EVENT_LOG_GROUP, "decision_requested", self._on_decision_requested)
         event_system.subscribe_group(EVENT_LOG_GROUP, "decision_resolved", self._on_decision_resolved)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_activation_started", self._on_unit_activation_started)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_activation_ended", self._on_unit_activation_ended)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_move_started", self._on_unit_move_started)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_move_ended", self._on_unit_move_ended)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_shooting_started", self._on_unit_shooting_started)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_shooting_ended", self._on_unit_shooting_ended)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_fight_started", self._on_unit_fight_started)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "unit_fight_ended", self._on_unit_fight_ended)
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_damage_resolved", self._on_model_damage_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_destroyed", self._on_model_destroyed)
         event_system.subscribe_group(EVENT_LOG_GROUP, "model_destroyed_before_removal", self._on_model_destroyed_before_removal)
@@ -463,6 +469,51 @@ class DeterministicEventLog:
         phase = getattr(game, "phase", None)
         phase_name = getattr(phase, "name", phase)
         return str(phase_name or "").strip()
+
+    def _activation_event_payload(self, **kwargs: Any) -> dict[str, Any]:
+        unit = kwargs.get("unit") or kwargs.get("attacker_unit")
+        player = kwargs.get("player") or kwargs.get("selecting_player")
+        payload: dict[str, Any] = {
+            "unit_id": maybe_entity_id(unit),
+            "player_id": maybe_entity_id(player),
+            "phase_name": str(kwargs.get("phase_name") or self._current_phase_name() or "").strip(),
+            "phase_step": str(kwargs.get("phase_step") or "").strip(),
+            "selection_purpose": str(kwargs.get("selection_purpose") or "").strip(),
+        }
+        battle_round = kwargs.get("battle_round")
+        if battle_round not in (None, ""):
+            try:
+                payload["battle_round"] = int(battle_round)
+            except (TypeError, ValueError):
+                payload["battle_round"] = str(battle_round)
+        stage = str(kwargs.get("stage") or "").strip()
+        if stage:
+            payload["stage"] = stage
+        if "out_of_phase" in kwargs:
+            payload["out_of_phase"] = bool(kwargs.get("out_of_phase"))
+        return payload
+
+    def _record_activation_event(self, event_type: str, **kwargs: Any) -> None:
+        payload = self._activation_event_payload(**kwargs)
+        self.record(event_type, actor_id=payload.get("unit_id"), payload=payload, validate_payload=True)
+
+    def _on_unit_activation_started(self, **kwargs: Any) -> None:
+        self._record_activation_event("unit_activation_started", **kwargs)
+
+    def _on_unit_activation_ended(self, **kwargs: Any) -> None:
+        self._record_activation_event("unit_activation_ended", **kwargs)
+
+    def _on_unit_shooting_started(self, **kwargs: Any) -> None:
+        self._record_activation_event("unit_shooting_started", **kwargs)
+
+    def _on_unit_shooting_ended(self, **kwargs: Any) -> None:
+        self._record_activation_event("unit_shooting_ended", **kwargs)
+
+    def _on_unit_fight_started(self, **kwargs: Any) -> None:
+        self._record_activation_event("unit_fight_started", **kwargs)
+
+    def _on_unit_fight_ended(self, **kwargs: Any) -> None:
+        self._record_activation_event("unit_fight_ended", **kwargs)
 
     def _on_unit_move_started(self, **kwargs: Any) -> None:
         unit = kwargs.get("unit")

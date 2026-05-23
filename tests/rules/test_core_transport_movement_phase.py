@@ -432,13 +432,16 @@ def test_headless_policy_receives_movement_phase_disembark_choice_with_real_waha
     HeadlessPolicyDecisionController(
         game=game,
         ai_orchestrator=orchestrator,
-        skip_decision_types={DECISION_SELECT_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_MOVE_UNIT},
+        skip_decision_types={DECISION_SELECT_MOVEMENT_ACTION, DECISION_MOVE_UNIT},
         auto_attach=True,
     )
 
     pending_transport_choice = game._queue_movement_phase_start_transport_choices(player=marine_player)
 
     assert pending_transport_choice is False
+    select_requests = orchestrator.requests_of_type(DECISION_SELECT_UNIT)
+    assert len(select_requests) == 1
+    assert select_requests[0].context["selection_purpose"] == "VOLUNTARY_DISEMBARK"
     disembark_requests = orchestrator.requests_of_type(DECISION_DISEMBARK)
     assert len(disembark_requests) == 1
     request = disembark_requests[0]

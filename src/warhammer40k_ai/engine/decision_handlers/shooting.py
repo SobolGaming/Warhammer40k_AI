@@ -630,65 +630,15 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     return ()
 
 
-def _apply_declare_shots(game: object, request: DecisionRequest, result: DecisionResult):
-    opt = find_option(request, result.option_id)
-    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
-    unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
-    unit = get_unit(game, unit_id)
-    if unit is None:
-        raise RuntimeError("Shooting unit missing.")
-    if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
-        if not bool(request.context.get("out_of_phase", False)):
-            round_state = getattr(unit, "round_state", None)
-            if round_state is not None:
-                round_state.shot_this_round = True
-        clear_rerolls = getattr(unit, "clear_selected_to_shoot_rerolls", None)
-        if callable(clear_rerolls):
-            clear_rerolls()
-        _clear_firing_deck_state(unit)
-        return False
-    game_map = getattr(game, "map", None)
-    out_of_phase = bool(request.context.get("out_of_phase", False))
-    declarations = []
-    for decl in list(result.payload.get("declarations") or []):
-        wargear = get_wargear(game, str(decl.get("wargear_id", "") or ""))
-        if wargear is None:
-            continue
-        profile_name = str(decl.get("profile_name", "") or "")
-        profile = getattr(wargear, "profiles", {}).get(profile_name)
-        if profile is None:
-            continue
-        is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
-        target_unit = None
-        if not is_plasma_warhead:
-            target_unit = get_unit(game, str(decl.get("target_unit_id", "") or ""))
-            if target_unit is None:
-                continue
-        models = []
-        for model_id in list(decl.get("model_ids") or []):
-            model = get_model(game, str(model_id or ""))
-            if model is not None:
-                models.append(model)
-        if not models:
-            continue
-
-        entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
-        # Linked Fire: add origin unit if present
-        linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
-        linked_fire_mode = str(decl.get("linked_fire_mode", "") or "").strip().lower()
-        if linked_fire_origin_id is not None:
-            origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
-            if origin_unit is not None:
-                entry["linked_fire_origin_unit"] = origin_unit
-                entry["linked_fire_mode"] = linked_fire_mode
-        fd_ids = decl.get("firing_deck_source_model_ids")
-        if isinstance(fd_ids, list) and fd_ids:
-            fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
-            if fd_models:
-                entry["firing_deck_source_models"] = fd_models
-        declarations.append(entry)
-    if not declarations:
-        return False
+def _execute_declare_shots(
+    game: object,
+    request: DecisionRequest,
+    *,
+    unit: object,
+    declarations: list[dict],
+    game_map: object,
+    out_of_phase: bool,
+) -> bool:
     hypersensory_flow = bool(request.context.get("hypersensory_abilities_flow", False))
     if hypersensory_flow:
         sr = getattr(unit, "special_rules", None)
@@ -753,6 +703,144 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         pass
     _clear_firing_deck_state(unit)
     return bool(success)
+
+
+def _defer_declare_shots_execution(
+    game: object,
+    request: DecisionRequest,
+    *,
+    unit: object,
+    declarations: list[dict],
+    game_map: object,
+    out_of_phase: bool,
+) -> None:
+    pending = list(getattr(game, "_deferred_declare_shots_executions", []) or [])
+    decision_id = str(getattr(request, "decision_id", "") or "")
+    pending = [
+        entry
+        for entry in pending
+        if str(getattr(dict(entry or {}).get("request"), "decision_id", "") or "") != decision_id
+    ]
+    pending.append(
+        {
+            "request": request,
+            "unit": unit,
+            "declarations": list(declarations or []),
+            "game_map": game_map,
+            "out_of_phase": bool(out_of_phase),
+        }
+    )
+    setattr(game, "_deferred_declare_shots_executions", pending)
+
+
+def drain_deferred_declare_shots_executions(game: object, *, request: DecisionRequest | None = None) -> None:
+    pending = list(getattr(game, "_deferred_declare_shots_executions", []) or [])
+    if not pending:
+        return
+    decision_id = str(getattr(request, "decision_id", "") or "") if request is not None else ""
+    ready: list[dict] = []
+    keep: list[dict] = []
+    for item in pending:
+        entry = dict(item or {})
+        entry_request = entry.get("request")
+        entry_decision_id = str(getattr(entry_request, "decision_id", "") or "")
+        if not decision_id or entry_decision_id == decision_id:
+            ready.append(entry)
+        else:
+            keep.append(entry)
+    setattr(game, "_deferred_declare_shots_executions", keep)
+    for entry in ready:
+        entry_request = entry.get("request")
+        if entry_request is None:
+            continue
+        success = _execute_declare_shots(
+            game,
+            entry_request,
+            unit=entry.get("unit"),
+            declarations=list(entry.get("declarations") or []),
+            game_map=entry.get("game_map"),
+            out_of_phase=bool(entry.get("out_of_phase", False)),
+        )
+        setattr(entry_request, "_resolved_decision_value", bool(success))
+
+
+def _apply_declare_shots(game: object, request: DecisionRequest, result: DecisionResult):
+    opt = find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
+    unit = get_unit(game, unit_id)
+    if unit is None:
+        raise RuntimeError("Shooting unit missing.")
+    if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
+        if not bool(request.context.get("out_of_phase", False)):
+            round_state = getattr(unit, "round_state", None)
+            if round_state is not None:
+                round_state.shot_this_round = True
+        clear_rerolls = getattr(unit, "clear_selected_to_shoot_rerolls", None)
+        if callable(clear_rerolls):
+            clear_rerolls()
+        _clear_firing_deck_state(unit)
+        return False
+    game_map = getattr(game, "map", None)
+    out_of_phase = bool(request.context.get("out_of_phase", False))
+    declarations = []
+    for decl in list(result.payload.get("declarations") or []):
+        wargear = get_wargear(game, str(decl.get("wargear_id", "") or ""))
+        if wargear is None:
+            continue
+        profile_name = str(decl.get("profile_name", "") or "")
+        profile = getattr(wargear, "profiles", {}).get(profile_name)
+        if profile is None:
+            continue
+        is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
+        target_unit = None
+        if not is_plasma_warhead:
+            target_unit = get_unit(game, str(decl.get("target_unit_id", "") or ""))
+            if target_unit is None:
+                continue
+        models = []
+        for model_id in list(decl.get("model_ids") or []):
+            model = get_model(game, str(model_id or ""))
+            if model is not None:
+                models.append(model)
+        if not models:
+            continue
+
+        entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
+        # Linked Fire: add origin unit if present
+        linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+        linked_fire_mode = str(decl.get("linked_fire_mode", "") or "").strip().lower()
+        if linked_fire_origin_id is not None:
+            origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
+            if origin_unit is not None:
+                entry["linked_fire_origin_unit"] = origin_unit
+                entry["linked_fire_mode"] = linked_fire_mode
+        fd_ids = decl.get("firing_deck_source_model_ids")
+        if isinstance(fd_ids, list) and fd_ids:
+            fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
+            if fd_models:
+                entry["firing_deck_source_models"] = fd_models
+        declarations.append(entry)
+    if not declarations:
+        return False
+    if bool(getattr(request, "_resolution_in_progress", False)):
+        _defer_declare_shots_execution(
+            game,
+            request,
+            unit=unit,
+            declarations=declarations,
+            game_map=game_map,
+            out_of_phase=out_of_phase,
+        )
+        return True
+    return _execute_declare_shots(
+        game,
+        request,
+        unit=unit,
+        declarations=declarations,
+        game_map=game_map,
+        out_of_phase=out_of_phase,
+    )
 
 
 def _validate_firing_deck(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

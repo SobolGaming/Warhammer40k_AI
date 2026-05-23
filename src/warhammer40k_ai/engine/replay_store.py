@@ -16,6 +16,7 @@ from .command_kinds import CMD_EXECUTE_SETUP_PHASE, CMD_REQUEST_DECISION, CMD_RE
 from .commands import GameCommand
 from .decisions import DecisionRequest, DecisionResult
 from .game import Game
+from .phase import BattleRoundPhases
 from .ref_codec import decode_refs
 
 REPLAY_DB_FILENAME = "replay.sqlite3"
@@ -966,6 +967,34 @@ class ReplayStoreReader:
             )
         return events
 
+    def get_events_until_event_id(self, event_id: int) -> list[dict[str, Any]]:
+        end_event_id = int(event_id)
+        if end_event_id <= 0:
+            return []
+        with self._connect() as conn:
+            rows = list(
+                conn.execute(
+                    """
+                    SELECT event_id, event_type, actor_id, payload_blob
+                    FROM events
+                    WHERE event_id <= ?
+                    ORDER BY event_id ASC
+                    """,
+                    (end_event_id,),
+                )
+            )
+        events: list[dict[str, Any]] = []
+        for row in rows:
+            events.append(
+                {
+                    "event_id": int(row["event_id"]),
+                    "type": str(row["event_type"] or ""),
+                    "actor_id": row["actor_id"],
+                    "payload": dict(_unpack_json(bytes(row["payload_blob"]))),
+                }
+            )
+        return events
+
     def _nearest_keyframe(self, decision_idx: int) -> sqlite3.Row:
         with self._connect() as conn:
             row = conn.execute(
@@ -1022,6 +1051,14 @@ class ReplayStoreReader:
             existing_log.detach()
         game.event_log = None
         return game
+
+    @staticmethod
+    def _sync_reconstructed_game_to_step(game: Game, step: ReplayDecisionStep) -> None:
+        phase_name = str(getattr(step, "phase", "") or "")
+        if not phase_name:
+            return
+        if phase_name in BattleRoundPhases.__members__:
+            game.phase = BattleRoundPhases[phase_name]
 
     @staticmethod
     def _decode_replay_value(game: Game, value: Any) -> Any:
@@ -1819,7 +1856,10 @@ class ReplayStoreReader:
         snapshot = dict(_unpack_json(bytes(keyframe["snapshot_blob"])))
         start_idx = int(keyframe["decision_idx"])
         if idx == start_idx:
-            return Game.load_snapshot(snapshot)
+            game = Game.load_snapshot(snapshot)
+            if idx > 0:
+                self._sync_reconstructed_game_to_step(game, self.get_step(idx))
+            return game
 
         with self._connect() as conn:
             rows = list(
@@ -1869,6 +1909,8 @@ class ReplayStoreReader:
             if bool(strict) and not bool(getattr(apply_result, "ok", False)):
                 errors = list(getattr(apply_result, "errors", ()) or ())
                 raise ValueError(f"Replay failed at decision {decision_id}: {errors}")
+        if idx > 0:
+            self._sync_reconstructed_game_to_step(game, self.get_step(idx))
         return game
 
 

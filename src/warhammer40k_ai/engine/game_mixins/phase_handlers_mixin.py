@@ -4,12 +4,119 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GamePhaseHandlersMixin:
-    def _pending_select_unit_request(self, *, phase_name: str, phase_step: str):
+    def _unit_activation_player(self, unit: object | None, explicit_player=None):
+        if explicit_player is not None:
+            return explicit_player
+        if unit is not None:
+            get_army = getattr(unit, "get_parent_army", None)
+            army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
+            player = getattr(army, "player", None) if army is not None else None
+            if player is not None:
+                return player
+        return self.get_current_player()
+
+    def _publish_unit_activation_event(
+        self,
+        event_name: str,
+        *,
+        unit: object | None,
+        player=None,
+        phase_name: str = "",
+        phase_step: str = "",
+        selection_purpose: str = "",
+        **extra,
+    ) -> None:
+        event_system = getattr(self, "event_system", None)
+        publish = getattr(event_system, "publish", None)
+        if not callable(publish) or unit is None:
+            return
+        phase_value = str(phase_name or getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        player_value = self._unit_activation_player(unit, player)
+        publish(
+            str(event_name),
+            unit=unit,
+            player=player_value,
+            phase_name=phase_value,
+            phase_step=str(phase_step or "").strip().upper(),
+            selection_purpose=str(selection_purpose or "").strip().upper(),
+            battle_round=int(getattr(self, "turn", 0) or 0),
+            **extra,
+        )
+
+    def _defer_select_unit_resolution_followup(
+        self,
+        *,
+        request: DecisionRequest,
+        selected_unit_id: str | None,
+        selected_unit=None,
+        payload: dict | None = None,
+        pass_selected: bool = False,
+    ):
+        pending = list(getattr(self, "_deferred_select_unit_resolution_followups", []) or [])
+        decision_id = str(getattr(request, "decision_id", "") or "")
+        pending = [
+            item
+            for item in pending
+            if str(getattr(dict(item or {}).get("request"), "decision_id", "") or "") != decision_id
+        ]
+        pending.append(
+            {
+                "request": request,
+                "selected_unit_id": selected_unit_id,
+                "selected_unit": selected_unit,
+                "payload": dict(payload or {}),
+                "pass_selected": bool(pass_selected),
+            }
+        )
+        setattr(self, "_deferred_select_unit_resolution_followups", pending)
+        return {
+            "selected_unit_id": selected_unit_id,
+            "pass_selected": bool(pass_selected),
+            "payload": dict(payload or {}),
+        }
+
+    def _drain_deferred_select_unit_resolution_followups(self, *, request: DecisionRequest | None = None) -> None:
+        pending = list(getattr(self, "_deferred_select_unit_resolution_followups", []) or [])
+        if not pending:
+            return
+        decision_id = str(getattr(request, "decision_id", "") or "") if request is not None else ""
+        ready: list[dict] = []
+        keep: list[dict] = []
+        for item in pending:
+            entry = dict(item or {})
+            entry_request = entry.get("request")
+            entry_decision_id = str(getattr(entry_request, "decision_id", "") or "")
+            if not decision_id or entry_decision_id == decision_id:
+                ready.append(entry)
+            else:
+                keep.append(entry)
+        setattr(self, "_deferred_select_unit_resolution_followups", keep)
+        if not ready:
+            return
+        hook = getattr(self, "on_select_unit_resolved", None)
+        if not callable(hook):
+            return
+        for entry in ready:
+            selected_unit = entry.get("selected_unit")
+            selected_unit_id = str(entry.get("selected_unit_id") or "").strip() or None
+            if selected_unit is None and selected_unit_id:
+                resolver = getattr(self, "_resolve_unit_by_id", None)
+                selected_unit = resolver(selected_unit_id) if callable(resolver) else None
+            hook(
+                request=entry.get("request"),
+                selected_unit_id=selected_unit_id,
+                selected_unit=selected_unit,
+                payload=dict(entry.get("payload") or {}),
+                pass_selected=bool(entry.get("pass_selected", False)),
+            )
+
+    def _pending_select_unit_request(self, *, phase_name: str, phase_step: str, selection_purpose: str = ""):
         queue = getattr(self, "decision_queue", None)
         if queue is None or not hasattr(queue, "list"):
             return None
         from ..decision_kinds import DECISION_SELECT_UNIT
 
+        expected_purpose = str(selection_purpose or "").strip().upper()
         for request in list(queue.list() or []):
             if str(getattr(request, "decision_type", "") or "") != DECISION_SELECT_UNIT:
                 continue
@@ -19,6 +126,8 @@ class GamePhaseHandlersMixin:
             if str(ctx.get("phase_name", "") or "").strip().upper() != str(phase_name or "").strip().upper():
                 continue
             if str(ctx.get("phase_step", "") or "").strip().upper() != str(phase_step or "").strip().upper():
+                continue
+            if expected_purpose and str(ctx.get("selection_purpose", "") or "").strip().upper() != expected_purpose:
                 continue
             return request
         return None
@@ -78,7 +187,11 @@ class GamePhaseHandlersMixin:
         return marked
 
     def _pending_movement_move_units_select_unit_request(self):
-        return self._pending_select_unit_request(phase_name="MOVEMENT_PHASE", phase_step="MOVE_UNITS")
+        return self._pending_select_unit_request(
+            phase_name="MOVEMENT_PHASE",
+            phase_step="MOVE_UNITS",
+            selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+        )
 
     def _movement_flow_blocking_yes_no_request(self, unit_id: str):
         queue = getattr(self, "decision_queue", None)
@@ -456,11 +569,95 @@ class GamePhaseHandlersMixin:
         finally:
             self._movement_phase_transport_choice_batching = False
 
-    def _queue_movement_phase_start_transport_choices(self, *, player: object | None = None) -> bool:
-        from ..decision_kinds import DECISION_DISEMBARK
+    def _movement_phase_disembark_eligible_units(
+        self,
+        *,
+        player: object | None = None,
+        transport: object | None = None,
+    ) -> list[object]:
+        if not bool(getattr(self, "is_authoritative", True)):
+            return []
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "MOVEMENT_PHASE":
+            return []
+        active_player = player if player is not None else self.get_current_player()
+        if active_player is None or active_player is not self.get_current_player():
+            return []
+        army = self._get_player_army(active_player)
+        if army is None:
+            return []
+        transports = [transport] if transport is not None else list(getattr(army, "units", []) or [])
+        eligible: list[object] = []
+        for candidate_transport in sorted(
+            [unit for unit in transports if unit is not None],
+            key=lambda unit: str(get_entity_id(unit) or ""),
+        ):
+            if not self._movement_phase_transport_is_active_player_unit(candidate_transport, active_player):
+                continue
+            passengers = [
+                passenger
+                for passenger in list(getattr(candidate_transport, "transport_passengers", []) or [])
+                if passenger is not None
+            ]
+            for passenger in sorted(passengers, key=lambda unit: str(get_entity_id(unit) or "")):
+                if self._movement_phase_has_pending_request(DECISION_DISEMBARK, str(get_entity_id(passenger) or "")):
+                    continue
+                if self._movement_phase_can_voluntarily_disembark(passenger, candidate_transport):
+                    eligible.append(passenger)
+        return eligible
 
-        self._queue_movement_phase_disembark_choices_batched(player=player)
-        return self._movement_phase_has_pending_transport_choice_request(decision_type=DECISION_DISEMBARK)
+    def _movement_phase_transport_for_disembark_unit(
+        self,
+        passenger: object | None,
+        *,
+        player: object | None = None,
+    ) -> object | None:
+        if passenger is None:
+            return None
+        transport = getattr(passenger, "embarked_in", None)
+        active_player = player if player is not None else self.get_current_player()
+        if transport is not None and self._movement_phase_can_voluntarily_disembark(passenger, transport):
+            if active_player is None or self._movement_phase_transport_is_active_player_unit(transport, active_player):
+                return transport
+        army = self._get_player_army(active_player) if active_player is not None else None
+        for candidate_transport in list(getattr(army, "units", []) or []):
+            passengers = list(getattr(candidate_transport, "transport_passengers", []) or [])
+            if passenger not in passengers:
+                continue
+            if self._movement_phase_can_voluntarily_disembark(passenger, candidate_transport):
+                return candidate_transport
+        return None
+
+    def _queue_movement_phase_disembark_selection(self, *, player: object | None = None):
+        pending = self._pending_select_unit_request(
+            phase_name="MOVEMENT_PHASE",
+            phase_step="MOVE_UNITS",
+            selection_purpose="VOLUNTARY_DISEMBARK",
+        )
+        if pending is not None:
+            return pending
+        active_player = player if player is not None else self.get_current_player()
+        eligible = self._movement_phase_disembark_eligible_units(player=active_player)
+        if not eligible:
+            return None
+        from ..decision_requests import queue_select_unit_request
+
+        return queue_select_unit_request(
+            self,
+            eligible,
+            player_id=getattr(active_player, "id", None),
+            phase_name="MOVEMENT_PHASE",
+            phase_step="MOVE_UNITS",
+            selection_purpose="VOLUNTARY_DISEMBARK",
+            allow_pass=False,
+            context={
+                "battle_round": int(getattr(self, "turn", 0) or 0),
+                "movement_phase_transport_choice": True,
+            },
+        )
+
+    def _queue_movement_phase_start_transport_choices(self, *, player: object | None = None) -> bool:
+        self._queue_movement_phase_disembark_selection(player=player)
+        return self._movement_phase_has_pending_transport_choice_request()
 
     def _movement_phase_eligible_embark_transports_for_unit(
         self,
@@ -1178,7 +1375,49 @@ class GamePhaseHandlersMixin:
                 "pass_selected": bool(pass_selected),
                 "payload": dict(payload or {}),
             }
-        if phase_name == "MOVEMENT_PHASE" and phase_step == "MOVE_UNITS":
+        selection_purpose = str(ctx.get("selection_purpose", "") or "").strip().upper()
+        self._publish_unit_activation_event(
+            "unit_activation_started",
+            unit=selected_unit,
+            phase_name=phase_name,
+            phase_step=phase_step,
+            selection_purpose=selection_purpose,
+        )
+        if phase_name == "SHOOTING_PHASE" and phase_step == "SHOOT_UNITS":
+            self._publish_unit_activation_event(
+                "unit_shooting_started",
+                unit=selected_unit,
+                phase_name=phase_name,
+                phase_step=phase_step,
+                selection_purpose=selection_purpose,
+                out_of_phase=False,
+            )
+        if (
+            phase_name == "MOVEMENT_PHASE"
+            and phase_step == "MOVE_UNITS"
+            and selection_purpose == "VOLUNTARY_DISEMBARK"
+        ):
+            transport = self._movement_phase_transport_for_disembark_unit(
+                selected_unit,
+                player=self.get_current_player(),
+            )
+            if transport is not None:
+                self._queue_movement_phase_disembark_choice(
+                    passenger=selected_unit,
+                    transport=transport,
+                    player=self.get_current_player(),
+                )
+            else:
+                self._publish_unit_activation_event(
+                    "unit_activation_ended",
+                    unit=selected_unit,
+                    phase_name=phase_name,
+                    phase_step=phase_step,
+                    selection_purpose=selection_purpose,
+                )
+                if self._queue_movement_phase_disembark_selection(player=self.get_current_player()) is None:
+                    self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+        elif phase_name == "MOVEMENT_PHASE" and phase_step == "MOVE_UNITS":
             self._queue_move_units_movement_action_request(selected_unit)
         elif phase_name == "SHOOTING_PHASE" and phase_step == "SHOOT_UNITS":
             self._queue_shooting_phase_declare_shots_request(selected_unit)
@@ -1264,6 +1503,24 @@ class GamePhaseHandlersMixin:
             return
         if str(ctx.get("phase_name", "") or "").strip().upper() != "SHOOTING_PHASE":
             return
+        unit_id = str(ctx.get("unit_id", "") or "").strip()
+        selected_unit = self._resolve_unit_by_id(unit_id) if unit_id else None
+        if selected_unit is not None:
+            self._publish_unit_activation_event(
+                "unit_shooting_ended",
+                unit=selected_unit,
+                phase_name="SHOOTING_PHASE",
+                phase_step="SHOOT_UNITS",
+                selection_purpose="ACTIVATE_SHOOTING_UNIT",
+                out_of_phase=False,
+            )
+            self._publish_unit_activation_event(
+                "unit_activation_ended",
+                unit=selected_unit,
+                phase_name="SHOOTING_PHASE",
+                phase_step="SHOOT_UNITS",
+                selection_purpose="ACTIVATE_SHOOTING_UNIT",
+            )
         self._queue_shooting_phase_selection(player=self.get_current_player())
 
     def _maybe_queue_charge_phase_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
@@ -1607,8 +1864,22 @@ class GamePhaseHandlersMixin:
         if decision_type == DECISION_DISEMBARK:
             if bool(getattr(self, "_movement_phase_transport_choice_batching", False)):
                 return
-            if not self._movement_phase_has_pending_transport_choice_request(decision_type=DECISION_DISEMBARK):
-                self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+            unit_id = self._resolve_request_unit_id(request)
+            resolver = getattr(self, "_resolve_unit_by_id", None)
+            disembarked_unit = resolver(unit_id) if callable(resolver) and unit_id else None
+            if disembarked_unit is not None:
+                self._publish_unit_activation_event(
+                    "unit_activation_ended",
+                    unit=disembarked_unit,
+                    phase_name="MOVEMENT_PHASE",
+                    phase_step="MOVE_UNITS",
+                    selection_purpose="VOLUNTARY_DISEMBARK",
+                )
+            if self._movement_phase_has_pending_transport_choice_request(decision_type=DECISION_DISEMBARK):
+                return
+            if self._queue_movement_phase_disembark_selection(player=self.get_current_player()) is not None:
+                return
+            self._queue_movement_phase_move_units_selection(player=self.get_current_player())
             return
 
         if decision_type == DECISION_EMBARK:
@@ -1640,8 +1911,22 @@ class GamePhaseHandlersMixin:
                     ):
                         return
                     if queued_disembark:
+                        self._publish_unit_activation_event(
+                            "unit_activation_ended",
+                            unit=selected_unit,
+                            phase_name="MOVEMENT_PHASE",
+                            phase_step="MOVE_UNITS",
+                            selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+                        )
                         self._queue_movement_phase_move_units_selection(player=self.get_current_player())
                         return
+                    self._publish_unit_activation_event(
+                        "unit_activation_ended",
+                        unit=selected_unit,
+                        phase_name="MOVEMENT_PHASE",
+                        phase_step="MOVE_UNITS",
+                        selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+                    )
                 self._queue_movement_phase_move_units_selection(player=self.get_current_player())
                 return
         elif decision_type == DECISION_MOVE_UNIT:
@@ -1649,9 +1934,6 @@ class GamePhaseHandlersMixin:
             if str(ctx.get("phase_name", "") or "").strip().upper() == "MOVEMENT_PHASE" and str(
                 ctx.get("phase_step", "") or ""
             ).strip().upper() == "MOVE_UNITS":
-                if self._decision_result_requests_skip(request, result):
-                    self._queue_movement_phase_move_units_selection(player=self.get_current_player())
-                    return
                 unit_id = self._resolve_request_unit_id(request)
                 resolver = getattr(self, "_resolve_unit_by_id", None)
                 moved_unit = resolver(unit_id) if callable(resolver) and unit_id else None
@@ -1659,6 +1941,17 @@ class GamePhaseHandlersMixin:
                     registry = getattr(self, "entity_registry", None)
                     if registry is not None and unit_id:
                         moved_unit = registry.get(unit_id, kind="unit")
+                if self._decision_result_requests_skip(request, result):
+                    if moved_unit is not None:
+                        self._publish_unit_activation_event(
+                            "unit_activation_ended",
+                            unit=moved_unit,
+                            phase_name="MOVEMENT_PHASE",
+                            phase_step="MOVE_UNITS",
+                            selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+                        )
+                    self._queue_movement_phase_move_units_selection(player=self.get_current_player())
+                    return
                 if moved_unit is not None:
                     queued_disembark = self._queue_movement_phase_disembark_choices_batched(
                         player=self.get_current_player(),
@@ -1669,6 +1962,13 @@ class GamePhaseHandlersMixin:
                     ):
                         return
                     if queued_disembark:
+                        self._publish_unit_activation_event(
+                            "unit_activation_ended",
+                            unit=moved_unit,
+                            phase_name="MOVEMENT_PHASE",
+                            phase_step="MOVE_UNITS",
+                            selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+                        )
                         self._queue_movement_phase_move_units_selection(player=self.get_current_player())
                         return
                     queued_embark = self._queue_movement_phase_embark_choice(
@@ -1679,6 +1979,13 @@ class GamePhaseHandlersMixin:
                         decision_type=DECISION_EMBARK
                     ):
                         return
+                    self._publish_unit_activation_event(
+                        "unit_activation_ended",
+                        unit=moved_unit,
+                        phase_name="MOVEMENT_PHASE",
+                        phase_step="MOVE_UNITS",
+                        selection_purpose="ACTIVATE_MOVEMENT_UNIT",
+                    )
                 self._queue_movement_phase_move_units_selection(player=self.get_current_player())
             return
         elif decision_type == DECISION_CHOOSE_MOVE_MODIFIER_IGNORES:
@@ -1712,6 +2019,30 @@ class GamePhaseHandlersMixin:
 
         if not unit_id or movement_type not in {"move", "advance", "fall_back"}:
             return
+        if (
+            decision_type == DECISION_SELECT_MOVEMENT_ACTION
+            and movement_type == "advance"
+            and bool(getattr(request, "_deferred_advance_prepare", False))
+        ):
+            resolver = getattr(self, "_resolve_unit_by_id", None)
+            unit = resolver(unit_id) if callable(resolver) and unit_id else None
+            if unit is not None:
+                try:
+                    advance_roll = float(getattr(getattr(unit, "round_state", None), "advance_roll", 0) or 0)
+                except (TypeError, ValueError):
+                    advance_roll = 0.0
+                if advance_roll <= 0 and not self._movement_phase_has_pending_request(
+                    DECISION_REQUEST_DICE_ROLL,
+                    unit_id,
+                ):
+                    unit.prepare_advance()
+                    if self._movement_phase_has_pending_request(DECISION_REQUEST_DICE_ROLL, unit_id):
+                        return
+                    if self._movement_phase_has_pending_move_unit_request(unit_id):
+                        return
+                    round_state = getattr(unit, "round_state", None)
+                    if bool(getattr(round_state, "moved_this_round", False)):
+                        return
         if self._movement_phase_has_pending_move_unit_request(unit_id):
             return
         if self._movement_phase_has_pending_request(DECISION_SELECT_MOVEMENT_ACTION, unit_id):

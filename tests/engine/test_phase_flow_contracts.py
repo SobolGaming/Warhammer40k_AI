@@ -22,6 +22,7 @@ from warhammer40k_ai.engine.fight_phase_manager import FightStage
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.engine.local_runtime import LocalAuthoritativeRuntime
+from warhammer40k_ai.engine.replay_store import ReplayStoreReader, enable_decision_replay_recording
 from warhammer40k_ai.engine import turn_manager
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -415,6 +416,86 @@ def test_real_game_headless_movement_phase_preserves_decision_chain(build_phase_
         DECISION_MOVE_UNIT,
     ]
     assert list(fixture.game.decision_queue.list() or []) == []
+
+
+def test_real_game_headless_movement_replay_steps_preserve_decision_chain(build_phase_game, tmp_path) -> None:
+    fixture = build_phase_game(current_control=PlayerControl.REMOTE)
+    fixture.game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    fixture.active_unit.get_available_move_actions = lambda _engagement_state: [MovementAction.ADVANCE.value]
+    replay_path = tmp_path / "movement_chain.replay.sqlite3"
+    enable_decision_replay_recording(
+        fixture.game,
+        replay_path=replay_path,
+        session_id="movement-chain-order",
+        label="Movement Chain Order",
+    )
+    HeadlessPolicyDecisionController(game=fixture.game, auto_attach=True)
+
+    fixture.game._queue_movement_phase_move_units_selection()
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=10)
+    assert [step.decision_type for step in steps] == [
+        DECISION_SELECT_UNIT,
+        DECISION_SELECT_MOVEMENT_ACTION,
+        DECISION_REQUEST_DICE_ROLL,
+        DECISION_MOVE_UNIT,
+    ]
+
+
+def test_real_game_headless_shooting_replay_steps_preserve_decision_chain(build_phase_game, tmp_path) -> None:
+    fixture = build_phase_game(current_control=PlayerControl.REMOTE)
+    fixture.game.phase = BattleRoundPhases.SHOOTING_PHASE
+    replay_path = tmp_path / "shooting_chain.replay.sqlite3"
+    enable_decision_replay_recording(
+        fixture.game,
+        replay_path=replay_path,
+        session_id="shooting-chain-order",
+        label="Shooting Chain Order",
+    )
+    HeadlessPolicyDecisionController(game=fixture.game, auto_attach=True)
+
+    fixture.game._queue_shooting_phase_selection(player=fixture.current_player)
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=5)
+    assert [step.decision_type for step in steps[:3]] == [
+        DECISION_SELECT_UNIT,
+        DECISION_DECLARE_SHOTS,
+        DECISION_REQUEST_DICE_ROLL,
+    ]
+    event_types = [event.event_type for event in fixture.game.event_log.events]
+    assert event_types.index("unit_activation_started") < event_types.index("unit_shooting_started")
+    assert event_types.index("unit_shooting_started") < event_types.index("unit_shooting_ended")
+    assert event_types.index("unit_shooting_ended") < event_types.index("unit_activation_ended")
+
+
+def test_real_game_headless_fight_replay_steps_preserve_decision_chain(build_phase_game, tmp_path) -> None:
+    fixture = build_phase_game(enemy_distance=0.8, current_control=PlayerControl.REMOTE)
+    fixture.game.phase = BattleRoundPhases.FIGHT_PHASE
+    replay_path = tmp_path / "fight_chain.replay.sqlite3"
+    enable_decision_replay_recording(
+        fixture.game,
+        replay_path=replay_path,
+        session_id="fight-chain-order",
+        label="Fight Chain Order",
+    )
+    HeadlessPolicyDecisionController(game=fixture.game, auto_attach=True)
+
+    fixture.game._ensure_fight_phase_manager_started()
+
+    reader = ReplayStoreReader(replay_path)
+    steps = reader.list_steps(limit=6)
+    assert [step.decision_type for step in steps[:4]] == [
+        DECISION_SELECT_UNIT,
+        DECISION_SELECT_FIGHT_TARGETS,
+        DECISION_MOVE_UNIT,
+        DECISION_DECLARE_MELEE_WEAPONS,
+    ]
+    event_types = [event.event_type for event in fixture.game.event_log.events]
+    assert event_types.index("unit_activation_started") < event_types.index("unit_fight_started")
+    assert event_types.index("unit_fight_started") < event_types.index("unit_fight_ended")
+    assert event_types.index("unit_fight_ended") < event_types.index("unit_activation_ended")
 
 
 def test_real_game_headless_movement_phase_continues_after_first_unit(build_phase_game) -> None:

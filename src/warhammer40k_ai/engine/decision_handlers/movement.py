@@ -1440,6 +1440,9 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
         if bool(getattr(game, "is_authoritative", True)):
             if queued_redeploy_prompt or queued_turbo_boostas_prompt:
                 return None
+            if bool(getattr(request, "_resolution_in_progress", False)):
+                setattr(request, "_deferred_advance_prepare", True)
+                return None
             try:
                 unit.prepare_advance()
             except Exception as exc:

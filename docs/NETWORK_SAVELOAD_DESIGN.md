@@ -95,8 +95,10 @@ Events are serialized state transitions and random outcomes. Examples:
 - command_applied, command_rejected
 - decision_requested, decision_resolved
 - dice_roll, roll_made, roll_rerolled
+- unit_activation_started, unit_activation_ended
 - unit_move_started, unit_move_ended, charge_move_failed
-- model_damage_resolved, unit_shooting_resolved, fight_attacks_resolved
+- model_damage_resolved, unit_shooting_started, unit_shooting_ended, unit_shooting_resolved
+- unit_fight_started, unit_fight_ended, fight_attacks_resolved
 - model_destroyed, model_destroyed_before_removal, unit_destroyed
 - blood_tithe_points_gained, blood_tithe_activated, blood_tithe_updated
 - phase_start, phase_end, battle_round_started
@@ -108,6 +110,7 @@ Events include:
 - event_id (monotonic int), type, actor_id
 - deterministic payload (IDs + parameters)
 - optional derived text for UI display (not used for state)
+- `unit_activation_started`/`unit_activation_ended` bracket selected-unit workflows after a `SELECT_UNIT` decision. Payloads include `unit_id`, `player_id`, `phase_name`, `phase_step`, `selection_purpose`, and `battle_round`; phase-specific brackets such as `unit_shooting_started`/`unit_shooting_ended` and `unit_fight_started`/`unit_fight_ended` use the same shape, with fight events also carrying the current fight stage.
 - `unit_move_started`/`unit_move_ended` payloads include the current `phase_name` when the event log is attached to an active game, so replay/profiling can attribute fight-phase pile-in/consolidate and reactive Blood Surge movement to their owning phase window.
 - Movement/replay `model_positions` payloads for an Attached Unit cover the whole attached rules unit, including Leaders and joined support members; fight-move coherency, reactive move validation, event logging, and replay fallback lookup resolve models through the attached-unit group helpers rather than root-only `unit.models`.
 - `command_rejected` payloads include validator `errors`; rejected `RESOLVE_DECISION` events also include compact decision diagnostics (`decision_id`, `option_id`, `decision_type`, optional candidate probe ids/kinds, `payload_keys`, and counts/checksums for large arrays such as `model_positions` or `declarations`).

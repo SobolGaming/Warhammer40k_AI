@@ -402,6 +402,33 @@ def test_replay_store_reconstructs_state_at_decision_idx(tmp_path) -> None:
     assert _canonical_snapshot(replayed_snapshot) == _canonical_snapshot(expected_after_first)
 
 
+def test_replay_store_reconstruction_syncs_returned_game_to_step_phase(tmp_path) -> None:
+    game, player = _build_game()
+    replay_path = tmp_path / "phase_start_sync.replay.sqlite3"
+    enable_decision_replay_recording(
+        game,
+        replay_path=replay_path,
+        keyframe_interval=25,
+        session_id="session-phase-start-sync",
+        label="Replay Phase Start Sync",
+    )
+
+    first = _queue_confirmation(game, player)
+    _resolve_option(game, first, option_index=0)
+
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.event_system.publish("phase_start", player=player, phase=game.phase)
+    second = _queue_confirmation(game, player)
+    _resolve_option(game, second, option_index=1)
+
+    reader = ReplayStoreReader(replay_path)
+    replayed_game = reader.reconstruct_game_at_decision(2, strict=True)
+
+    assert reader.get_step(2).phase == "MOVEMENT_PHASE"
+    assert replayed_game.phase == BattleRoundPhases.MOVEMENT_PHASE
+    assert int(replayed_game.current_player_index) == 0
+
+
 def test_replay_store_keyframe_is_captured_after_followups(tmp_path) -> None:
     game, player = _build_game()
     replay_path = tmp_path / "post_settled.replay.sqlite3"

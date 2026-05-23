@@ -482,6 +482,28 @@ class FightPhaseManager:
                 )
         except Exception:
             pass
+        publish_activation = getattr(self.game, "_publish_unit_activation_event", None)
+        if callable(publish_activation):
+            phase_step = self._fight_phase_step_name()
+            stage_name = str(getattr(self.current_stage, "name", "") or "")
+            publish_activation(
+                "unit_fight_ended",
+                unit=fighting_unit,
+                player=self.active_player,
+                phase_name="FIGHT_PHASE",
+                phase_step=phase_step,
+                selection_purpose="ACTIVATE_FIGHTING_UNIT",
+                stage=stage_name,
+            )
+            publish_activation(
+                "unit_activation_ended",
+                unit=fighting_unit,
+                player=self.active_player,
+                phase_name="FIGHT_PHASE",
+                phase_step=phase_step,
+                selection_purpose="ACTIVATE_FIGHTING_UNIT",
+                stage=stage_name,
+            )
 
     def finalize_unit_fight(self, fighting_unit: Unit, current_player: Player, opponent_player: Player) -> None:
         """Finalize a unit's fight sequence and advance turn order."""
@@ -517,10 +539,21 @@ class FightPhaseManager:
                 )
         except Exception:
             pass
-        
+        publish_activation = getattr(self.game, "_publish_unit_activation_event", None)
+        if callable(publish_activation):
+            publish_activation(
+                "unit_fight_started",
+                unit=selected_unit,
+                player=self.active_player,
+                phase_name="FIGHT_PHASE",
+                phase_step=self._fight_phase_step_name(),
+                selection_purpose="ACTIVATE_FIGHTING_UNIT",
+                stage=str(getattr(self.current_stage, "name", "") or ""),
+            )
+
         # Find eligible targets for this unit
         eligible_targets = self._get_eligible_targets(selected_unit)
-        
+
         if not eligible_targets:
             if self._queue_overrun_pile_in_if_available(selected_unit):
                 return
