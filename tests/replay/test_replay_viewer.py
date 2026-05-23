@@ -315,6 +315,30 @@ def test_overlay_lines_expand_movement_move_into_per_model_positions() -> None:
     assert ("chosen option: Confirm", replay_viewer.OVERLAY_TEXT) not in lines
 
 
+def test_chosen_option_label_falls_back_to_chosen_action_id_for_select_unit() -> None:
+    replay_viewer = _load_replay_viewer_module()
+
+    label = replay_viewer._chosen_option_label(
+        {
+            "options": [
+                {
+                    "option_id": "runtime-option-id",
+                    "label": "Rangers #2",
+                    "payload": {
+                        "unit_id": "rangers-2",
+                        "unit_label": "Rangers #2",
+                        "action_id": "SELECT_UNIT:MOVEMENT_PHASE:MOVE_UNITS:ACTIVATE_MOVEMENT_UNIT:rangers-2",
+                    },
+                }
+            ]
+        },
+        "recorded-option-id-mismatch",
+        "SELECT_UNIT:MOVEMENT_PHASE:MOVE_UNITS:ACTIVATE_MOVEMENT_UNIT:rangers-2",
+    )
+
+    assert label == "Rangers #2"
+
+
 def test_format_roll_line_normalizes_get_roll_reason() -> None:
     replay_viewer = _load_replay_viewer_module()
 

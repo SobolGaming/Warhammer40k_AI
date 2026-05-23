@@ -253,6 +253,71 @@ def _unique_army_root_units(units: Iterable[object]) -> list[object]:
     return [roots[k] for k in sorted(roots.keys())]
 
 
+def _unit_root_for_select_label(unit: object) -> object | None:
+    if unit is None:
+        return None
+    if bool(getattr(unit, "is_attached_leader", False)):
+        return None
+    if bool(getattr(unit, "is_joined_support", False)):
+        return None
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    if callable(get_root):
+        root = get_root()
+        return root or unit
+    return unit
+
+
+def _unit_roster_roots_for_select_labels(unit: object) -> list[object]:
+    army = _army_for_unit(unit)
+    army_units = list(getattr(army, "units", []) or []) if army is not None else []
+    if not army_units:
+        return []
+    seen: set[str] = set()
+    roots: list[object] = []
+    for candidate in army_units:
+        root = _unit_root_for_select_label(candidate)
+        if root is None:
+            continue
+        root_id = str(get_entity_id(root) or "").strip()
+        if not root_id or root_id in seen:
+            continue
+        seen.add(root_id)
+        roots.append(root)
+    return roots
+
+
+def _select_unit_base_label(unit: object) -> str:
+    return str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+
+
+def _select_unit_option_labels(eligible_units: Iterable[object]) -> dict[str, str]:
+    units = [unit for unit in list(eligible_units or []) if unit is not None]
+    fallback_roots = list(units)
+    labels: dict[str, str] = {}
+    for unit in units:
+        unit_id = str(get_entity_id(unit) or "").strip()
+        if not unit_id:
+            continue
+        base_label = _select_unit_base_label(unit)
+        roster_roots = _unit_roster_roots_for_select_labels(unit) or fallback_roots
+        same_named_roots = [
+            root
+            for root in roster_roots
+            if str(get_entity_id(root) or "").strip()
+            and _select_unit_base_label(root) == base_label
+        ]
+        if len(same_named_roots) <= 1:
+            labels[unit_id] = base_label
+            continue
+        same_named_ids = [str(get_entity_id(root) or "").strip() for root in same_named_roots]
+        try:
+            ordinal = same_named_ids.index(unit_id) + 1
+        except ValueError:
+            ordinal = sorted(same_named_ids + [unit_id]).index(unit_id) + 1
+        labels[unit_id] = f"{base_label} #{int(ordinal)}"
+    return labels
+
+
 def _unit_is_alive(unit: object) -> bool:
     alive_attr = getattr(unit, "is_alive", None)
     if callable(alive_attr):
@@ -357,12 +422,13 @@ def build_select_unit_request(
 
     options: list[DecisionOption] = []
     allowed_unit_ids: list[str] = []
+    unit_labels = _select_unit_option_labels(eligible_units)
     for unit in eligible_units:
         unit_id = str(get_entity_id(unit) or "").strip()
         if not unit_id:
             continue
         allowed_unit_ids.append(unit_id)
-        label = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+        label = unit_labels.get(unit_id) or _select_unit_base_label(unit)
         action_id = (
             f"{DECISION_SELECT_UNIT}:"
             f"{str(phase_name or '').strip().upper()}:"
@@ -375,6 +441,7 @@ def build_select_unit_request(
                 label,
                 payload={
                     "unit_id": unit_id,
+                    "unit_label": label,
                     "action_id": action_id,
                 },
             )

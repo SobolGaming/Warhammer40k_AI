@@ -46,6 +46,9 @@ Replay-store persistence note:
   endpoint payload.
 - Voluntary movement-phase disembark choices use the same parent contract:
   the embarked unit is selected first, then its `DISEMBARK` choice is recorded.
+- `SELECT_UNIT` option labels are replay-facing identifiers. When multiple units
+  share the same datasheet/name within a roster, labels include roster ordinals
+  such as `Rangers #1` and `Rangers #2`.
 - Shooting- and fight-phase replay uses the same parent-before-child contract:
   selected unit decisions are recorded before declaration decisions, and
   declaration decisions are recorded before their attack-roll child decisions.

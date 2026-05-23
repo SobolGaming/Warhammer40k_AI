@@ -149,6 +149,33 @@ def test_select_unit_request_builder_is_deterministic_and_dedupes_to_roots() -> 
     assert [cand.action_id for cand in first.candidates] == sorted(c.action_id for c in first.candidates)
 
 
+def test_select_unit_request_labels_duplicate_unit_names_with_roster_ordinals() -> None:
+    player = _PlayerStub("player-1")
+    army = _ArmyStub(player)
+    rangers_1 = _UnitStub("rangers-1", "Rangers", army)
+    shroud_runners = _UnitStub("shroud-runners", "Shroud Runners", army)
+    rangers_2 = _UnitStub("rangers-2", "Rangers", army)
+    rangers_3 = _UnitStub("rangers-3", "Rangers", army)
+    army.units = [rangers_1, shroud_runners, rangers_2, rangers_3]
+
+    request = build_select_unit_request(
+        [rangers_3, shroud_runners, rangers_2],
+        phase_name="movement_phase",
+        phase_step="move_units",
+        selection_purpose="activate_movement_unit",
+    )
+
+    assert request is not None
+    labels_by_unit_id = {
+        str(option.payload.get("unit_id", "") or ""): str(option.label or "")
+        for option in list(request.options or [])
+    }
+    assert labels_by_unit_id["rangers-2"] == "Rangers #2"
+    assert labels_by_unit_id["rangers-3"] == "Rangers #3"
+    assert labels_by_unit_id["shroud-runners"] == "Shroud Runners"
+    assert request.context["allowed_unit_ids"] == ["rangers-2", "rangers-3", "shroud-runners"]
+
+
 def test_select_unit_phase_step_helpers_filter_reserves() -> None:
     _, _, root, leader, embarked, reserve = _build_units()
 

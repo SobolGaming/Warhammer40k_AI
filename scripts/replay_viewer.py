@@ -160,14 +160,27 @@ def _step_jump(event: pygame.event.Event, total_decisions: int, current_idx: int
     return None
 
 
-def _chosen_option_label(request_payload: dict[str, object], chosen_option_id: str) -> str:
+def _chosen_option_label(
+    request_payload: dict[str, object],
+    chosen_option_id: str,
+    chosen_action_id: str = "",
+) -> str:
     option_id = str(chosen_option_id or "")
+    action_id = str(chosen_action_id or "")
     for entry in list(request_payload.get("options", []) or []):
         payload = dict(entry or {})
         if str(payload.get("option_id", "") or "") == option_id:
             label = str(payload.get("label", "") or "").strip()
             if label:
                 return label
+    if action_id:
+        for entry in list(request_payload.get("options", []) or []):
+            option = dict(entry or {})
+            payload = dict(option.get("payload", {}) or {})
+            if str(payload.get("action_id", "") or "") == action_id:
+                label = str(option.get("label", "") or payload.get("unit_label", "") or "").strip()
+                if label:
+                    return label
     return ""
 
 
@@ -321,7 +334,11 @@ def _overlay_lines(
         request_payload = reader.get_request_payload(decision_idx)
         record = reader.get_decision_record(decision_idx)
         prompt = str(request_payload.get("prompt", "") or "").strip()
-        chosen_label = _chosen_option_label(request_payload, str(step.chosen_option_id))
+        chosen_label = _chosen_option_label(
+            request_payload,
+            str(step.chosen_option_id),
+            str(step.chosen_action_id),
+        )
         chosen_move_lines = _selected_move_unit_lines(request_payload, record, step)
         if not bool(getattr(game, "setup_complete", True)):
             setup_phase = str(getattr(getattr(game, "setup_phase", None), "name", "") or "SETUP")
