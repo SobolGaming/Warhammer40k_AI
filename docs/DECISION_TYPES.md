@@ -84,7 +84,9 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
   places a unit into Strategic Reserves.
 - `RESOLVE_COHERENCY` - Remove one additional model to restore coherency.
 - `EMBARK` - Embark a unit into a transport.
-- `DISEMBARK` - Disembark a unit from a transport.
+- `DISEMBARK` - Disembark a unit from a transport. Explicit model positions must be
+  wholly within the disembark range using full base/hull geometry, not only base
+  center or closest-edge distance.
 - `PICK_POINT` - Choose an exact point on the battlefield.
 - `PICK_OBJECTIVE` - Choose an objective marker.
 - `PICK_TERRAIN_FEATURE` - Choose a terrain feature.
@@ -251,7 +253,7 @@ The table below is intentionally exhaustive. It is the reference point for how e
 | `SELECT_REACTIVE_RESERVE_EXIT` | Preview-gated reactive effect can place a unit into Strategic Reserves. | UI | `Policy` | `T3` |
 | `RESOLVE_COHERENCY` | Casualties leave a unit out of coherency and one more model must be removed. | UI | `Policy` | `T3` |
 | `EMBARK` | A unit may embark into a transport. | UI | `Policy` | `T3` |
-| `DISEMBARK` | A unit must or may disembark, including reactive disembark windows. | UI | `Policy` | `T3` |
+| `DISEMBARK` | A unit must or may disembark, including reactive disembark windows. Model-position payloads are validated as wholly within the disembark range using full base/hull geometry. | UI | `Policy` | `T3` |
 | `PICK_POINT` | A rule requires an exact battlefield point. | UI | `Policy` | `T3` |
 | `PICK_OBJECTIVE` | A rule requires an objective marker. | UI | `Policy` | `T2` |
 | `PICK_TERRAIN_FEATURE` | A rule requires a terrain feature. | UI | `Policy` | `T2` |

@@ -102,3 +102,55 @@ def test_disembark_decision_applies_manual_positions():
     assert transport.transport_passengers == []
     loc = model.get_location()
     assert loc[0] == pytest.approx(12.5)
+
+
+def test_disembark_decision_rejects_base_not_wholly_within_transport_range():
+    bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+    army = Army.with_detachment("Test", "Detachment")
+    player = Player("P1", PlayerControl.LOCAL, army)
+    game = Game(bf, players=[player])
+
+    transport = _make_unit("Transport", keywords=["Transport"], transport="Transport Capacity 10")
+    passenger = _make_unit("Passengers", keywords=["Infantry"])
+
+    army.add_unit(transport)
+    army.add_unit(passenger)
+    game.rebuild_entity_registry()
+
+    transport.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    game.map.place_unit(transport)
+    transport.transport_passengers = [passenger]
+    passenger.embarked_in = transport
+
+    unit_id = get_entity_id(passenger)
+    transport_id = get_entity_id(transport)
+    model = passenger.models[0]
+    model_id = get_entity_id(model)
+
+    # The model's closest edge is within 3", but the far side of its base is outside 3".
+    positions = [{"model_id": model_id, "position": [13.5, 10.0, 0.0], "facing": 0.0}]
+    disembark = DecisionOption.create("Disembark", payload={"unit_id": unit_id, "transport_id": transport_id})
+    req = DecisionRequest.create(
+        DECISION_DISEMBARK,
+        "Disembark passengers",
+        player_id=player.id,
+        options=[disembark],
+        context={"unit_id": unit_id, "transport_id": transport_id, "disembark_max_distance": 3.0},
+    )
+    game.request_decision(req)
+
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=player.id,
+        payload={
+            "decision_id": req.decision_id,
+            "option_id": disembark.option_id,
+            "result_payload": {"model_positions": positions},
+        },
+    )
+    result = game.apply_command(cmd)
+
+    assert result.ok is False
+    assert "wholly within disembark range" in " ".join(result.errors)
+    assert passenger.embarked_in is transport
+    assert passenger not in game.map.units

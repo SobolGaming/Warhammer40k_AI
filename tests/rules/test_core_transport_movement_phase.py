@@ -136,6 +136,23 @@ def _find_disembark_positions(
     return positions
 
 
+def _position_is_wholly_within_transport(
+    model,
+    position: tuple[float, float, float, float],
+    transport: Unit,
+    *,
+    max_distance: float,
+) -> bool:
+    x, y, z, facing = position
+    candidate_shape = model.model_base.get_base_shape_at(float(x), float(y), float(facing))
+    transport_shape = transport.models[0].model_base.get_base_shape()
+    dz = abs(float(z) - float(transport.models[0].model_base.z))
+    if dz > float(max_distance):
+        return False
+    horizontal = ((float(max_distance) * float(max_distance)) - (dz * dz)) ** 0.5
+    return bool(transport_shape.buffer(horizontal + 1e-6).covers(candidate_shape))
+
+
 def _resolve_decision(
     game: Game,
     player: Player,
@@ -331,6 +348,40 @@ def test_core_disembark_before_transport_moves_allows_later_move_or_advance_but_
     actions = {str(option.payload.get("action_type")) for option in request.options}
     assert {"move", "advance"}.issubset(actions)
     assert "stationary" not in actions
+
+
+def test_disembark_search_does_not_use_center_only_transport_range_for_hulls() -> None:
+    game, _player, _opponent, army, _enemy_army = _build_game()
+    wave_serpent = _waha_unit("Wave Serpent", faction_id="AE")
+    banshees = _waha_unit("Howling Banshees", faction_id="AE")
+    jain_zar = _waha_unit("Jain Zar", faction_id="AE")
+    avatar = _waha_unit("Avatar of Khaine", faction_id="AE")
+    wraithlord = _waha_unit("Wraithlord", faction_id="AE")
+
+    for unit in (wave_serpent, banshees, jain_zar, avatar, wraithlord):
+        army.add_unit(unit)
+    game.rebuild_entity_registry()
+
+    for unit, position in (
+        (wave_serpent, (4.9, 38.382, 0.0, 0.0)),
+        (avatar, (10.725, 38.382, 0.0, 0.0)),
+        (wraithlord, (13.981, 38.382, 0.0, 0.0)),
+        (jain_zar, (9.65211418636433, 41.12563440471728, 0.0, 0.0)),
+    ):
+        unit.models[0].set_location(*position)
+        assert game.map.place_unit(unit) is True
+
+    positions = banshees._find_disembark_positions(
+        wave_serpent.models[0].model_base,
+        game.map,
+        3.0,
+    )
+
+    if positions is not None:
+        assert all(
+            _position_is_wholly_within_transport(model, position, wave_serpent, max_distance=3.0)
+            for model, position in zip(banshees.models, positions)
+        )
 
 
 def test_core_disembark_after_transport_normal_move_counts_as_moved_and_blocks_charge() -> None:

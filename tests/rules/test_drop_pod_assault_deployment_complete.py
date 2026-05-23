@@ -261,7 +261,7 @@ class TestDropPodAssaultAndDeploymentComplete(unittest.TestCase):
             game,
             req,
             opt.option_id,
-            result_payload={"model_positions": [{"model_id": passenger_model_id, "position": [25.0, 20.0, 0.0]}]},
+            result_payload={"model_positions": [{"model_id": passenger_model_id, "position": [23.0, 20.0, 0.0]}]},
             player_id=sm_player.id,
         )
         self.assertFalse(bool(getattr(invalid, "ok", False)))

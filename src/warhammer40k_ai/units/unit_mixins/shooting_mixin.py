@@ -2,6 +2,7 @@
 
 from ._common import *
 import logging
+from shapely.errors import GEOSException
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +74,35 @@ def _shooting_declaration_diagnostic(
 
 
 class ShootingMixin:
+    @staticmethod
+    def _disembark_base_wholly_within_transport(
+        candidate_base: object,
+        transport_base: object,
+        max_distance: float,
+    ) -> bool:
+        """
+        Return whether every part of candidate_base is within max_distance of the transport base/hull.
+
+        Disembark uses "wholly within", so closest edge-to-edge distance is not enough. A circular base
+        can have its center within range while the far side of the base is outside the legal envelope.
+        """
+        try:
+            limit = float(max_distance)
+            dz = abs(float(getattr(candidate_base, "z", 0.0)) - float(getattr(transport_base, "z", 0.0)))
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if limit < 0.0 or dz > limit + 1e-6:
+            return False
+        horizontal_limit_sq = max(0.0, (limit * limit) - (dz * dz))
+        horizontal_limit = math.sqrt(horizontal_limit_sq)
+        try:
+            transport_shape = transport_base.get_base_shape()
+            candidate_shape = candidate_base.get_base_shape()
+            legal_region = transport_shape.buffer(horizontal_limit + 1e-6)
+            return bool(legal_region.covers(candidate_shape))
+        except (AttributeError, TypeError, ValueError, GEOSException):
+            return False
+
     def can_shoot_out_of_phase_at_target(self, target_unit, game_map: 'Map') -> bool:
         """Return whether this unit can currently make any ranged attacks into the target out of phase."""
         if target_unit is None or game_map is None:
@@ -4114,19 +4144,17 @@ class ShootingMixin:
                     y = ty + math.sin(ang) * r
                     z = tz
 
-                    # Base-to-base "within max_distance" check
+                    # Disembark requires the whole base to be within max_distance of the transport.
                     try:
                         candidate_base = self._create_potential_base(x, y, z, facing, model=model)
-                        # Wholly within X of a unit is stronger than just edge-distance; but for our placement search
-                        # we enforce a conservative necessary condition: base-to-base distance <= X.
-                        # (The final placement validator for disembark handles the full constraints.)
-                        # Use base-plane 3D distance (closest points on bases/hulls), not model height.
-                        from ...utility.aura_utils import distance_between_bases_3d
-                        edge = float(distance_between_bases_3d(candidate_base, transport_base))
-                        if edge > float(max_distance) + 1e-6:
+                        if not self._disembark_base_wholly_within_transport(
+                            candidate_base,
+                            transport_base,
+                            float(max_distance),
+                        ):
                             continue
-                    except Exception:
-                        pass
+                    except (AttributeError, TypeError, ValueError, GEOSException):
+                        continue
 
                     # Collision checks vs battlefield
                     try:
@@ -4264,11 +4292,13 @@ class ShootingMixin:
                 y = ty + math.sin(ang) * r
                 z = tz
 
-                # Base-to-base "within max_distance" check
-                from ...utility.aura_utils import distance_between_bases_3d
+                # Disembark requires the whole base to be within max_distance of the transport.
                 candidate_base = self._create_potential_base(x, y, z, facing, model=model)
-                edge = float(distance_between_bases_3d(candidate_base, transport_base))
-                if edge > max_distance + 1e-6:
+                if not self._disembark_base_wholly_within_transport(
+                    candidate_base,
+                    transport_base,
+                    float(max_distance),
+                ):
                     continue
 
                 # Collision checks vs battlefield
@@ -5531,12 +5561,15 @@ class ShootingMixin:
             return {"valid": False, "reason": "Invalid base"}
 
         try:
-            from ...utility.aura_utils import distance_between_bases_3d
-            edge = float(distance_between_bases_3d(candidate_base, transport_base))
-            if edge > float(max_distance) + 1e-6:
-                return {"valid": False, "reason": "Too far from transport"}
-        except Exception:
-            return {"valid": False, "reason": "Range check failed"}
+            wholly_within = self._disembark_base_wholly_within_transport(
+                candidate_base,
+                transport_base,
+                float(max_distance),
+            )
+        except (AttributeError, TypeError, ValueError, GEOSException):
+            wholly_within = False
+        if not wholly_within:
+            return {"valid": False, "reason": "Model is not wholly within disembark range of the transport"}
 
         try:
             if not game_map.is_within_boundary(model, destination=(float(x), float(y))):
