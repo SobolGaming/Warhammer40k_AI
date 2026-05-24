@@ -77,6 +77,18 @@ Replay-store persistence note:
   choices. A Move Units chain records the selected unit first, then its movement
   action, then any required Advance roll and reroll-decline/selection decision,
   then the resulting `MOVE_UNIT` endpoint payload after the roll is final.
+- Mechanical dice decisions (`REQUEST_DICE_ROLL`, `SELECT_DICE_REROLL`, and
+  `REROLL_ROLL`) use a request fast path. They carry ruleset, roll, dispatch,
+  and time-budget context, but skip descriptor compilation, AI orchestration
+  context, movement/deployment intent, and solver candidate construction.
+  Re-roll selection requests keep lightweight semantic metadata for command
+  re-roll scoring using the fixed mechanical descriptor identity. This
+  intentionally keeps mechanical request events small; because branch-scoped RNG
+  hashes replay history, enabling the fast path can change future dice results
+  compared with pre-fast-path replays, but repeated runs from the same seed
+  remain deterministic. DecisionRecord output falls back to the same fixed
+  mechanical descriptor identity so schema-required descriptor fields remain
+  deterministic without compiling game descriptors for dice requests.
 - Voluntary movement-phase disembark choices use the same parent contract:
   the embarked unit is selected first, then its `DISEMBARK` choice is recorded.
 - `SELECT_UNIT` option labels are replay-facing identifiers. When multiple units

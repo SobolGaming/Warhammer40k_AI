@@ -74,7 +74,10 @@ def test_destroyed_transport_disembark_retries_as_emergency_after_final_validati
         passenger,
         "_find_disembark_positions",
         side_effect=[normal_positions, emergency_positions],
-    ) as find_positions, patch.object(game.map, "place_unit", side_effect=[False, True]) as place_unit:
+    ) as find_positions, patch.object(game.map, "place_unit", side_effect=[False, True]) as place_unit, patch(
+        "warhammer40k_ai.units.unit.get_roll",
+        return_value=4,
+    ) as roll_mock:
         ok = passenger.disembark(
             game_map=game.map,
             transport_unit=transport,
@@ -92,6 +95,12 @@ def test_destroyed_transport_disembark_retries_as_emergency_after_final_validati
     assert find_positions.call_count == 2
     assert find_positions.call_args_list[0].kwargs["max_distance"] == 3.0
     assert find_positions.call_args_list[1].kwargs["max_distance"] == 6.0
+    assert roll_mock.call_args.kwargs["player"] is player
+    assert roll_mock.call_args.kwargs["roll_type"] == "destroyed_transport_disembark"
+    assert (
+        roll_mock.call_args.kwargs["reason"]
+        == "Destroyed Transport disembark casualty roll for Passengers Test Model from Transport"
+    )
 
 
 def test_normal_disembark_final_validation_failure_logs_warning_not_error(caplog):

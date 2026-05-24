@@ -10331,80 +10331,127 @@ class AeldariStratagemMixin:
         self._queue_reaction(payload)
 
     def _roll_aeldari_crushing_strides_mortal_wounds(self, source_unit: Any, enemy_unit: Any, roll_count: int) -> int:
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll, get_roll_with_optional_context
         from ..utility.event_bus import append_dice
 
         count = max(0, int(roll_count or 0))
-        rolls = [get_roll("D6") for _ in range(count)]
-        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
         player = getattr(source_unit.get_parent_army(), "player", None) if source_unit is not None else None
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        enemy_name = str(getattr(enemy_unit, "name", "Enemy") or "Enemy")
+        rolls = [
+            get_roll_with_optional_context(
+                get_roll,
+                "D6",
+                player=player,
+                reason=f"Crushing Strides mortal wound roll {index + 1}/{int(count)} for {source_name} vs {enemy_name}",
+                roll_type="stratagem_mortal_wounds",
+            )
+            for index in range(count)
+        ]
+        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
         if player is not None:
             append_dice(
                 player,
                 (
-                    f"Crushing Strides rolls for {getattr(source_unit, 'name', 'Unit')} vs "
-                    f"{getattr(enemy_unit, 'name', 'Enemy')} ({int(count)}D6): {rolls} => {int(mortals)} mortal wounds"
+                    f"Crushing Strides rolls for {source_name} vs "
+                    f"{enemy_name} ({int(count)}D6): {rolls} => {int(mortals)} mortal wounds"
                 ),
             )
         return int(mortals)
 
     def _roll_aeldari_vengeful_sorrow_distance(self, unit: Any) -> int:
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll, get_roll_with_optional_context
         from ..utility.event_bus import append_dice
 
-        base_roll = get_roll("D6")
-        max_distance = int(base_roll + 1)
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+        base_roll = get_roll_with_optional_context(
+            get_roll,
+            "D6",
+            player=player,
+            reason=f"Vengeful Sorrow move distance roll for {unit_name}",
+            roll_type="stratagem_move_distance",
+        )
+        max_distance = int(base_roll + 1)
         if player is not None:
             append_dice(
                 player,
-                f"Vengeful Sorrow roll: {int(base_roll or 0)} (move {int(max_distance)}\") for {getattr(unit, 'name', 'Unit')}",
+                f"Vengeful Sorrow roll: {int(base_roll or 0)} (move {int(max_distance)}\") for {unit_name}",
             )
         return int(max_distance)
 
     def _roll_aeldari_into_the_breach_distance(self, unit: Any) -> int:
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll, get_roll_with_optional_context
         from ..utility.event_bus import append_dice
 
-        base_roll = get_roll("D6")
-        max_distance = int(base_roll + 1)
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+        base_roll = get_roll_with_optional_context(
+            get_roll,
+            "D6",
+            player=player,
+            reason=f"Into the Breach move distance roll for {unit_name}",
+            roll_type="stratagem_move_distance",
+        )
+        max_distance = int(base_roll + 1)
         if player is not None:
             append_dice(
                 player,
-                f"Into the Breach roll: {int(base_roll or 0)} (move {int(max_distance)}\") for {getattr(unit, 'name', 'Unit')}",
+                f"Into the Breach roll: {int(base_roll or 0)} (move {int(max_distance)}\") for {unit_name}",
             )
         return int(max_distance)
 
     def _roll_aeldari_lethal_ruse_mortal_wounds(self, unit: Any, enemy_unit: Any) -> int:
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll, get_roll_with_optional_context
         from ..utility.event_bus import append_dice
 
-        rolls = [get_roll("D6") for _ in range(6)]
-        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
         player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+        enemy_name = str(getattr(enemy_unit, "name", "Enemy") or "Enemy")
+        rolls = [
+            get_roll_with_optional_context(
+                get_roll,
+                "D6",
+                player=player,
+                reason=f"Lethal Ruse mortal wound roll {index + 1}/6 for {unit_name} vs {enemy_name}",
+                roll_type="stratagem_mortal_wounds",
+            )
+            for index in range(6)
+        ]
+        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
         if player is not None:
             append_dice(
                 player,
                 (
-                    f"Lethal Ruse rolls for {getattr(unit, 'name', 'Unit')} vs {getattr(enemy_unit, 'name', 'Enemy')}: "
+                    f"Lethal Ruse rolls for {unit_name} vs {enemy_name}: "
                     f"{rolls} => {int(mortals)} mortal wounds"
                 ),
             )
         return int(mortals)
 
     def _roll_aeldari_ishas_fury_mortal_wounds(self, psyker_unit: Any, enemy_unit: Any) -> int:
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll, get_roll_with_optional_context
         from ..utility.event_bus import append_dice
 
-        rolls = [get_roll("D6") for _ in range(6)]
-        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
         player = getattr(psyker_unit.get_parent_army(), "player", None) if psyker_unit is not None else None
+        psyker_name = str(getattr(psyker_unit, "name", "Unit") or "Unit")
+        enemy_name = str(getattr(enemy_unit, "name", "Enemy") or "Enemy")
+        rolls = [
+            get_roll_with_optional_context(
+                get_roll,
+                "D6",
+                player=player,
+                reason=f"Isha's Fury mortal wound roll {index + 1}/6 for {psyker_name} vs {enemy_name}",
+                roll_type="stratagem_mortal_wounds",
+            )
+            for index in range(6)
+        ]
+        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
         if player is not None:
             append_dice(
                 player,
                 (
-                    f"Isha's Fury rolls for {getattr(psyker_unit, 'name', 'Unit')} vs {getattr(enemy_unit, 'name', 'Enemy')}: "
+                    f"Isha's Fury rolls for {psyker_name} vs {enemy_name}: "
                     f"{rolls} => {int(mortals)} mortal wounds"
                 ),
             )

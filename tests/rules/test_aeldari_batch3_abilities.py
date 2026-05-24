@@ -709,6 +709,10 @@ def test_tears_of_isha_replay_records_target_selection_before_d3_roll(tmp_path):
         DECISION_CHOOSE_QUARRY,
         DECISION_REQUEST_DICE_ROLL,
     ]
+    roll_request = reader.get_request_payload(2)
+    roll_spec = dict(dict(roll_request.get("context", {}) or {}).get("roll_spec", {}) or {})
+    assert roll_spec["roll_type"] == "wound_regain"
+    assert roll_spec["reason"] == "Tears of Isha (Psychic) wound regain for Wraithguard"
     assert target.models[0].wounds == 4
 
 

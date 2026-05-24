@@ -566,7 +566,7 @@ class TestAeldariCorsairCoterieStratagems(unittest.TestCase):
         pending = _pending_by_name(aeldari_player.stratagems, "VENGEFUL SORROW")
         self.assertIsNotNone(pending)
 
-        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=4):
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=4) as roll_mock:
             ok = aeldari_player.stratagems.use(
                 str(pending.get("stratagem", "")),
                 unit=defender,
@@ -574,6 +574,12 @@ class TestAeldariCorsairCoterieStratagems(unittest.TestCase):
                 dequeue=True,
             )
         self.assertTrue(ok)
+        self.assertEqual(roll_mock.call_args.kwargs["player"], aeldari_player)
+        self.assertEqual(roll_mock.call_args.kwargs["roll_type"], "stratagem_move_distance")
+        self.assertEqual(
+            roll_mock.call_args.kwargs["reason"],
+            "Vengeful Sorrow move distance roll for Corsair Voidscarred",
+        )
         self.assertEqual(int(aeldari_player.command_points or 0), 9)
 
         move_requests = [
@@ -682,7 +688,7 @@ class TestAeldariCorsairCoterieStratagems(unittest.TestCase):
         pending = _pending_by_name(aeldari_player.stratagems, "INTO THE BREACH")
         self.assertIsNotNone(pending)
 
-        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=3):
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=3) as roll_mock:
             ok = aeldari_player.stratagems.use(
                 str(pending.get("stratagem", "")),
                 unit=attacker,
@@ -690,6 +696,12 @@ class TestAeldariCorsairCoterieStratagems(unittest.TestCase):
                 dequeue=True,
             )
         self.assertTrue(ok)
+        self.assertEqual(roll_mock.call_args.kwargs["player"], aeldari_player)
+        self.assertEqual(roll_mock.call_args.kwargs["roll_type"], "stratagem_move_distance")
+        self.assertEqual(
+            roll_mock.call_args.kwargs["reason"],
+            "Into the Breach move distance roll for Corsair Voidscarred",
+        )
         self.assertEqual(int(aeldari_player.command_points or 0), 9)
 
         move_requests = [
@@ -804,7 +816,7 @@ class TestAeldariCorsairCoterieStratagems(unittest.TestCase):
             return int(amount)
 
         enemy._apply_mortal_wounds_to_unit = types.MethodType(_apply_mortals, enemy)
-        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[4, 1, 5, 3, 6, 2]):
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[4, 1, 5, 3, 6, 2]) as roll_mock:
             ok = aeldari_player.stratagems.use(
                 str(pending.get("stratagem", "")),
                 unit=corsairs,
@@ -812,6 +824,13 @@ class TestAeldariCorsairCoterieStratagems(unittest.TestCase):
                 dequeue=True,
             )
         self.assertTrue(ok)
+        self.assertEqual(len(roll_mock.call_args_list), 6)
+        self.assertEqual(roll_mock.call_args_list[0].kwargs["player"], aeldari_player)
+        self.assertEqual(roll_mock.call_args_list[0].kwargs["roll_type"], "stratagem_mortal_wounds")
+        self.assertEqual(
+            roll_mock.call_args_list[0].kwargs["reason"],
+            "Lethal Ruse mortal wound roll 1/6 for Corsair Voidscarred vs Enemy Squad",
+        )
         self.assertEqual(int(aeldari_player.command_points or 0), 9)
         self.assertEqual(applied, [3])
         self.assertTrue(corsairs.can_charge_after_fall_back())

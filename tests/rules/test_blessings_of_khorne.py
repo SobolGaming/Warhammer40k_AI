@@ -273,6 +273,37 @@ class TestBlessingsOfKhorne(unittest.TestCase):
             mgr.resolve_total_carnage_queue(owning_unit=dummy_unit, game_map=object())
         self.assertEqual(calls["n"], 1)
 
+    def test_total_carnage_fight_on_death_roll_is_contextual(self):
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
+
+        mgr = BlessingsOfKhorneManager()
+        model = SimpleNamespace(name="Eightbound")
+        player = SimpleNamespace(id="player-1")
+        army = SimpleNamespace(player=player)
+        owning_unit = SimpleNamespace(
+            name="Exalted Eightbound",
+            get_parent_army=lambda: army,
+            _try_fight_on_death=lambda **_kwargs: self.fail("roll below 4 should not fight on death"),
+        )
+        mgr.queue_total_carnage_model(model)
+        calls = []
+
+        def _roll(expr, **kwargs):
+            calls.append((expr, dict(kwargs)))
+            return 1
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=_roll):
+            mgr.resolve_total_carnage_queue(owning_unit=owning_unit, game_map=None)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "D6")
+        self.assertEqual(calls[0][1]["player"], player)
+        self.assertEqual(calls[0][1]["roll_type"], "total_carnage")
+        self.assertEqual(
+            calls[0][1]["reason"],
+            "Total Carnage fight-on-death roll for Exalted Eightbound Eightbound",
+        )
+
 
 class TestBlessingsCombatInjection(unittest.TestCase):
     def _make_melee_profile(self, keywords: str = ""):

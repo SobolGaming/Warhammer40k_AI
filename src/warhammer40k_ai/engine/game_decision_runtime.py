@@ -21,6 +21,11 @@ from .deployment_solver import generate_deployment_candidates
 from .descriptor_compiler import compile_descriptor_bundle
 from .dice_rolls import DiceRollState
 from .limited_use_context import normalize_optional_ability_limited_use_context
+from .mechanical_decisions import (
+    MECHANICAL_DECISION_TYPES,
+    MECHANICAL_DESCRIPTOR_BUNDLE_ID,
+    mechanical_descriptor_ids,
+)
 from .movement_intent import MovementIntent
 from .movement_solver import generate_move_unit_candidates, generate_select_movement_action_candidates
 from .path_witness import PathWitnessStore
@@ -91,6 +96,90 @@ def _decorate_dispatch_context(game, request, ctx: dict) -> dict:
     return decorated
 
 
+def _ensure_time_budget_context(game, request, ctx: dict) -> dict:
+    time_manager = getattr(game, "time_manager", None)
+    if time_manager is None:
+        time_manager = TimeManager()
+        game.time_manager = time_manager
+    return time_manager.decorate_context(request.decision_type, ctx)
+
+
+def _ensure_ruleset_context(game, ctx: dict) -> dict:
+    decorated = dict(ctx or {})
+    ruleset_ctx = game.get_ruleset_context()
+    if "rules_bundle" not in decorated:
+        decorated["rules_bundle"] = dict(ruleset_ctx or {})
+    elif dict(decorated.get("rules_bundle", {}) or {}) != dict(ruleset_ctx or {}):
+        raise ValueError("Decision context rules_bundle mismatch with game rules bundle.")
+    for key, value in ruleset_ctx.items():
+        if key not in decorated:
+            decorated[key] = value
+        elif decorated.get(key) != value:
+            raise ValueError(f"Decision context ruleset mismatch for {key}: {decorated.get(key)} != {value}")
+    rules_bundle = getattr(game, "ruleset_bundle", None)
+    rules_bundle_id = str(getattr(rules_bundle, "rules_bundle_id", "") or "")
+    if rules_bundle_id and "rules_bundle_id" not in decorated:
+        decorated["rules_bundle_id"] = rules_bundle_id
+    return decorated
+
+
+def _descriptor_context_from_bundle(descriptor_bundle) -> dict:
+    return {
+        "descriptor_ids": descriptor_bundle.descriptor_ids(),
+        "descriptor_bundle_id": str(descriptor_bundle.bundle_id),
+    }
+
+
+def _ensure_roll_request_state(game, request, ctx: dict) -> dict:
+    if request.decision_type not in (DECISION_REQUEST_DICE_ROLL, DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
+        return ctx
+    roll_id = ctx.get("roll_id")
+    if roll_id is None or game.roll_manager is None:
+        return ctx
+    roll_state = game.roll_manager.get_roll(int(roll_id))
+    if roll_state is None:
+        spec = dict(ctx.get("roll_spec", {}) or {})
+        roll_state = DiceRollState(
+            roll_id=int(roll_id),
+            player_id=request.player_id,
+            spec=spec,
+            status="pending",
+        )
+        game.roll_manager.rolls[int(roll_id)] = roll_state
+    if request.decision_type in (DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
+        if "roll_spec" not in ctx:
+            ctx["roll_spec"] = dict(getattr(roll_state, "spec", {}) or {})
+        if "roll_state" not in ctx:
+            ctx["roll_state"] = roll_state.to_dict()
+    return ctx
+
+
+def _request_uses_mechanical_fast_path(request, ctx: dict) -> bool:
+    del ctx
+    return str(getattr(request, "decision_type", "") or "") in MECHANICAL_DECISION_TYPES
+
+
+def _queue_mechanical_request(game, request, ctx: dict) -> None:
+    ctx = _ensure_roll_request_state(game, request, ctx)
+    ctx = _ensure_ruleset_context(game, ctx)
+    ctx = _decorate_dispatch_context(game, request, ctx)
+    compute_tier = str(ctx.get("compute_tier", "P1") or "P1").upper()
+    ctx["compute_tier"] = compute_tier if compute_tier in {"P0", "P1", "P2"} else "P1"
+    ctx = _ensure_time_budget_context(game, request, ctx)
+    request.context = ctx
+    if request.decision_type in (DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
+        ctx["descriptor_ids"] = mechanical_descriptor_ids()
+        ctx["descriptor_bundle_id"] = MECHANICAL_DESCRIPTOR_BUNDLE_ID
+        request.context = ctx
+        ensure_candidate_semantic_metadata(
+            request,
+            rules_bundle_id=str(ctx.get("rules_bundle_id", "") or ""),
+            rules_bundle=dict(ctx.get("rules_bundle", {}) or {}),
+        )
+    game.decision_queue.add(request)
+    game.event_system.publish("decision_requested", request=request, game=game)
+
+
 @profiled_section("decision.request")
 def request_decision(game, request) -> None:
     """Queue a decision request (interrupt window)."""
@@ -110,44 +199,17 @@ def request_decision(game, request) -> None:
         ability_name=str(ctx.get("ability_name", "") or request.prompt),
         message=str(ctx.get("message", "") or request.prompt),
     )
-    if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
-        roll_id = ctx.get("roll_id")
-        if roll_id is not None and game.roll_manager is not None:
-            roll_state = game.roll_manager.get_roll(int(roll_id))
-            if roll_state is None:
-                spec = dict(ctx.get("roll_spec", {}) or {})
-                roll_state = DiceRollState(
-                    roll_id=int(roll_id),
-                    player_id=request.player_id,
-                    spec=spec,
-                    status="pending",
-                )
-                game.roll_manager.rolls[int(roll_id)] = roll_state
-            if request.decision_type in (DECISION_REROLL_ROLL, DECISION_SELECT_DICE_REROLL):
-                if "roll_spec" not in ctx:
-                    ctx["roll_spec"] = dict(getattr(roll_state, "spec", {}) or {})
-                if "roll_state" not in ctx:
-                    ctx["roll_state"] = roll_state.to_dict()
+    if _request_uses_mechanical_fast_path(request, ctx):
+        _queue_mechanical_request(game, request, ctx)
+        return
 
-    ruleset_ctx = game.get_ruleset_context()
-    if "rules_bundle" not in ctx:
-        ctx["rules_bundle"] = dict(ruleset_ctx or {})
-    elif dict(ctx.get("rules_bundle", {}) or {}) != dict(ruleset_ctx or {}):
-        raise ValueError("Decision context rules_bundle mismatch with game rules bundle.")
-    for key, value in ruleset_ctx.items():
-        if key not in ctx:
-            ctx[key] = value
-        elif ctx.get(key) != value:
-            raise ValueError(f"Decision context ruleset mismatch for {key}: {ctx.get(key)} != {value}")
-    rules_bundle = getattr(game, "ruleset_bundle", None)
-    rules_bundle_id = str(getattr(rules_bundle, "rules_bundle_id", "") or "")
-    if rules_bundle_id and "rules_bundle_id" not in ctx:
-        ctx["rules_bundle_id"] = rules_bundle_id
+    ctx = _ensure_roll_request_state(game, request, ctx)
+    ctx = _ensure_ruleset_context(game, ctx)
     ctx = _decorate_dispatch_context(game, request, ctx)
 
     descriptor_bundle = compile_descriptor_bundle(game)
     if "descriptor_ids" not in ctx or not isinstance(ctx.get("descriptor_ids"), dict):
-        ctx["descriptor_ids"] = descriptor_bundle.descriptor_ids()
+        ctx["descriptor_ids"] = _descriptor_context_from_bundle(descriptor_bundle)["descriptor_ids"]
     else:
         descriptor_ids = dict(ctx.get("descriptor_ids", {}) or {})
         expected_descriptor_ids = descriptor_bundle.descriptor_ids()
@@ -164,11 +226,7 @@ def request_decision(game, request) -> None:
     component_name = policy_component_for_request(request)
     ctx = attach_ai_orchestration_context(game, request, ctx, component_name)
 
-    time_manager = getattr(game, "time_manager", None)
-    if time_manager is None:
-        time_manager = TimeManager()
-        game.time_manager = time_manager
-    ctx = time_manager.decorate_context(request.decision_type, ctx)
+    ctx = _ensure_time_budget_context(game, request, ctx)
 
     if request.decision_type in (
         DECISION_CHOOSE_DEPLOYMENT_ZONE,

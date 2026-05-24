@@ -5451,10 +5451,22 @@ class ShootingMixin:
             # Mortal wounds
             # Destroyed transport: on 1 take 1 MW; Emergency: on 1-3 take 1 MW
             threshold = 3 if emergency else 1
+            passenger_player = getattr(army, "player", None) if army is not None else None
+            transport_name = str(getattr(transport_unit, "name", "Transport") or "Transport")
+            unit_name = str(getattr(self, "name", "Unit") or "Unit")
             for m in list(self.models):
                 if not getattr(m, "is_alive", False):
                     continue
-                roll = get_roll("D6")
+                model_name = str(getattr(m, "name", "") or getattr(m, "model_name", "") or "model")
+                roll = get_roll_context(
+                    "D6",
+                    player=passenger_player,
+                    reason=(
+                        f"Destroyed Transport disembark casualty roll for {unit_name} {model_name} "
+                        f"from {transport_name}"
+                    ),
+                    roll_type="destroyed_transport_disembark",
+                )
                 if roll <= threshold:
                     m.take_damage(1, is_mortal=True, game_map=game_map)
         else:
@@ -5763,10 +5775,22 @@ class ShootingMixin:
             if not self.is_battle_shocked():
                 self.apply_status_effect(BattleShockEffect(current_turn))
             threshold = 3 if emergency else 1
+            passenger_player = getattr(army, "player", None) if army is not None else None
+            transport_name = str(getattr(transport_unit, "name", "Transport") or "Transport")
+            unit_name = str(getattr(self, "name", "Unit") or "Unit")
             for m in list(self.models):
                 if not getattr(m, "is_alive", False):
                     continue
-                roll = get_roll("D6")
+                model_name = str(getattr(m, "name", "") or getattr(m, "model_name", "") or "model")
+                roll = get_roll_context(
+                    "D6",
+                    player=passenger_player,
+                    reason=(
+                        f"Destroyed Transport disembark casualty roll for {unit_name} {model_name} "
+                        f"from {transport_name}"
+                    ),
+                    roll_type="destroyed_transport_disembark",
+                )
                 if roll <= threshold:
                     m.take_damage(1, is_mortal=True, game_map=game_map)
         else:

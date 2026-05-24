@@ -800,11 +800,26 @@ class BlessingsOfKhorneManager:
         pending = list(self._pending_total_carnage)
         self._pending_total_carnage = []
 
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll, get_roll_with_optional_context
+        player = None
+        try:
+            army = owning_unit.get_parent_army()
+            player = getattr(army, "player", None) if army is not None else None
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            player = None
+        unit_name = str(getattr(owning_unit, "name", "Unit") or "Unit")
         for model in pending:
             try:
-                roll = get_roll("D6")
-            except Exception:
+                model_name = str(getattr(model, "name", "") or getattr(model, "model_name", "") or "").strip()
+                label_name = f"{unit_name} {model_name}".strip()
+                roll = get_roll_with_optional_context(
+                    get_roll,
+                    "D6",
+                    player=player,
+                    reason=f"Total Carnage fight-on-death roll for {label_name}",
+                    roll_type="total_carnage",
+                )
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 roll = 1
             if roll < 4:
                 continue

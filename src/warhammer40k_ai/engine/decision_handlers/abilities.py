@@ -202,11 +202,21 @@ def _apply_tears_of_isha_target_effect(
     if not wounded:
         return target_root
 
-    from ...utility.dice import get_roll
+    from ...utility.dice import get_roll, get_roll_with_optional_context
     from ...utility.event_bus import append_dice
 
     try:
-        heal = int(get_roll("D3") or 0)
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        heal = int(
+            get_roll_with_optional_context(
+                get_roll,
+                "D3",
+                player=player,
+                reason=f"{ability_name} wound regain for {target_name}",
+                roll_type="wound_regain",
+            )
+            or 0
+        )
     except (TypeError, ValueError):
         heal = 0
     if callable(append_dice) and player is not None:

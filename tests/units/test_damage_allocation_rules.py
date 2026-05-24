@@ -155,4 +155,4 @@ class TestDamageAllocationRules(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["valid"], True)
         self.assertEqual(records[0]["chosen_action_id"], f"{DECISION_ALLOCATE_DAMAGE}:unit:target:unit:target:model-a")
-        self.assertIs(records[0]["outcome"]["immediate_deltas"]["value"], target.models[0])
+        self.assertEqual(records[0]["outcome"]["immediate_deltas"]["value"], target.models[0].id)

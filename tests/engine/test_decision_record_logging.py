@@ -18,6 +18,7 @@ from warhammer40k_ai.engine.decision_requests import build_player_color_selectio
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player
+from warhammer40k_ai.units.wargear import Wargear
 
 
 def _build_game() -> tuple[Game, Player]:
@@ -127,6 +128,64 @@ def test_decision_record_store_merges_duplicate_decision_id_records() -> None:
     immediate = record["outcome"]["immediate_deltas"]
     assert immediate["errors"] == ["richer-context"]
     assert immediate["value"] == {"applied": True}
+
+
+def test_decision_record_outcome_serializes_wargear_profiles_without_object_reprs() -> None:
+    game, player = _build_game()
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Confirm action?",
+        player_id=player.id,
+        options=[DecisionOption.create("Yes", payload={"choice": True})],
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player.id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+    wargear = Wargear(
+        {
+            "name": "Executioner - strike",
+            "type": "Melee",
+            "range": "Melee",
+            "A": "4",
+            "BS_WS": "2+",
+            "S": "5",
+            "AP": "-3",
+            "D": "2",
+            "description": "Precision",
+        }
+    )
+    profile = wargear.profiles["strike"]
+
+    record = game.decision_record_store.record_resolution(
+        request,
+        result,
+        ok=True,
+        errors=(),
+        value={"weapon_profile": profile},
+        wall_clock_ms=1,
+    )
+
+    serialized_profile = record["outcome"]["immediate_deltas"]["value"]["weapon_profile"]
+    assert " object at 0x" not in str(record["outcome"])
+    assert serialized_profile == {
+        "__wargear_profile__": {
+            "profile_name": "strike",
+            "parent_wargear_name": "Executioner",
+            "parent_wargear_type": "Melee",
+            "wargear_data": {
+                "range": "Melee",
+                "A": "4",
+                "BS_WS": "2+",
+                "S": "5",
+                "AP": "-3",
+                "D": "2",
+                "description": "Precision",
+            },
+        }
+    }
 
 
 def test_decision_seed_does_not_depend_on_request_created_at() -> None:

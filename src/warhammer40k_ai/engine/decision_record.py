@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass
+from enum import Enum
 import hashlib
 import json
 import os
@@ -12,6 +13,11 @@ from typing import Any, Optional
 from .descriptor_bundle import descriptor_bundle_id as build_descriptor_bundle_id
 from .descriptor_compiler import compile_descriptor_bundle
 from .decisions import CandidateAction, DecisionRequest, DecisionResult, _canonicalize_value
+from .mechanical_decisions import (
+    MECHANICAL_DECISION_TYPES,
+    MECHANICAL_DESCRIPTOR_BUNDLE_ID,
+    mechanical_descriptor_ids,
+)
 from .path_witness import build_model_path_witness_for_unit
 from .ruleset import RulesetBundle
 from .state_blob import all_player_obs_states, canonical_omniscient_state
@@ -40,6 +46,49 @@ def _hash_as_u31(value: str) -> int:
 
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _stable_wargear_profile_payload(value: Any) -> dict[str, Any] | None:
+    type_name = f"{value.__class__.__module__}.{value.__class__.__name__}"
+    if type_name != "warhammer40k_ai.units.wargear.WargearProfile":
+        return None
+    parent = getattr(value, "parent_wargear", None)
+    return {
+        "__wargear_profile__": {
+            "profile_name": str(getattr(value, "name", "") or ""),
+            "parent_wargear_name": str(getattr(parent, "name", "") or ""),
+            "parent_wargear_type": str(getattr(parent, "type", "") or ""),
+            "wargear_data": {
+                "range": str(getattr(value, "_raw_range", "") or ""),
+                "A": str(getattr(value, "_raw_attacks", "") or ""),
+                "BS_WS": str(getattr(value, "_raw_skill", "") or ""),
+                "S": str(getattr(value, "_raw_strength", "") or ""),
+                "AP": str(getattr(value, "_raw_ap", "") or ""),
+                "D": str(getattr(value, "_raw_damage", "") or ""),
+                "description": str(getattr(value, "_raw_description", "") or ""),
+            },
+        }
+    }
+
+
+def _record_json_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    profile_payload = _stable_wargear_profile_payload(value)
+    if profile_payload is not None:
+        return profile_payload
+    if isinstance(value, Enum):
+        return {"__enum__": f"{value.__class__.__module__}.{value.__class__.__name__}.{value.name}"}
+    if isinstance(value, dict):
+        return {str(key): _record_json_value(inner) for key, inner in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_record_json_value(inner) for inner in value]
+    if isinstance(value, set):
+        normalized = [_record_json_value(inner) for inner in value]
+        return sorted(normalized, key=lambda inner: _canonical_json(inner))
+    if is_dataclass(value):
+        return _record_json_value(value.__dict__)
+    return _canonicalize_value(value)
 
 
 def _default_omniscient_state(game: object) -> dict[str, Any]:
@@ -146,6 +195,8 @@ def _context_descriptor_ids(request: DecisionRequest, game: object) -> dict[str,
     }
     if _descriptor_ids_complete(resolved):
         return resolved
+    if _decision_type(request) in MECHANICAL_DECISION_TYPES:
+        return mechanical_descriptor_ids()
     compiled_descriptor_ids = compile_descriptor_bundle(game).descriptor_ids()
     mission_descriptor_id = str(resolved.get("mission_descriptor_id", "") or "")
     if not mission_descriptor_id or mission_descriptor_id == DEFAULT_MISSION_DESCRIPTOR_ID:
@@ -193,6 +244,8 @@ def _context_descriptor_bundle_id(
     explicit = str(ctx.get("descriptor_bundle_id", "") or "")
     if explicit:
         return explicit
+    if _decision_type(request) in MECHANICAL_DECISION_TYPES:
+        return MECHANICAL_DESCRIPTOR_BUNDLE_ID
     compiled_bundle = compile_descriptor_bundle(game)
     compiled_descriptor_ids = compiled_bundle.descriptor_ids()
     if descriptor_ids == compiled_descriptor_ids:
@@ -226,7 +279,9 @@ def _context_version_adapter_boundary(
 
 
 def _ensure_outcome_shape(outcome: dict[str, Any]) -> dict[str, Any]:
-    immediate = dict(outcome.get("immediate_deltas", {}) or {})
+    immediate = _record_json_value(dict(outcome.get("immediate_deltas", {}) or {}))
+    if not isinstance(immediate, dict):
+        immediate = {}
     normalized: dict[str, Any] = {"immediate_deltas": immediate}
     if "end_of_turn_return" in outcome:
         normalized["end_of_turn_return"] = float(outcome.get("end_of_turn_return") or 0.0)
