@@ -1868,6 +1868,7 @@ class GamePhaseHandlersMixin:
             DECISION_DISEMBARK,
             DECISION_EMBARK,
             DECISION_REQUEST_DICE_ROLL,
+            DECISION_SELECT_DICE_REROLL,
             DECISION_SELECT_MOVEMENT_ACTION,
         )
 
@@ -2009,12 +2010,25 @@ class GamePhaseHandlersMixin:
         elif decision_type == DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES:
             unit_id = self._resolve_request_unit_id(request)
             movement_type = "advance"
-        elif decision_type == DECISION_REQUEST_DICE_ROLL:
+        elif decision_type in {DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL}:
             ctx = dict(getattr(request, "context", {}) or {})
             roll_spec = dict(ctx.get("roll_spec", {}) or {})
             if str(ctx.get("roll_type", "") or roll_spec.get("roll_type", "")).strip().lower() != "advance":
                 return
-            unit_id = str(roll_spec.get("unit_id", "") or "").strip()
+            roll_id = ctx.get("roll_id", roll_spec.get("roll_id"))
+            if roll_id is None:
+                return
+            roll_manager = getattr(self, "roll_manager", None)
+            get_roll = getattr(roll_manager, "get_roll", None)
+            if not callable(get_roll):
+                return
+            try:
+                roll_state = get_roll(int(roll_id))
+            except (TypeError, ValueError):
+                return
+            if roll_state is None or not bool(getattr(roll_state, "final", False)):
+                return
+            unit_id = str(roll_spec.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
             movement_type = "advance"
         elif decision_type == DECISION_CONFIRM_YES_NO:
             ctx = dict(getattr(request, "context", {}) or {})

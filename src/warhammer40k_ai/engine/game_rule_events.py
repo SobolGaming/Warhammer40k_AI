@@ -13926,6 +13926,9 @@ class GameRuleEventService(GameServiceBase):
                 from .decision_handlers.abilities import drain_deferred_tears_of_isha_executions
 
                 drain_deferred_tears_of_isha_executions(self, request=request)
+            drain_coherency_rechecks = getattr(self, "_drain_deferred_post_casualty_coherency_rechecks", None)
+            if callable(drain_coherency_rechecks):
+                drain_coherency_rechecks()
             self._maybe_queue_reactive_move_followup(request, result)
             self._maybe_queue_setup_reactive_followup(request, result)
             self._maybe_queue_reverberating_summons_followup(request, result)

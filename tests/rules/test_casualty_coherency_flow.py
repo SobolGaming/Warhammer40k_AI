@@ -212,3 +212,26 @@ def test_additional_casualty_refresh_clears_stale_coherency_request() -> None:
     first.die()
 
     assert list(game.decision_queue.list() or []) == []
+
+
+def test_active_coherency_request_is_not_refreshed_while_resolving() -> None:
+    game, unit = _build_game()
+    middle = unit.models[1]
+    first = unit.models[0]
+
+    middle.wounds = 0
+    middle.die()
+    request = game.decision_queue.list()[0]
+    setattr(request, "_resolution_in_progress", True)
+
+    first.wounds = 0
+    first.die()
+
+    assert game.decision_queue.list() == [request]
+    assert getattr(game, "_deferred_post_casualty_coherency_recheck_unit_ids") == {unit.id}
+
+    setattr(request, "_resolution_in_progress", False)
+    game.decision_queue.pop(request.decision_id)
+    game._drain_deferred_post_casualty_coherency_rechecks()
+
+    assert list(game.decision_queue.list() or []) == []

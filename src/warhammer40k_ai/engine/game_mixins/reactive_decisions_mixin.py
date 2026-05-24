@@ -99,6 +99,31 @@ class GameReactiveDecisionsMixin:
             pending.append(request)
         return pending
 
+    def _defer_post_casualty_coherency_recheck(self, unit_id: str) -> None:
+        unit_key = str(unit_id or "").strip()
+        if not unit_key:
+            return
+        pending = set(getattr(self, "_deferred_post_casualty_coherency_recheck_unit_ids", set()) or set())
+        pending.add(unit_key)
+        setattr(self, "_deferred_post_casualty_coherency_recheck_unit_ids", pending)
+
+    def _drain_deferred_post_casualty_coherency_rechecks(self) -> None:
+        pending = set(getattr(self, "_deferred_post_casualty_coherency_recheck_unit_ids", set()) or set())
+        if not pending:
+            return
+        setattr(self, "_deferred_post_casualty_coherency_recheck_unit_ids", set())
+        resolver = getattr(self, "_resolve_unit_by_id", None)
+        registry = getattr(self, "entity_registry", None)
+        for unit_id in sorted(pending):
+            unit = resolver(unit_id) if callable(resolver) else None
+            if unit is None and registry is not None:
+                get_entity = getattr(registry, "get", None)
+                if callable(get_entity):
+                    unit = get_entity(unit_id, kind="unit")
+            if unit is None:
+                continue
+            self._maybe_queue_post_casualty_coherency_resolution(unit=unit, destroyed_model=None)
+
     @staticmethod
     def _coherency_damage_source_label(unit, destroyed_model) -> str:
         damage_source = str(getattr(destroyed_model, "_last_damage_source_kind", "") or "").strip()
@@ -127,6 +152,9 @@ class GameReactiveDecisionsMixin:
         queue = getattr(self, "decision_queue", None)
         if queue is not None and hasattr(queue, "pop"):
             for pending in self._pending_post_casualty_coherency_requests(unit_id):
+                if bool(getattr(pending, "_resolution_in_progress", False)):
+                    self._defer_post_casualty_coherency_recheck(unit_id)
+                    return None
                 queue.pop(getattr(pending, "decision_id", None))
         if is_coherent:
             return None

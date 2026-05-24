@@ -73,8 +73,8 @@ Replay-store persistence note:
   their own decision steps rather than leaking backward into the parent step.
 - Movement-phase replay records parent choices before their automatic follow-up
   choices. A Move Units chain records the selected unit first, then its movement
-  action, then any required Advance roll, then the resulting `MOVE_UNIT`
-  endpoint payload.
+  action, then any required Advance roll and reroll-decline/selection decision,
+  then the resulting `MOVE_UNIT` endpoint payload after the roll is final.
 - Voluntary movement-phase disembark choices use the same parent contract:
   the embarked unit is selected first, then its `DISEMBARK` choice is recorded.
 - `SELECT_UNIT` option labels are replay-facing identifiers. When multiple units
@@ -100,6 +100,10 @@ Replay-store persistence note:
   `decision_idx`. Strict replay of `reconstruct_game_at_decision(decision_count)`
   therefore round-trips end-of-battle scoring and other post-decision terminal
   state without requiring a synthetic trailing decision.
+- Post-casualty coherency requests are not refreshed while the same coherency
+  request is actively resolving. If removing a coherency casualty requires a
+  follow-up coherency check, that recheck is deferred until the active decision
+  has settled so replay never records an orphan requested-only coherency choice.
 - When multiple keyframes share the same `decision_idx`, strict replay uses the
   newest keyframe for that index.
 - `scripts/audit_replay_decisions.py` performs a replay-facing sequence audit:

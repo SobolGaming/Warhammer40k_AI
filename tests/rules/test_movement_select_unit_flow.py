@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_SELECT_MOVEMENT_ACTION, DECISION_SELECT_UNIT
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_MOVE_UNIT,
+    DECISION_SELECT_DICE_REROLL,
+    DECISION_SELECT_MOVEMENT_ACTION,
+    DECISION_SELECT_UNIT,
+)
 from warhammer40k_ai.engine.decision_requests import build_select_movement_action_request, build_select_unit_request
 from warhammer40k_ai.engine.game_mixins.phase_handlers_mixin import GamePhaseHandlersMixin
-from warhammer40k_ai.engine.decisions import DecisionRequest, DecisionResult
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.units.unit import MovementAction
 
 
@@ -18,6 +23,14 @@ class _DecisionQueueStub:
 
     def append(self, request: DecisionRequest) -> None:
         self._requests.append(request)
+
+
+class _RollManagerStub:
+    def __init__(self, roll_state) -> None:
+        self._roll_state = roll_state
+
+    def get_roll(self, _roll_id: int):
+        return self._roll_state
 
 
 class _PlayerStub:
@@ -180,6 +193,72 @@ def test_move_units_followup_queues_move_unit_after_move_choice() -> None:
     assert queued.decision_type == DECISION_MOVE_UNIT
     assert queued.context["movement_type"] == "move"
     assert float(queued.context["max_distance"]) == 6.0
+
+
+def test_move_units_followup_waits_for_advance_reroll_to_finalize() -> None:
+    game, unit = _build_flow_game()
+    unit.round_state.advance_roll = 4
+    game.roll_manager = _RollManagerStub(SimpleNamespace(final=False))
+    option = DecisionOption.create("No re-roll", payload={"action_id": "none"})
+    request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Advance roll",
+        player_id="player-1",
+        options=[option],
+        context={
+            "roll_id": 19,
+            "roll_spec": {
+                "roll_id": 19,
+                "roll_type": "advance",
+                "unit_id": unit.id,
+            },
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={},
+    )
+
+    game._maybe_queue_movement_phase_move_units_followup(request, result)
+
+    assert game.queued_requests == []
+
+
+def test_move_units_followup_queues_advance_move_after_reroll_declined() -> None:
+    game, unit = _build_flow_game()
+    unit.round_state.advance_roll = 4
+    game.roll_manager = _RollManagerStub(SimpleNamespace(final=True))
+    option = DecisionOption.create("No re-roll", payload={"action_id": "none"})
+    request = DecisionRequest.create(
+        DECISION_SELECT_DICE_REROLL,
+        "Re-roll options: Advance roll",
+        player_id="player-1",
+        options=[option],
+        context={
+            "roll_id": 19,
+            "roll_spec": {
+                "roll_id": 19,
+                "roll_type": "advance",
+                "unit_id": unit.id,
+            },
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id="player-1",
+        option_id=option.option_id,
+        payload={},
+    )
+
+    game._maybe_queue_movement_phase_move_units_followup(request, result)
+
+    assert len(game.queued_requests) == 1
+    queued = game.queued_requests[0]
+    assert queued.decision_type == DECISION_MOVE_UNIT
+    assert queued.context["movement_type"] == "advance"
+    assert float(queued.context["max_distance"]) == 10.0
 
 
 def test_advance_move_request_does_not_reuse_pre_roll_planned_endpoint() -> None:
