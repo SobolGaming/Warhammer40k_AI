@@ -5,7 +5,14 @@ from warhammer40k_ai.engine.event.system import EventSystem
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.command_kinds import CMD_NEXT_PHASE
 from warhammer40k_ai.engine.commands import GameCommand
-from warhammer40k_ai.engine.event_log import DeterministicEventLog
+from warhammer40k_ai.engine import event_log as event_log_mod
+from warhammer40k_ai.engine.event_log import (
+    _HISTORY_PRESERVE_ID_KEYS,
+    _is_id_key,
+    _normalize_ids,
+    DeterministicEventLog,
+    GameEvent,
+)
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.engine.replay import prepare_replay
@@ -736,3 +743,165 @@ def test_event_log_prunes_old_events_when_limit_reached():
     assert len(log.events) == 3
     assert [int(event.event_id) for event in log.events] == [3, 4, 5]
     assert log.dropped_through_event_id == 2
+
+
+def test_history_id_key_classifier_caches_exact_suffix_and_event_id_exception():
+    _is_id_key.cache_clear()
+
+    assert _is_id_key("player_id") is True
+    assert _is_id_key("actor_id") is True
+    assert _is_id_key("target_unit_id") is True
+    assert _is_id_key("model_ids") is True
+    assert _is_id_key("event_id") is False
+    assert _is_id_key(None) is False
+
+    before = _is_id_key.cache_info()
+    assert _is_id_key("player_id") is True
+    after = _is_id_key.cache_info()
+    assert after.hits == before.hits + 1
+
+
+def test_history_normalization_preserves_action_ids():
+    normalized = _normalize_ids(
+        {
+            "decision_id": "decision-raw",
+            "unit_id": "unit-raw",
+            "action_id": "move:unit-raw:advance",
+            "chosen_action_id": "chosen:unit-raw",
+            "action_ids": ["action:a", "action:b"],
+        },
+        {},
+        preserve_keys=_HISTORY_PRESERVE_ID_KEYS,
+    )
+
+    assert normalized["decision_id"] == "id_1"
+    assert normalized["unit_id"] == "id_2"
+    assert normalized["action_id"] == "move:unit-raw:advance"
+    assert normalized["chosen_action_id"] == "chosen:unit-raw"
+    assert normalized["action_ids"] == ["action:a", "action:b"]
+
+
+def test_history_fast_hash_matches_after_record_and_from_payload():
+    log = DeterministicEventLog()
+    log.record(
+        "decision_requested",
+        actor_id="player:a",
+        payload={"decision_id": "decision:a", "player_id": "player:a", "unit_id": "unit:a"},
+        validate_payload=False,
+    )
+    log.record(
+        "decision_resolved",
+        actor_id="player:a",
+        payload={"decision_id": "decision:a", "player_id": "player:a", "chosen_action_id": "action:a"},
+        validate_payload=False,
+    )
+
+    expected = log.compute_history_hash()
+    restored = DeterministicEventLog.from_payload(log.serialize_events(), mode="record")
+    replay = DeterministicEventLog.from_payload(log.serialize_events(), mode="replay")
+    replay.consume("decision_requested")
+    replay.consume("decision_resolved")
+
+    assert restored.compute_history_hash() == expected
+    assert replay.compute_history_hash() == expected
+
+
+def test_history_fast_hash_normalizes_raw_entity_ids_across_streams():
+    def build_log(player_id: str, decision_id: str, unit_id: str, model_id: str) -> DeterministicEventLog:
+        log = DeterministicEventLog()
+        log.record(
+            "decision_resolved",
+            actor_id=player_id,
+            payload={
+                "decision_id": decision_id,
+                "player_id": player_id,
+                "unit_id": unit_id,
+                "model_ids": [model_id],
+                "payload": {"target_model_id": model_id},
+            },
+            validate_payload=False,
+        )
+        return log
+
+    first = build_log("player:a", "decision:a", "unit:a", "model:a")
+    second = build_log("player:b", "decision:b", "unit:b", "model:b")
+
+    assert first.compute_history_hash(normalize_ids=True) == second.compute_history_hash(normalize_ids=True)
+    assert first.compute_history_hash(normalize_ids=False) != second.compute_history_hash(normalize_ids=False)
+
+
+def test_history_fast_hash_preserves_action_ids_as_hash_inputs():
+    def build_log(action_id: str, chosen_action_id: str) -> DeterministicEventLog:
+        log = DeterministicEventLog()
+        log.record(
+            "decision_resolved",
+            actor_id="player:a",
+            payload={
+                "decision_id": "decision:a",
+                "player_id": "player:a",
+                "action_id": action_id,
+                "chosen_action_id": chosen_action_id,
+            },
+            validate_payload=False,
+        )
+        return log
+
+    baseline = build_log("move:unit:a", "candidate:a")
+    same_entity_ids = build_log("move:unit:a", "candidate:a")
+    different_action = build_log("move:unit:b", "candidate:a")
+    different_chosen = build_log("move:unit:a", "candidate:b")
+
+    assert baseline.compute_history_hash() == same_entity_ids.compute_history_hash()
+    assert baseline.compute_history_hash() != different_action.compute_history_hash()
+    assert baseline.compute_history_hash() != different_chosen.compute_history_hash()
+
+
+def test_history_fast_hash_preserves_event_id_and_dropped_id_as_hash_inputs():
+    event_payload = {"decision_id": "decision:a", "player_id": "player:a"}
+    event_one = GameEvent(event_id=1, event_type="decision_resolved", actor_id="player:a", payload=event_payload)
+    event_two = GameEvent(event_id=2, event_type="decision_resolved", actor_id="player:a", payload=event_payload)
+    first = DeterministicEventLog(events=[event_one])
+    second = DeterministicEventLog(events=[event_two])
+    dropped = DeterministicEventLog(events=[event_one])
+    dropped.dropped_through_event_id = 7
+
+    assert first.compute_history_hash() != second.compute_history_hash()
+    assert first.compute_history_hash() != dropped.compute_history_hash()
+
+
+def test_replay_history_fast_hash_uses_prefix_table_without_rebuild_on_consume():
+    log = DeterministicEventLog()
+    for idx in range(3):
+        log.record("test_event", payload={"idx": idx, "unit_id": f"unit:{idx}"}, validate_payload=False)
+    replay = DeterministicEventLog.from_payload(log.serialize_events(), mode="replay")
+    prefix_table = replay._history_prefix_normalized
+    prefix_count = replay._history_prefix_event_count
+
+    hashes = [replay.compute_history_hash()]
+    replay.consume("test_event")
+    hashes.append(replay.compute_history_hash())
+    replay.consume("test_event")
+    hashes.append(replay.compute_history_hash())
+
+    assert len(set(hashes)) == 3
+    assert replay._history_prefix_normalized is prefix_table
+    assert replay._history_prefix_event_count == prefix_count == 3
+
+
+def test_append_only_record_mode_does_not_renormalize_old_events(monkeypatch):
+    log = DeterministicEventLog()
+    log.record("test_event", payload={"unit_id": "unit:old"}, validate_payload=False)
+    normalized_event_ids: list[int] = []
+    original_normalize = event_log_mod._normalize_ids
+
+    def spy_normalize(value, *args, **kwargs):
+        if isinstance(value, dict) and "event_id" in value and "type" in value:
+            normalized_event_ids.append(int(value["event_id"]))
+        return original_normalize(value, *args, **kwargs)
+
+    monkeypatch.setattr(event_log_mod, "_normalize_ids", spy_normalize)
+
+    log.record("test_event", payload={"unit_id": "unit:new"}, validate_payload=False)
+    log.compute_history_hash()
+
+    assert normalized_event_ids == [2]
