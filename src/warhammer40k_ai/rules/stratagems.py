@@ -6518,6 +6518,14 @@ class StratagemManager(
         phase_label = str(phase_name or "").strip()
         if not enemy_unit_id or not phase_label:
             return False
+        action_key = str(action or "").strip().lower()
+        when_key = str(when or "").strip().lower()
+        if action_key == "charge" and when_key == "declare":
+            interrupt_window = "start_charge"
+        elif action_key == "set_up":
+            interrupt_window = "unit_set_up"
+        else:
+            interrupt_window = f"{when_key}_{action_key}".strip("_")
 
         from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
         from ..engine.decisions import DecisionOption, DecisionRequest
@@ -6527,8 +6535,8 @@ class StratagemManager(
             ability="fire_overwatch",
             phase_name=phase_label,
             enemy_unit_id=enemy_unit_id,
-            when=str(when or "").strip().lower(),
-            action=str(action or "").strip().lower(),
+            when=when_key,
+            action=action_key,
         ):
             return False
 
@@ -6586,12 +6594,17 @@ class StratagemManager(
                 "ability_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
                 "phase_name": phase_label,
                 "enemy_unit_id": enemy_unit_id,
-                "action": str(action or "").strip().lower(),
-                "when": str(when or "").strip().lower(),
+                "action": action_key,
+                "when": when_key,
+                "dispatch_mode": "interrupt",
+                "interrupt_window": interrupt_window,
+                "out_of_phase": True,
                 "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
                 "stratagem_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
                 "tool_id": "stratagem:fire_overwatch",
                 "tool_type": "stratagem",
+                "blocking_parent": True,
+                "resume_parent_after_resolution": True,
                 "limited_use": True,
                 "limited_use_scope": "turn",
                 "limited_use_key": "fire_overwatch",

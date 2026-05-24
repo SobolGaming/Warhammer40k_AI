@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from .decision_kinds import DECISION_CONFIRM_YES_NO
 from .decisions import DecisionRequest, DecisionResult
 
 
@@ -111,6 +110,8 @@ class DecisionControllerHub:
                 request = peek()
                 if request is None:
                     return
+                if self._request_resolution_in_progress(request):
+                    return
                 decision_id = str(getattr(request, "decision_id", "") or "")
                 dispatched = self._dispatch_request(game, request)
                 if not dispatched:
@@ -150,15 +151,57 @@ class DecisionControllerHub:
         return current_id == decision_id
 
     @staticmethod
+    def _request_resolution_in_progress(request: DecisionRequest) -> bool:
+        return bool(getattr(request, "_resolution_in_progress", False))
+
+    @staticmethod
+    def _request_dispatch_mode(request: DecisionRequest) -> str:
+        context = dict(getattr(request, "context", {}) or {})
+        mode = str(context.get("dispatch_mode", "") or "").strip().lower()
+        if mode:
+            return mode
+        if bool(context.get("interrupt_window", False)):
+            return "interrupt"
+        if bool(context.get("synchronous", False)):
+            return "sync_child"
+        return ""
+
+    @staticmethod
+    def _request_is_stack_dispatchable(request: DecisionRequest) -> bool:
+        return DecisionControllerHub._request_dispatch_mode(request) in {"sync_child", "interrupt"}
+
+    @staticmethod
+    def _active_decision_frame(game: object) -> dict:
+        stack = getattr(game, "_decision_frame_stack", None)
+        if not isinstance(stack, list) or not stack:
+            return {}
+        frame = stack[-1]
+        return dict(frame or {}) if isinstance(frame, dict) else {}
+
+    @staticmethod
+    def _request_matches_active_frame(game: object, request: DecisionRequest) -> bool:
+        frame = DecisionControllerHub._active_decision_frame(game)
+        active_decision_id = str(frame.get("decision_id", "") or "")
+        if not active_decision_id:
+            return False
+        context = dict(getattr(request, "context", {}) or {})
+        parent_id = str(
+            context.get("parent_decision_id", "")
+            or context.get("interrupts_decision_id", "")
+            or ""
+        )
+        return bool(parent_id and parent_id == active_decision_id)
+
+    @staticmethod
     def _request_can_dispatch(game: object, request: DecisionRequest) -> bool:
         if DecisionControllerHub._request_is_current(game, request):
+            if DecisionControllerHub._request_resolution_in_progress(request):
+                return False
             return True
         if not DecisionControllerHub._request_is_pending(game, request):
             return False
         if int(getattr(game, "_decision_resolution_depth", 0) or 0) <= 0:
             return False
-        decision_type = str(getattr(request, "decision_type", "") or "")
-        if decision_type != DECISION_CONFIRM_YES_NO:
+        if not DecisionControllerHub._request_is_stack_dispatchable(request):
             return False
-        context = dict(getattr(request, "context", {}) or {})
-        return bool(context.get("optional", False)) or bool(context.get("synchronous", False))
+        return DecisionControllerHub._request_matches_active_frame(game, request)

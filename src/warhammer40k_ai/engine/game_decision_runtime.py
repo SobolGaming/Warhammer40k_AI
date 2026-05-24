@@ -5,6 +5,7 @@ from .ai_policy_orchestrator import policy_component_for_request
 from .candidate_semantics import ensure_candidate_semantic_metadata
 from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
+    DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_MOVE_UNIT,
     DECISION_REQUEST_DICE_ROLL,
@@ -47,6 +48,53 @@ def _normalize_candidate_bundle(candidates, mask, solver_ms: int, fallback_mode:
         normalized_mask = [True] * len(normalized_candidates)
     mask_reasons = [None if value else "masked_as_illegal" for value in normalized_mask]
     return normalized_candidates, normalized_mask, mask_reasons
+
+
+def _active_decision_frame(game) -> dict:
+    stack = getattr(game, "_decision_frame_stack", None)
+    if not isinstance(stack, list) or not stack:
+        return {}
+    frame = stack[-1]
+    return dict(frame or {}) if isinstance(frame, dict) else {}
+
+
+def _dispatch_mode_from_context(ctx: dict) -> str:
+    mode = str(ctx.get("dispatch_mode", "") or "").strip().lower()
+    if mode:
+        return mode
+    if bool(ctx.get("interrupt_window", False)):
+        return "interrupt"
+    if bool(ctx.get("synchronous", False)):
+        return "sync_child"
+    return ""
+
+
+def _decorate_dispatch_context(game, request, ctx: dict) -> dict:
+    frame = _active_decision_frame(game)
+    mode = _dispatch_mode_from_context(ctx)
+    if (
+        not mode
+        and frame
+        and bool(ctx.get("optional", False))
+        and str(getattr(request, "decision_type", "") or "") == DECISION_CONFIRM_YES_NO
+    ):
+        mode = "sync_child"
+    if mode not in {"top_level", "sync_child", "interrupt"}:
+        return ctx
+    decorated = dict(ctx)
+    decorated["dispatch_mode"] = mode
+    if mode in {"sync_child", "interrupt"} and frame:
+        if "parent_decision_id" not in decorated and "interrupts_decision_id" not in decorated:
+            decorated["parent_decision_id"] = str(frame.get("decision_id", "") or "")
+        if "parent_decision_type" not in decorated:
+            decorated["parent_decision_type"] = str(frame.get("decision_type", "") or "")
+        if "parent_player_id" not in decorated and frame.get("player_id") is not None:
+            decorated["parent_player_id"] = frame.get("player_id")
+        if "parent_phase_name" not in decorated and frame.get("phase_name"):
+            decorated["parent_phase_name"] = str(frame.get("phase_name", "") or "")
+        decorated.setdefault("blocking_parent", True)
+        decorated.setdefault("resume_parent_after_resolution", True)
+    return decorated
 
 
 @profiled_section("decision.request")
@@ -101,6 +149,7 @@ def request_decision(game, request) -> None:
     rules_bundle_id = str(getattr(rules_bundle, "rules_bundle_id", "") or "")
     if rules_bundle_id and "rules_bundle_id" not in ctx:
         ctx["rules_bundle_id"] = rules_bundle_id
+    ctx = _decorate_dispatch_context(game, request, ctx)
 
     descriptor_bundle = compile_descriptor_bundle(game)
     if "descriptor_ids" not in ctx or not isinstance(ctx.get("descriptor_ids"), dict):

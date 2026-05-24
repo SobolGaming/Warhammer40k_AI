@@ -13866,12 +13866,34 @@ class GameRuleEventService(GameServiceBase):
         from .decision_dispatcher import dispatch_decision
         resolution_depth = int(getattr(self, "_decision_resolution_depth", 0) or 0)
         setattr(self, "_decision_resolution_depth", resolution_depth + 1)
+        frame_stack = getattr(self, "_decision_frame_stack", None)
+        if not isinstance(frame_stack, list):
+            frame_stack = []
+            setattr(self, "_decision_frame_stack", frame_stack)
+        phase = getattr(self, "phase", None)
+        phase_name = str(getattr(phase, "name", phase) or "")
+        frame = {
+            "decision_id": str(getattr(request, "decision_id", "") or ""),
+            "decision_type": str(getattr(request, "decision_type", "") or ""),
+            "player_id": getattr(request, "player_id", None),
+            "phase_name": phase_name,
+        }
+        frame_stack.append(frame)
         setattr(request, "_resolution_in_progress", True)
         try:
             with game_context(self):
                 apply_result = dispatch_decision(self, request, result)
         finally:
             setattr(request, "_resolution_in_progress", False)
+            if frame_stack and frame_stack[-1] is frame:
+                frame_stack.pop()
+            elif frame in frame_stack:
+                frame_stack.remove(frame)
+            if not frame_stack:
+                try:
+                    delattr(self, "_decision_frame_stack")
+                except AttributeError:
+                    pass
             if resolution_depth:
                 setattr(self, "_decision_resolution_depth", resolution_depth)
             else:

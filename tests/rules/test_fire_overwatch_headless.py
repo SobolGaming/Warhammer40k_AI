@@ -133,6 +133,11 @@ def test_queue_fire_overwatch_decision_publishes_select_shooter_request() -> Non
     assert request.context["ability"] == "fire_overwatch"
     assert request.context["enemy_unit_id"] == "unit:enemy"
     assert request.context["tool_id"] == "stratagem:fire_overwatch"
+    assert request.context["dispatch_mode"] == "interrupt"
+    assert request.context["interrupt_window"] == "start_normal_move"
+    assert request.context["out_of_phase"] is True
+    assert request.context["blocking_parent"] is True
+    assert request.context["resume_parent_after_resolution"] is True
     assert request.context["limited_use"] is True
     assert request.context["limited_use_scope"] == "turn"
     assert request.context["limited_use_key"] == "fire_overwatch"
