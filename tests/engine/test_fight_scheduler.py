@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from warhammer40k_ai.engine.combat_timing import CombatEngagementState, unit_engagement_state
-from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_UNIT
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 from warhammer40k_ai.engine.fight_scheduler import FightSchedulerStage
 from warhammer40k_ai.engine.ruleset import RulesetBundle
@@ -212,8 +211,8 @@ def test_stage_completion_clears_stale_stage_select_requests() -> None:
     manager._complete_current_stage(current_player, opponent_player)
 
     assert {
-        "phase_steps": ["FIGHT_FIRST"],
-        "decision_types": [DECISION_SELECT_UNIT],
+        "phase_steps": ["FIGHT_FIRST", ""],
+        "decision_types": [],
     } in game.cleared_fight_requests
 
 

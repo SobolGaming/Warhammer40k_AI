@@ -22,7 +22,7 @@ from . import fight_resolution as _fight_resolution
 from .decision_port import get_decision_provider
 from .fight_scheduler import FightScheduler, FightSchedulerStage
 from .unit_turn_provenance import set_status_tokens_on_unit, status_tokens_on_unit
-from .decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_SELECT_UNIT
+from .decision_kinds import DECISION_CONFIRM_YES_NO
 from ..utility.event_bus import append_action
 import logging
 logger = logging.getLogger(__name__)
@@ -1390,7 +1390,7 @@ class FightPhaseManager:
         phase_step = self._fight_phase_step_name()
         if not phase_step:
             return
-        clear_pending(phase_steps=[phase_step], decision_types=[DECISION_SELECT_UNIT])
+        clear_pending(phase_steps=[phase_step, ""])
 
     def _clear_pending_fight_phase_requests(self) -> None:
         clear_pending = getattr(self.game, "_clear_pending_fight_phase_requests", None)

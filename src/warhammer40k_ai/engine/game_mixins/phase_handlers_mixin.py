@@ -1308,7 +1308,6 @@ class GamePhaseHandlersMixin:
         phase_step_filter = {
             str(step or "").strip().upper()
             for step in list(phase_steps or [])
-            if str(step or "").strip()
         }
         type_filter = {
             str(decision_type or "").strip()
@@ -1375,6 +1374,9 @@ class GamePhaseHandlersMixin:
             context={
                 "unit_id": unit_id,
                 "phase_name": "FIGHT_PHASE",
+                "phase_step": self._fight_phase_step_name(
+                    getattr(getattr(self, "fight_phase_manager", None), "current_stage", "")
+                ),
                 "selection_purpose": "SELECT_FIGHT_TARGETS",
                 "allowed_target_unit_ids": [str(get_entity_id(target) or "") for target in targets],
             },

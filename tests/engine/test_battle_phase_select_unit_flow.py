@@ -1096,6 +1096,7 @@ def test_fight_select_unit_resolution_delegates_to_fight_phase_manager() -> None
 def test_fight_target_selection_request_is_queued_for_headless_flow() -> None:
     _player, _army, unit, enemy = _build_players_with_unit()
     game = _FlowGame(phase_name="FIGHT_PHASE", unit=unit, enemy_units=[enemy])
+    game.fight_phase_manager = SimpleNamespace(current_stage=FightStage.REMAINING_COMBATANTS)
 
     request = game._queue_fight_target_selection_request(
         fighting_unit=unit,
@@ -1106,6 +1107,7 @@ def test_fight_target_selection_request_is_queued_for_headless_flow() -> None:
     assert request is not None
     assert request.decision_type == DECISION_SELECT_FIGHT_TARGETS
     assert request.context["unit_id"] == unit.id
+    assert request.context["phase_step"] == "REMAINING_COMBATANTS"
     assert request.context["allowed_target_unit_ids"] == [enemy.id]
 
 
