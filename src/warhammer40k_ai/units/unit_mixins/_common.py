@@ -23,7 +23,7 @@ from ...utility.calcs import (
     movement_segment_cost,
 )
 from ...utility.model_geometry import resolve_model_geometry
-from ...utility.dice import DiceCollection
+from ...utility.dice import DiceCollection, get_roll_with_optional_context
 from ...utility.attack_roll_parser import AttackRollCondition, AttackRollRule, AttackRollEffect, parse_attack_roll_text
 from ..status_effects import StatusEffect, BattleShockEffect
 from ...utility.entity_ids import get_entity_id
@@ -54,3 +54,7 @@ def get_roll(*args, **kwargs):
     from .. import unit as unit_module
 
     return unit_module.get_roll(*args, **kwargs)
+
+
+def get_roll_context(data: str, **kwargs):
+    return get_roll_with_optional_context(get_roll, data, **kwargs)

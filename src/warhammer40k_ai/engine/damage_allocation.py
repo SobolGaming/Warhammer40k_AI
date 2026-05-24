@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..units.unit import get_roll
+from ..utility.dice import get_roll_with_optional_context
 from ..utility.entity_ids import get_entity_id
 from .decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_SELECT_PRECISION_TARGET
 from .decisions import DecisionOption, DecisionRequest
@@ -131,7 +132,15 @@ def resolve_save_target_model(manager, game: object, seq: AttackSequence, wound_
                     redirect_models, redirect_source = redirect_fn(target, target_model, game=game)
                     if redirect_models:
                         wound_instance["_imperial_agents_selfless_bodyguard_resolved"] = True
-                        roll = get_roll("D6")
+                        source_name = str(redirect_source or "Selfless Bodyguard").strip() or "Selfless Bodyguard"
+                        player = getattr(target_army, "player", None) if target_army is not None else None
+                        roll = get_roll_with_optional_context(
+                            get_roll,
+                            "D6",
+                            player=player,
+                            reason=f"{source_name} redirect roll for {getattr(target_model, 'name', 'model')}",
+                            roll_type="damage_allocation",
+                        )
                         wound_instance["_imperial_agents_selfless_bodyguard_roll"] = int(roll)
                         if roll >= 2:
                             if len(redirect_models) == 1:
@@ -155,7 +164,6 @@ def resolve_save_target_model(manager, game: object, seq: AttackSequence, wound_
                                 if not options:
                                     return None, True
                                 player_id = getattr(getattr(target_army, "player", None), "id", None)
-                                source_name = str(redirect_source or "Selfless Bodyguard").strip() or "Selfless Bodyguard"
                                 request = DecisionRequest.create(
                                     DECISION_ALLOCATE_DAMAGE,
                                     f"{source_name}: allocate attack to a bodyguard model.",

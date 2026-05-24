@@ -23,6 +23,7 @@ from .decision_port import get_decision_provider
 from .fight_scheduler import FightScheduler, FightSchedulerStage
 from .unit_turn_provenance import set_status_tokens_on_unit, status_tokens_on_unit
 from .decision_kinds import DECISION_CONFIRM_YES_NO
+from ..utility.event_bus import append_action
 import logging
 logger = logging.getLogger(__name__)
 
@@ -558,11 +559,16 @@ class FightPhaseManager:
             if self._queue_overrun_pile_in_if_available(selected_unit):
                 return
             logger.info(f"{selected_unit.name} has no eligible targets")
+            append_action(
+                self.active_player,
+                f"{selected_unit.name}: no eligible melee targets; fight activation ends.",
+            )
             try:
                 if hasattr(selected_unit, "clear_selected_to_action_reroll_choice"):
                     selected_unit.clear_selected_to_action_reroll_choice(action="fight")
             except Exception:
                 pass
+            self.finalize_unit_fight(selected_unit, current_player, opponent_player)
             return
 
         if self._has_pending_battle_focus_confirmation(selected_unit):
@@ -649,11 +655,17 @@ class FightPhaseManager:
         eligible_targets = self._get_eligible_targets(unit)
         if not eligible_targets:
             logger.info(f"{getattr(unit, 'name', 'Unit')} has no eligible targets")
+            append_action(
+                self.active_player,
+                f"{getattr(unit, 'name', 'Unit')}: no eligible melee targets; fight activation ends.",
+            )
             try:
                 if hasattr(unit, "clear_selected_to_action_reroll_choice"):
                     unit.clear_selected_to_action_reroll_choice(action="fight")
             except Exception:
                 pass
+            if self._current_player is not None and self._opponent_player is not None:
+                self.finalize_unit_fight(unit, self._current_player, self._opponent_player)
             return
         self._dispatch_target_selection(unit, eligible_targets)
 

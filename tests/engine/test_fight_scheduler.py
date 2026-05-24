@@ -270,6 +270,25 @@ def test_preview_attack_completion_hands_off_to_consolidate_batch_stage() -> Non
     assert manager._queue_fight_move_request.call_args.kwargs["movement_type"] == "consolidate"
 
 
+def test_attack_selection_with_no_targets_marks_unit_fought_and_advances() -> None:
+    game, current_player, opponent_player, army_one, army_two = _build_preview_game()
+    game.ruleset_bundle = RulesetBundle.from_values(core_rules_id="10e-current-core")
+    friendly = _Unit("unit-friendly", "Friendly Charger", army_one, x=10.0, y=10.0, charged=True)
+    enemy = _Unit("unit-enemy", "Distant Enemy", army_two, x=30.0, y=30.0)
+    army_one.units = [friendly]
+    army_two.units = [enemy]
+    game.register_units(friendly, enemy)
+
+    manager = FightPhaseManager(game)
+    manager.start_fight_phase(current_player, opponent_player)
+
+    assert manager.get_current_stage() == FightStage.FIGHT_FIRST
+    manager.unit_selected(friendly, current_player, opponent_player)
+
+    assert friendly.round_state.fought_this_phase is True
+    assert manager.is_complete()
+
+
 def test_must_fight_next_status_token_constrains_next_selection() -> None:
     game, current_player, opponent_player, army_one, army_two = _build_preview_game()
     current_unit = _Unit("unit-current", "Current", army_one, x=10.0, y=10.0)

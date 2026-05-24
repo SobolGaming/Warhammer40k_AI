@@ -535,6 +535,29 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         alive = [m for m in unit.models if m.is_alive]
         self.assertEqual(len(alive), 0)
 
+    def test_move_followup_is_not_requeued_after_nested_move_resolution(self):
+        army = Army.with_detachment("Aeldari", detachment_type="Other")
+        army.faction_id = "AE"
+        enemy_army = Army.with_detachment("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("Warp Spiders", army)
+        unit.round_state.moved_this_round = True
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        request = game._queue_move_units_move_request(unit, "move")
+
+        self.assertIsNone(request)
+        self.assertEqual(game.decision_queue.list(), [])
+
     def test_advance_redeploy_queues_and_creates_placement_decision(self):
         army = Army.with_detachment("Necrons", detachment_type="Other")
         army.faction_id = "NEC"

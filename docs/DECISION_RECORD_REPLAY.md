@@ -61,6 +61,11 @@ Replay-store persistence note:
 - Shooting- and fight-phase replay uses the same parent-before-child contract:
   selected unit decisions are recorded before declaration decisions, and
   declaration decisions are recorded before their attack-roll child decisions.
+- A selected fight unit can legally have no remaining melee targets after prior
+  attacks or fight-move effects remove engagement. In that case the activation
+  still publishes `unit_fight_started`, `unit_fight_ended`, and
+  `unit_activation_ended`, and the visible action log records that the fight
+  activation ended with no eligible melee targets.
 - Selected-unit workflows publish `unit_activation_started` and
   `unit_activation_ended` brackets; shooting and fight workflows also publish
   phase-specific brackets so reaction windows can subscribe to stable start/end
@@ -75,6 +80,12 @@ Replay-store persistence note:
   state without requiring a synthetic trailing decision.
 - When multiple keyframes share the same `decision_idx`, strict replay uses the
   newest keyframe for that index.
+- `scripts/audit_replay_decisions.py` performs a replay-facing sequence audit:
+  parent/child decision ordering, duplicate selected-unit labels, dice-label
+  quality, movement activation consistency, and strict reconstruction
+  checkpoints. Fight `SELECT_UNIT` decisions that immediately advance to the
+  next selection or end-turn decisions are accepted only when the decision's
+  event range contains a matching fight-end event for the selected unit.
 - Replay reconstruction suppresses live charge-phase followup queueing. Recorded
   charge declarations, rolls, and moves are replayed from the persisted decision
   stream instead of allowing reconstruction-time auto-followups to create extra

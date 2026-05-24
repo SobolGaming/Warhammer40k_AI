@@ -1,4 +1,5 @@
 import re
+import inspect
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -209,6 +210,35 @@ def _build_get_roll_request_spec(
             }
         ]
     return spec
+
+
+def roll_callable_accepts_context(roll_fn: object, context_kwargs: dict) -> bool:
+    try:
+        signature = inspect.signature(roll_fn)
+    except (TypeError, ValueError):
+        return True
+    parameters = signature.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()):
+        return True
+    valid_keyword_kinds = {
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    }
+    for key in context_kwargs:
+        parameter = parameters.get(key)
+        if parameter is None or parameter.kind not in valid_keyword_kinds:
+            return False
+    return True
+
+
+def get_roll_with_optional_context(roll_fn: object, data: str, **kwargs) -> int:
+    context_kwargs = {key: value for key, value in dict(kwargs or {}).items() if value is not None}
+    if context_kwargs and roll_callable_accepts_context(roll_fn, context_kwargs):
+        try:
+            return int(roll_fn(data, **context_kwargs))
+        except TypeError:
+            return int(roll_fn(data))
+    return int(roll_fn(data))
 
 
 def _resolve_roll_request(game: object, request: object) -> None:

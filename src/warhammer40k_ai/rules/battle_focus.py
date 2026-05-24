@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_BATTLE_FOCUS, army_has_ability_id
+from ..utility.dice import get_roll_with_optional_context
 from ..utility.entity_ids import get_entity_id
 import logging
 logger = logging.getLogger(__name__)
@@ -338,8 +339,18 @@ class BattleFocusManager:
             except Exception:
                 refund_tokens = 1
             refund_tokens = max(1, int(refund_tokens))
+            player = getattr(self.army, "player", None)
+            unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+            source = str(spec.get("source", "") or "Battle Focus").strip() or "Battle Focus"
             try:
-                roll = get_roll("D6")
+                roll = get_roll_with_optional_context(
+                    get_roll,
+                    "D6",
+                    game=game,
+                    player=player,
+                    reason=f"{source} Battle Focus token refund roll for {unit_name}",
+                    roll_type="battle_focus_token_refund",
+                )
             except Exception:
                 roll = 1
             if roll < threshold:
@@ -347,9 +358,6 @@ class BattleFocusManager:
             self.tokens = int(self.tokens) + int(refund_tokens)
             try:
                 from ..utility.event_bus import append_action
-                player = getattr(self.army, "player", None)
-                unit_name = str(getattr(unit, "name", "Unit") or "Unit")
-                source = str(spec.get("source", "") or "Battle Focus").strip() or "Battle Focus"
                 append_action(
                     player,
                     f"{source}: regained {int(refund_tokens)} Battle Focus token(s) ({unit_name}, roll {roll}).",

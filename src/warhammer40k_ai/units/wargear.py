@@ -2,10 +2,10 @@ from typing import Any, Union, Dict, List, Optional, Tuple, Sequence
 from enum import Enum, auto
 from collections import namedtuple
 import copy
-import inspect
 import uuid
 import re
-from warhammer40k_ai.utility.dice import DiceCollection, get_roll
+from warhammer40k_ai.utility import dice as dice_module
+from warhammer40k_ai.utility.dice import DiceCollection, get_roll, get_roll_with_optional_context
 from warhammer40k_ai.utility.hazardous import (
     apply_hazardous_roll_modifier,
     hazardous_fail_on_values,
@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 import logging
 logger = logging.getLogger(__name__)
 
+_ORIGINAL_GET_ROLL = get_roll
+
 if TYPE_CHECKING:
     from .model import Model
     from .unit import Unit
@@ -30,30 +32,8 @@ if TYPE_CHECKING:
 
 
 def _get_roll_with_context(data: str, **kwargs: Any) -> int:
-    roll_fn = get_roll
-    context_kwargs = {key: value for key, value in dict(kwargs or {}).items() if value is not None}
-    if context_kwargs and _roll_callable_accepts_context(roll_fn, context_kwargs):
-        return int(roll_fn(data, **context_kwargs))
-    return int(roll_fn(data))
-
-
-def _roll_callable_accepts_context(roll_fn: Any, context_kwargs: dict[str, Any]) -> bool:
-    try:
-        signature = inspect.signature(roll_fn)
-    except (TypeError, ValueError):
-        return True
-    parameters = signature.parameters
-    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()):
-        return True
-    valid_keyword_kinds = {
-        inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        inspect.Parameter.KEYWORD_ONLY,
-    }
-    for key in context_kwargs:
-        parameter = parameters.get(key)
-        if parameter is None or parameter.kind not in valid_keyword_kinds:
-            return False
-    return True
+    roll_fn = get_roll if get_roll is not _ORIGINAL_GET_ROLL else dice_module.get_roll
+    return get_roll_with_optional_context(roll_fn, data, **kwargs)
 
 
 def _name_for_log(entity: Any, default: str) -> str:
@@ -1480,13 +1460,24 @@ class WargearProfile:
             mw_die = str(spec.get("mortal_wounds_die", "") or "").strip().upper()
             if not mw_die:
                 continue
+            source = str(spec.get("source", "") or "Critical Wound").strip() or "Critical Wound"
             try:
-                mortal_wounds = get_roll(mw_die)
+                unit_player = getattr(unit.get_parent_army(), "player", None) if hasattr(unit, "get_parent_army") else None
+                weapon_label = str(
+                    getattr(getattr(self, "parent_wargear", None), "name", "")
+                    or getattr(self, "name", "")
+                    or "Weapon"
+                )
+                mortal_wounds = _get_roll_with_context(
+                    mw_die,
+                    player=unit_player,
+                    reason=f"{source} mortal wounds for {_name_for_log(attacker, 'Attacker')} with {weapon_label}",
+                    roll_type="mortal_wounds",
+                )
             except Exception:
                 mortal_wounds = 0
             if mortal_wounds <= 0:
                 continue
-            source = str(spec.get("source", "") or "Critical Wound").strip() or "Critical Wound"
             return int(mortal_wounds), source
         return 0, ""
 
@@ -8627,7 +8618,15 @@ class WargearProfile:
             if is_mortal_only or is_mortal_additional:
                 amount = 0
                 if is_mortal_additional:
-                    amount = self._resolve_mortal_wound_amount(wound_instance.get("mortal_wound_amount"))
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    amount = self._resolve_mortal_wound_amount(
+                        wound_instance.get("mortal_wound_amount"),
+                        player=getattr(attacker_unit.get_parent_army(), "player", None) if hasattr(attacker_unit, "get_parent_army") else None,
+                        reason=(
+                            f"Mortal wound amount for {_name_for_log(attacker, 'Attacker')} with "
+                            f"{getattr(getattr(self, 'parent_wargear', None), 'name', None) or getattr(self, 'name', 'Weapon')}"
+                        ),
+                    )
                     if amount <= 0:
                         try:
                             wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
@@ -8993,14 +8992,35 @@ class WargearProfile:
                 attack_result.attacks_special_modifiers.append(note)
         elif hazardous_active:
             # Provide reroll callback for hazardous test
+            attacker_name_for_log = _name_for_log(attacker, "Attacker")
+            weapon_name_for_log = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
+            attacker_unit_for_roll = getattr(attacker, "parent_unit", None)
+            attacker_army_for_roll = (
+                attacker_unit_for_roll.get_parent_army()
+                if attacker_unit_for_roll is not None and hasattr(attacker_unit_for_roll, "get_parent_army")
+                else None
+            )
+            attacker_player_for_roll = getattr(attacker_army_for_roll, "player", None) if attacker_army_for_roll is not None else None
+            hazardous_reason = f"Hazardous test for {attacker_name_for_log} with {weapon_name_for_log}"
+
             def _reroll_hazard():
-                new_roll = get_roll("D6")
+                new_roll = _get_roll_with_context(
+                    "D6",
+                    player=attacker_player_for_roll,
+                    reason=f"Hazardous re-roll for {attacker_name_for_log} with {weapon_name_for_log}",
+                    roll_type="hazardous",
+                )
                 try:
-                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hazardous re-roll: {new_roll} for {attacker.name}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hazardous re-roll: {new_roll} for {attacker_name_for_log}")
                 except Exception:
                     pass
                 return new_roll
-            hazard_roll = get_roll("D6")
+            hazard_roll = _get_roll_with_context(
+                "D6",
+                player=attacker_player_for_roll,
+                reason=hazardous_reason,
+                roll_type="hazardous",
+            )
             attack_result.hazardous_roll = hazard_roll
             # Publish roll_made for hazardous test
             try:
@@ -9013,6 +9033,7 @@ class WargearProfile:
                     player=unit.get_parent_army().player,
                     unit=unit,
                     roll_type="hazardous",
+                    reason=hazardous_reason,
                     value=hazard_roll,
                     reroll=reroll_cb,
                     reroll_locked=bool(reroll_locked),
@@ -18744,7 +18765,20 @@ class WargearProfile:
             if die not in ("D3", "D6"):
                 return 1, "Sustained Hits (+1)"
             try:
-                rolled = get_roll(die)
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if hasattr(attacker_unit, "get_parent_army") else None
+                weapon_label = str(
+                    getattr(getattr(self, "parent_wargear", None), "name", "")
+                    or getattr(self, "name", "")
+                    or "Weapon"
+                )
+                source_label = str(bonus_sustained_label or "Sustained Hits").strip() or "Sustained Hits"
+                rolled = _get_roll_with_context(
+                    die,
+                    player=player,
+                    reason=f"{source_label} bonus roll for {_name_for_log(attacker, 'Attacker')} with {weapon_label}",
+                    roll_type="sustained_hits",
+                )
             except Exception:
                 rolled = 0
             if rolled <= 0:
@@ -29571,10 +29605,18 @@ class WargearProfile:
             if best_fnp:
                 fnp_value, fnp_condition = best_fnp
                 fnp_saves = 0
+                target_unit = getattr(target_model, "parent_unit", None)
+                target_player = getattr(target_unit.get_parent_army(), "player", None) if hasattr(target_unit, "get_parent_army") else None
+                target_label = _name_for_log(target_model, "Target model")
 
                 # Roll D6 for each point of damage
                 for i in range(damage_amount):
-                    fnp_roll = get_roll("D6")
+                    fnp_roll = _get_roll_with_context(
+                        "D6",
+                        player=target_player,
+                        reason=f"Feel No Pain roll for {target_label} ({i + 1}/{int(damage_amount)})",
+                        roll_type="feel_no_pain",
+                    )
                     fnp_result = {
                         'roll': fnp_roll,
                         'needed': fnp_value,
@@ -29804,12 +29846,19 @@ class WargearProfile:
 
         return result
 
-    def _resolve_mortal_wound_amount(self, value) -> int:
+    def _resolve_mortal_wound_amount(self, value, *, player=None, reason: str | None = None) -> int:
         if value is None:
             return 0
         if isinstance(value, DiceCollection):
             try:
-                return int(value.roll())
+                return int(
+                    _get_roll_with_context(
+                        str(value),
+                        player=player,
+                        reason=reason or f"Mortal wound amount ({value})",
+                        roll_type="mortal_wounds",
+                    )
+                )
             except Exception:
                 return 0
         if isinstance(value, Count):
@@ -29824,7 +29873,12 @@ class WargearProfile:
             if s.isdigit():
                 return int(s)
             try:
-                return get_roll(s)
+                return _get_roll_with_context(
+                    s,
+                    player=player,
+                    reason=reason or f"Mortal wound amount ({s})",
+                    roll_type="mortal_wounds",
+                )
             except Exception:
                 return 0
         try:
@@ -29854,7 +29908,14 @@ class WargearProfile:
             except (TypeError, ValueError):
                 damage_value = 0
             if damage_value <= 0:
-                damage_value = int(self._resolve_mortal_wound_amount(self.damage))
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                damage_value = int(
+                    self._resolve_mortal_wound_amount(
+                        self.damage,
+                        player=getattr(attacker_unit.get_parent_army(), "player", None) if hasattr(attacker_unit, "get_parent_army") else None,
+                        reason=f"Damage roll for {_name_for_log(attacker, 'Attacker')} with {weapon_name or 'Weapon'}",
+                    )
+                )
         try:
             sonic_bonus = int((attack_instance or {}).get("sonic_destruction_bonus", 0) or 0)
         except (TypeError, ValueError):
@@ -30788,7 +30849,11 @@ class Wargear:
         if not self.is_bubblechukka():
             return None
 
-        roll = get_roll("D6")
+        roll = _get_roll_with_context(
+            "D6",
+            reason=f"Bubblechukka profile roll for {getattr(self, 'name', 'Bubblechukka')}",
+            roll_type="weapon_profile",
+        )
         first_profile = next(iter(self.profiles.values()))
         selected_profile = first_profile.get_bubblechukka_profile_for_roll(roll)
 

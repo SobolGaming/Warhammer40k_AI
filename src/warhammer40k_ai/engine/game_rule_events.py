@@ -8,6 +8,7 @@ import re
 import logging
 import copy
 import math
+import sys
 
 from .event.system import EventSystem
 from .event_log import DeterministicEventLog
@@ -128,7 +129,8 @@ from ..rules.emperors_children import (
 )
 from ..utility.calcs import get_dist, clear_enemy_model_cache
 from ..utility.charge_roll import ChargeRollResult, ChargeRollSpec
-from ..utility.dice import DiceCollection
+from ..utility import dice as dice_module
+from ..utility.dice import DiceCollection, get_roll_with_optional_context
 from .game_mixins._shared import get_roll
 from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
@@ -137,6 +139,25 @@ from ..utility.game_context import game_context
 from .game_service_base import GameServiceBase
 
 logger = logging.getLogger(__name__)
+
+_ORIGINAL_EVENT_GET_ROLL = get_roll
+_ORIGINAL_UTILITY_GET_ROLL = dice_module.get_roll
+
+
+def _event_roll_function():
+    if get_roll is not _ORIGINAL_EVENT_GET_ROLL:
+        return get_roll
+    game_module = sys.modules.get("warhammer40k_ai.engine.game")
+    game_roll = getattr(game_module, "get_roll", None) if game_module is not None else None
+    if callable(game_roll) and game_roll is not _ORIGINAL_UTILITY_GET_ROLL:
+        return game_roll
+    if dice_module.get_roll is not _ORIGINAL_UTILITY_GET_ROLL:
+        return dice_module.get_roll
+    return get_roll
+
+
+def _event_get_roll(data: str, **kwargs) -> int:
+    return get_roll_with_optional_context(_event_roll_function(), data, **kwargs)
 
 if TYPE_CHECKING:
     from ..roster.army_muster import ArmyMusterRequest
@@ -1760,7 +1781,7 @@ class GameRuleEventService(GameServiceBase):
 
         from ..rules.harbingers_of_dread import DELIRIUM
         from ..utility.aura_utils import unit_within_range_of_unit
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll_with_optional_context
 
         def _get_army(player):
             getter = getattr(self, "_get_player_army", None)
@@ -1794,7 +1815,13 @@ class GameRuleEventService(GameServiceBase):
             for source in sources:
                 aura_range = float(mgr.get_aura_range(unit=source))
                 if unit_within_range_of_unit(source, unit, aura_range, use_attached_aggregate=True):
-                    mortal = get_roll("D3")
+                    mortal = get_roll_with_optional_context(
+                        _event_roll_function(),
+                        "D3",
+                        player=player,
+                        reason=f"Delirium mortal wounds for {getattr(source, 'name', 'source')} against {getattr(unit, 'name', 'Unit')}",
+                        roll_type="mortal_wounds",
+                    )
                     if mortal > 0:
                         unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
                     return
@@ -1811,21 +1838,33 @@ class GameRuleEventService(GameServiceBase):
         sr.pop("maggot_maws_pending", None)
         unit.special_rules = sr
 
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll_with_optional_context
         from ..utility.event_bus import append_action, append_dice
-
-        roll_d6 = get_roll("D6")
-        mortal = 0
-        roll_d3 = None
-        if roll_d6 >= 3:
-            roll_d3 = get_roll("D3")
-            mortal = int(roll_d3 or 0)
-        if mortal > 0:
-            unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
 
         ability_name = str(pending.get("ability_name", "") or "Maggot Maws").strip() or "Maggot Maws"
         owner_id = str(pending.get("owner_id", "") or "")
         player = self._resolve_player_by_id(owner_id) if owner_id else None
+        roll_d6 = get_roll_with_optional_context(
+            _event_roll_function(),
+            "D6",
+            player=player,
+            reason=f"{ability_name} trigger roll for {getattr(unit, 'name', 'Unit')}",
+            roll_type="mortal_wounds",
+        )
+        mortal = 0
+        roll_d3 = None
+        if roll_d6 >= 3:
+            roll_d3 = get_roll_with_optional_context(
+                _event_roll_function(),
+                "D3",
+                player=player,
+                reason=f"{ability_name} mortal wounds for {getattr(unit, 'name', 'Unit')}",
+                roll_type="mortal_wounds",
+            )
+            mortal = int(roll_d3 or 0)
+        if mortal > 0:
+            unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
+
         if player is not None:
             desc = f"{ability_name}: roll D6={roll_d6}"
             if roll_d3 is not None:
@@ -1847,6 +1886,7 @@ class GameRuleEventService(GameServiceBase):
             return
 
         from ..utility.aura_utils import unit_within_range_of_unit
+        from ..utility.dice import get_roll_with_optional_context
         from ..utility.event_bus import append_action, append_dice
 
         root_fn = getattr(unit, "get_attached_unit_root", None)
@@ -1923,13 +1963,26 @@ class GameRuleEventService(GameServiceBase):
                     if not mortal_expr or not heal_expr:
                         continue
 
-                    mortal = get_roll(mortal_expr)
+                    source_name = str(spec.get("source", "") or "Failed Battle-shock aura").strip() or "Failed Battle-shock aura"
+                    mortal = get_roll_with_optional_context(
+                        _event_roll_function(),
+                        mortal_expr,
+                        player=player,
+                        reason=f"{source_name} mortal wounds for {getattr(source_root, 'name', 'source')} against {getattr(target_root, 'name', 'target')}",
+                        roll_type="mortal_wounds",
+                    )
                     if mortal > 0:
                         apply_mortal_fn = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
                         if callable(apply_mortal_fn):
                             apply_mortal_fn(target_root, mortal, game_map=getattr(self, "map", None))
 
-                    heal_roll = get_roll(heal_expr)
+                    heal_roll = get_roll_with_optional_context(
+                        _event_roll_function(),
+                        heal_expr,
+                        player=player,
+                        reason=f"{source_name} healing for {getattr(source_root, 'name', 'source')}",
+                        roll_type="healing",
+                    )
                     healed = 0
                     healed_model_name = ""
                     if heal_roll > 0:
@@ -2113,7 +2166,12 @@ class GameRuleEventService(GameServiceBase):
             if not callable(has_reanimate) or not has_reanimate():
                 continue
 
-            d3 = get_roll("D3")
+            d3 = get_roll(
+                "D3",
+                player=current_player,
+                reason=f"Reanimation Protocols roll for {getattr(root, 'name', 'Unit')}",
+                roll_type="reanimation",
+            )
             if d3 <= 0:
                 continue
             root.apply_reanimation_protocols(
@@ -3616,6 +3674,10 @@ class GameRuleEventService(GameServiceBase):
             return int(default)
 
     def _resolve_phoenix_gem_wounds(self, model, spec: dict[str, Any]) -> int:
+        parent_unit = getattr(model, "parent_unit", None)
+        get_parent_army = getattr(parent_unit, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        player = getattr(army, "player", None) if army is not None else None
         base_wounds = self._coerce_int(
             getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)),
             0,
@@ -3630,9 +3692,19 @@ class GameRuleEventService(GameServiceBase):
             if key == "full":
                 wounds = base_wounds
             elif key == "d3":
-                wounds = get_roll("D3")
+                wounds = get_roll(
+                    "D3",
+                    player=player,
+                    reason=f"Phoenix Gem returned wounds for {getattr(model, 'name', 'model')}",
+                    roll_type="healing",
+                )
             elif key == "d6":
-                wounds = get_roll("D6")
+                wounds = get_roll(
+                    "D6",
+                    player=player,
+                    reason=f"Phoenix Gem returned wounds for {getattr(model, 'name', 'model')}",
+                    roll_type="healing",
+                )
             else:
                 wounds = self._coerce_int(key, base_wounds)
         else:
@@ -3834,7 +3906,14 @@ class GameRuleEventService(GameServiceBase):
             if not passed:
                 return
         roll_min = self._coerce_int(spec.get("roll_min", 2), 2)
-        roll = get_roll("D6")
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        roll = get_roll(
+            "D6",
+            player=player,
+            reason=f"Phoenix Gem return roll for {getattr(model, 'name', 'model')}",
+            roll_type="resurrection",
+        )
         if roll < roll_min:
             return
 
@@ -6445,7 +6524,21 @@ class GameRuleEventService(GameServiceBase):
         game_map = getattr(self, "map", None)
         ability_name = str(spec.get("name", "") or "Charge Mortals").strip() or "Charge Mortals"
 
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll_with_optional_context
+
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        unit_label = str(getattr(unit, "name", "") or "Unit")
+        target_label = str(getattr(target_unit, "name", "") or "Target")
+
+        def _roll(data: str, *, reason: str, roll_type: str = "charge_end_mortal_wounds") -> int:
+            return get_roll_with_optional_context(
+                _event_roll_function(),
+                data,
+                player=player,
+                reason=reason,
+                roll_type=roll_type,
+            )
 
         try:
             start_charge_bonus = int(spec.get("start_charge_bonus", 0) or 0)
@@ -6492,14 +6585,22 @@ class GameRuleEventService(GameServiceBase):
                             continue
                     except Exception:
                         continue
-                r = get_roll("D6")
+                model_label = str(getattr(m, "name", "") or unit_label)
+                r = _roll(
+                    "D6",
+                    reason=f"{ability_name} trigger roll for {model_label} against {target_label}",
+                )
                 r_mod = int(r)
                 if started_within_required and start_charge_bonus:
                     r_mod = int(r_mod + int(start_charge_bonus))
                 rolls.append(r)
                 modified_rolls.append(r_mod)
                 if r_mod >= 4:
-                    d3 = get_roll("D3")
+                    d3 = _roll(
+                        "D3",
+                        reason=f"{ability_name} mortal wounds for {model_label} against {target_label}",
+                        roll_type="mortal_wounds",
+                    )
                     d3_rolls.append(d3)
                     total_mw += d3
             if rolls:
@@ -6522,7 +6623,11 @@ class GameRuleEventService(GameServiceBase):
                             continue
                     except Exception:
                         continue
-                r = get_roll("D6")
+                model_label = str(getattr(m, "name", "") or unit_label)
+                r = _roll(
+                    "D6",
+                    reason=f"{ability_name} trigger roll for {model_label} against {target_label}",
+                )
                 r_mod = int(r)
                 if started_within_required and start_charge_bonus:
                     r_mod = int(r_mod + int(start_charge_bonus))
@@ -6561,7 +6666,11 @@ class GameRuleEventService(GameServiceBase):
                 if not bool(model_within_engagement_range_of_unit(model, target_unit)):
                     continue
                 engaged_models += 1
-                roll = get_roll("D6")
+                model_label = str(getattr(model, "name", "") or unit_label)
+                roll = _roll(
+                    "D6",
+                    reason=f"{ability_name} trigger roll for {model_label} against {target_label}",
+                )
                 rolls.append(roll)
                 if roll >= threshold:
                     total_mw += mortal_per_success
@@ -6585,7 +6694,10 @@ class GameRuleEventService(GameServiceBase):
             remaining = int(getattr(model, "wounds", 0) or 0) if model is not None else 0
             rolls = []
             for _ in range(max(0, remaining)):
-                r = get_roll("D6")
+                r = _roll(
+                    "D6",
+                    reason=f"{ability_name} trigger roll for {unit_label} against {target_label}",
+                )
                 rolls.append(r)
                 if r >= 4:
                     total_mw += 1
@@ -6594,36 +6706,76 @@ class GameRuleEventService(GameServiceBase):
             if rolls:
                 roll_summary = f"rolls={rolls}, remaining_wounds={remaining}"
         elif kind == "table_d6_2_3_4_5_6":
-            roll = get_roll("D6")
+            roll = _roll(
+                "D6",
+                reason=f"{ability_name} table roll for {unit_label} against {target_label}",
+            )
             if 2 <= roll <= 3:
                 total_mw = 1
             elif 4 <= roll <= 5:
-                total_mw = get_roll("D3")
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                )
             elif roll >= 6:
-                total_mw = get_roll("D3") + 3
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                ) + 3
             roll_summary = f"roll={roll}"
         elif kind == "table_d6_2_5_6":
-            roll = get_roll("D6")
+            roll = _roll(
+                "D6",
+                reason=f"{ability_name} table roll for {unit_label} against {target_label}",
+            )
             if 2 <= roll <= 5:
-                total_mw = get_roll("D3")
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                )
             elif roll >= 6:
-                total_mw = get_roll("D3") + 3
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                ) + 3
             roll_summary = f"roll={roll}"
         elif kind == "table_d6_2_5_6_flat3":
-            roll = get_roll("D6")
+            roll = _roll(
+                "D6",
+                reason=f"{ability_name} table roll for {unit_label} against {target_label}",
+            )
             if 2 <= roll <= 5:
-                total_mw = get_roll("D3")
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                )
             elif roll >= 6:
                 total_mw = 3
             roll_summary = f"roll={roll}"
         elif kind == "table_d6_2_3_d3_4_5_3_6_d3_3":
-            roll = get_roll("D6")
+            roll = _roll(
+                "D6",
+                reason=f"{ability_name} table roll for {unit_label} against {target_label}",
+            )
             if 2 <= roll <= 3:
-                total_mw = get_roll("D3")
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                )
             elif 4 <= roll <= 5:
                 total_mw = 3
             elif roll >= 6:
-                total_mw = get_roll("D3") + 3
+                total_mw = _roll(
+                    "D3",
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                ) + 3
             roll_summary = f"roll={roll}"
         elif kind == "single_4plus_die":
             try:
@@ -6632,12 +6784,19 @@ class GameRuleEventService(GameServiceBase):
                 threshold = 4
             threshold = max(2, min(6, threshold))
             success_die = str(spec.get("success_die", "") or "D3").strip().upper() or "D3"
-            roll = get_roll("D6")
+            roll = _roll(
+                "D6",
+                reason=f"{ability_name} trigger roll for {unit_label} against {target_label}",
+            )
             modified_roll = int(roll)
             if started_within_required and start_charge_bonus:
                 modified_roll = int(modified_roll + int(start_charge_bonus))
             if modified_roll >= threshold:
-                total_mw = get_roll(success_die)
+                total_mw = _roll(
+                    success_die,
+                    reason=f"{ability_name} mortal wounds for {unit_label} against {target_label}",
+                    roll_type="mortal_wounds",
+                )
             if started_within_required and start_charge_bonus:
                 roll_summary = f"roll={roll} (+{int(start_charge_bonus)} -> {int(modified_roll)})"
             else:
@@ -6688,13 +6847,27 @@ class GameRuleEventService(GameServiceBase):
 
         model.die(game_map=getattr(self, "map", None))
 
-        from ..utility.dice import get_roll
-        roll = get_roll("D6")
+        from ..utility.dice import get_roll_with_optional_context
+        parent_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(parent_army, "player", None)
+        roll = get_roll_with_optional_context(
+            _event_roll_function(),
+            "D6",
+            player=player,
+            reason=f"{ability_name} table roll for {source_name} against {getattr(target_unit, 'name', 'Target')}",
+            roll_type="mortal_wounds",
+        )
         mortal_wounds = 0
         if 2 <= roll <= 5:
             mid_die = str(spec.get("on_mid_die", "") or "").strip().upper()
             if mid_die:
-                mortal_wounds = get_roll(mid_die)
+                mortal_wounds = get_roll_with_optional_context(
+                    _event_roll_function(),
+                    mid_die,
+                    player=player,
+                    reason=f"{ability_name} mortal wounds for {source_name} against {getattr(target_unit, 'name', 'Target')}",
+                    roll_type="mortal_wounds",
+                )
             else:
                 try:
                     mortal_wounds = int(spec.get("on_mid_flat", 0) or 0)
@@ -6703,7 +6876,13 @@ class GameRuleEventService(GameServiceBase):
         elif roll >= 6:
             high_die = str(spec.get("on_high_die", "") or "").strip().upper()
             if high_die:
-                mortal_wounds = get_roll(high_die)
+                mortal_wounds = get_roll_with_optional_context(
+                    _event_roll_function(),
+                    high_die,
+                    player=player,
+                    reason=f"{ability_name} mortal wounds for {source_name} against {getattr(target_unit, 'name', 'Target')}",
+                    roll_type="mortal_wounds",
+                )
 
         target_is_alive = getattr(target_unit, "is_alive", False)
         target_alive = bool(target_is_alive()) if callable(target_is_alive) else bool(target_is_alive)
@@ -6711,8 +6890,6 @@ class GameRuleEventService(GameServiceBase):
             root._apply_mortal_wounds_to_unit(target_unit, int(mortal_wounds), game_map=getattr(self, "map", None))
 
         from ..utility.event_bus import append_action, append_dice
-        parent_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
-        player = getattr(parent_army, "player", None)
         if player is not None:
             append_dice(
                 player,
@@ -8630,13 +8807,21 @@ class GameRuleEventService(GameServiceBase):
         if not models:
             return
 
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll_with_optional_context
         from ..utility.event_bus import append_action, append_dice
 
+        owner = self._resolve_player_by_id(str(sr.get("snared_owner", "") or ""))
+        ability_name = str(sr.get("snared_source", "") or "Snared").strip() or "Snared"
         rolls = []
         ones = 0
-        for _m in models:
-            r = get_roll("D6")
+        for m in models:
+            r = get_roll_with_optional_context(
+                _event_roll_function(),
+                "D6",
+                player=owner,
+                reason=f"{ability_name} snared roll for {getattr(m, 'name', getattr(root, 'name', 'model'))}",
+                roll_type="mortal_wounds",
+            )
             rolls.append(r)
             if r == 1:
                 ones += 1
@@ -8644,8 +8829,6 @@ class GameRuleEventService(GameServiceBase):
         if ones > 0:
             root._apply_mortal_wounds_to_unit(root, int(ones), game_map=getattr(self, "map", None))
 
-        owner = self._resolve_player_by_id(str(sr.get("snared_owner", "") or ""))
-        ability_name = str(sr.get("snared_source", "") or "Snared").strip() or "Snared"
         if owner is not None:
             append_dice(
                 owner,
@@ -8697,23 +8880,42 @@ class GameRuleEventService(GameServiceBase):
         ):
             return
 
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll_with_optional_context
         from ..utility.event_bus import append_action, append_dice
 
         ability_name = str(sr.get("necrons_gravitic_pulse_fly_mortal_source", "") or "Gravitic Pulse").strip() or "Gravitic Pulse"
+        owner = self._resolve_player_by_id(source_owner_id) if source_owner_id else None
         try:
             threshold = int(sr.get("necrons_gravitic_pulse_fly_mortal_threshold", 4) or 4)
         except (TypeError, ValueError):
             threshold = 4
         threshold = max(2, min(6, int(threshold)))
         mortal_spec = str(sr.get("necrons_gravitic_pulse_fly_mortal_wounds", "") or "D3").strip().upper()
-        roll = get_roll("D6")
+        roll = get_roll_with_optional_context(
+            _event_roll_function(),
+            "D6",
+            player=owner,
+            reason=f"{ability_name} trigger roll for {getattr(root, 'name', 'Unit')}",
+            roll_type="mortal_wounds",
+        )
         total_mw = 0
         if int(roll) >= int(threshold):
             if mortal_spec == "D3":
-                total_mw = get_roll("D3")
+                total_mw = get_roll_with_optional_context(
+                    _event_roll_function(),
+                    "D3",
+                    player=owner,
+                    reason=f"{ability_name} mortal wounds for {getattr(root, 'name', 'Unit')}",
+                    roll_type="mortal_wounds",
+                )
             elif mortal_spec == "D6":
-                total_mw = get_roll("D6")
+                total_mw = get_roll_with_optional_context(
+                    _event_roll_function(),
+                    "D6",
+                    player=owner,
+                    reason=f"{ability_name} mortal wounds for {getattr(root, 'name', 'Unit')}",
+                    roll_type="mortal_wounds",
+                )
             else:
                 try:
                     total_mw = int(mortal_spec or 0)
@@ -8722,7 +8924,6 @@ class GameRuleEventService(GameServiceBase):
         if int(total_mw) > 0:
             root._apply_mortal_wounds_to_unit(root, int(total_mw), game_map=getattr(self, "map", None))
 
-        owner = self._resolve_player_by_id(source_owner_id) if source_owner_id else None
         if owner is not None:
             append_dice(
                 owner,
@@ -8764,25 +8965,31 @@ class GameRuleEventService(GameServiceBase):
         if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
             return
 
-        from ..utility.dice import get_roll
+        from ..utility.dice import get_roll_with_optional_context
 
         rolls = []
         successes = 0
+        player = getattr(unit.get_parent_army(), "player", None)
+        ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
         for _ in range(dice_count):
-            r = get_roll("D6")
+            r = get_roll_with_optional_context(
+                _event_roll_function(),
+                "D6",
+                player=player,
+                reason=f"{ability_name} trigger roll for {getattr(model, 'name', 'Model')} against {getattr(target_unit, 'name', 'Target')}",
+                roll_type="mortal_wounds",
+            )
             rolls.append(r)
             if r >= threshold:
                 successes += 1
         total_mw = int(successes * mortal_per)
 
-        ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
         logger.info(f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
             f"(rolls={rolls}) => {total_mw} mortal wounds")
 
         if total_mw > 0:
             unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(self, "map", None))
         from ..utility.event_bus import append_action, append_dice
-        player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
             append_dice(
                 player,
@@ -8987,12 +9194,22 @@ class GameRuleEventService(GameServiceBase):
         if not callable(spec_fn):
             return
 
-        def _resolve_mortal(raw_value):
+        def _resolve_mortal(raw_value, *, source_name: str, target_name: str):
             token = str(raw_value or "").strip().lower()
             if token == "d3":
-                return get_roll("D3"), "D3"
+                return get_roll(
+                    "D3",
+                    player=owner,
+                    reason=f"{source_name} mortal wounds for {getattr(root, 'name', 'Unit')} against {target_name}",
+                    roll_type="mortal_wounds",
+                ), "D3"
             if token == "d6":
-                return get_roll("D6"), "D6"
+                return get_roll(
+                    "D6",
+                    player=owner,
+                    reason=f"{source_name} mortal wounds for {getattr(root, 'name', 'Unit')} against {target_name}",
+                    roll_type="mortal_wounds",
+                ), "D6"
             try:
                 val = int(raw_value or 0)
             except (TypeError, ValueError):
@@ -9077,15 +9294,29 @@ class GameRuleEventService(GameServiceBase):
                     if not in_range:
                         continue
 
-                    trigger_roll = get_roll("D6")
+                    enemy_name = str(getattr(enemy_root, "name", "Unit") or "Unit")
+                    trigger_roll = get_roll(
+                        "D6",
+                        player=owner,
+                        reason=f"{source_name} trigger roll for {getattr(model, 'name', 'model')} against {enemy_name}",
+                        roll_type="mortal_wounds",
+                    )
                     mortal_wounds = 0
                     mortal_note = ""
                     forced_battleshock = False
 
                     if threshold_low_min <= trigger_roll <= threshold_low_max:
-                        mortal_wounds, mortal_note = _resolve_mortal(mortal_low)
+                        mortal_wounds, mortal_note = _resolve_mortal(
+                            mortal_low,
+                            source_name=source_name,
+                            target_name=enemy_name,
+                        )
                     elif trigger_roll >= threshold_high:
-                        mortal_wounds, mortal_note = _resolve_mortal(mortal_high)
+                        mortal_wounds, mortal_note = _resolve_mortal(
+                            mortal_high,
+                            source_name=source_name,
+                            target_name=enemy_name,
+                        )
                         forced_battleshock = bool(high_triggers_battleshock)
 
                     if mortal_wounds > 0:
@@ -9750,13 +9981,19 @@ class GameRuleEventService(GameServiceBase):
         except Exception:
             threshold = 0
         if threshold > 0:
-            roll = get_roll("D6")
+            source_label = str(spec.get("source_ability", "") or "Kill reward").strip() or "Kill reward"
+            roll = get_roll(
+                "D6",
+                player=player,
+                reason=f"{source_label} command point gain roll",
+                roll_type="command_point_gain",
+            )
             try:
                 from ..utility.event_bus import append_dice
 
                 append_dice(
                     player,
-                    f"{str(spec.get('source_ability', '') or 'Kill reward').strip() or 'Kill reward'} roll: {roll}",
+                    f"{source_label} roll: {roll}",
                 )
             except Exception:
                 pass
@@ -10139,8 +10376,16 @@ class GameRuleEventService(GameServiceBase):
                     heal_expr = spec.get("heal_expr")
                     if not heal_expr:
                         continue
-                    from warhammer40k_ai.utility.dice import get_roll
-                    amount = get_roll(heal_expr)
+                    player = attacker_unit.get_parent_army().player
+                    if player is None:
+                        continue
+                    amount = get_roll_with_optional_context(
+                        _event_roll_function(),
+                        heal_expr,
+                        player=player,
+                        reason=f"{str(spec.get('source_ability', '') or 'Kill reward').strip() or 'Kill reward'} healing for {getattr(attacker_model, 'name', 'model')}",
+                        roll_type="healing",
+                    )
                     attacker_model.heal(amount)
                     self.event_system.publish(
                         "model_healed",
@@ -10197,13 +10442,18 @@ class GameRuleEventService(GameServiceBase):
                     wp = _kwargs.get("weapon_profile", None)
                     pw = getattr(wp, "parent_wargear", None)
                     if wp is not None and pw is not None and pw.is_melee():
-                        from warhammer40k_ai.utility.dice import get_roll
-                        roll = get_roll("D6")
                         bonus = 0
                         try:
                             army = attacker_unit.get_parent_army()
                         except Exception:
                             army = None
+                        player = getattr(army, "player", None) if army is not None else None
+                        roll = _event_get_roll(
+                            "D6",
+                            player=player,
+                            reason=f"Soulstealer healing roll for {getattr(attacker_model, 'name', 'model')}",
+                            roll_type="healing",
+                        )
                         try:
                             mgr = getattr(army, "shadow_of_chaos", None) if army is not None else None
                             if mgr is not None and hasattr(mgr, "is_unit_within_shadow"):
@@ -11153,7 +11403,12 @@ class GameRuleEventService(GameServiceBase):
                                 is_vessel = bool(getattr(bearer, "has_keyword", lambda _k: False)("VESSEL OF WRATH"))
                             except Exception:
                                 is_vessel = False
-                        roll = get_roll("D6")
+                        roll = get_roll(
+                            "D6",
+                            player=player,
+                            reason=f"Vox-diabolus command point gain roll for {getattr(source, 'name', 'Unit')}",
+                            roll_type="command_point_gain",
+                        )
                         total = int(roll + (1 if is_vessel else 0))
                         if total < 4:
                             continue
@@ -11182,7 +11437,12 @@ class GameRuleEventService(GameServiceBase):
                     if not isinstance(source_sr, dict):
                         continue
                     threshold = int(source_sr.get("enhancement_killing_clarity_success_on", 4) or 4)
-                    roll = get_roll("D6")
+                    roll = get_roll(
+                        "D6",
+                        player=player,
+                        reason=f"Killing Clarity command point gain roll for {getattr(source, 'name', 'Unit')}",
+                        roll_type="command_point_gain",
+                    )
                     if roll < threshold:
                         continue
                     gained = int(player.gain_command_points(1, reason="Killing Clarity") or 0)
@@ -11370,7 +11630,14 @@ class GameRuleEventService(GameServiceBase):
                     heal_expr = spec.get("heal_expr")
                     if not heal_expr:
                         continue
-                    amount = get_roll(heal_expr)
+                    player = destroyed_by_unit.get_parent_army().player if destroyed_by_unit is not None else None
+                    amount = get_roll_with_optional_context(
+                        _event_roll_function(),
+                        heal_expr,
+                        player=player,
+                        reason=f"{str(spec.get('source_ability', '') or 'Kill reward').strip() or 'Kill reward'} healing for {getattr(destroyed_by_model, 'name', 'model')}",
+                        roll_type="healing",
+                    )
                     destroyed_by_model.heal(amount)
                     self.event_system.publish(
                         "model_healed",
@@ -11477,7 +11744,17 @@ class GameRuleEventService(GameServiceBase):
                     amount = int(hunter_rule.get("heal_if_target_psyker", 0) or 0)
                 else:
                     heal_expr = str(hunter_rule.get("heal_expr", "") or "").strip().upper()
-                    amount = get_roll(heal_expr) if heal_expr else 0
+                    player = destroyed_by_unit.get_parent_army().player if destroyed_by_unit is not None else None
+                    amount = (
+                        get_roll(
+                            heal_expr,
+                            player=player,
+                            reason=f"{str(hunter_rule.get('source', '') or 'Hunter of Souls')} healing for {getattr(destroyed_by_model, 'name', 'model')}",
+                            roll_type="healing",
+                        )
+                        if heal_expr
+                        else 0
+                    )
                 if amount > 0:
                     destroyed_by_model.heal(int(amount))
                     self.event_system.publish(
@@ -11721,8 +11998,13 @@ class GameRuleEventService(GameServiceBase):
             )
             return
 
-        from warhammer40k_ai.utility.dice import get_roll
-        roll = get_roll("D6")
+        roll = get_roll_with_optional_context(
+            _event_roll_function(),
+            "D6",
+            player=army.player,
+            reason=f"Blood Tithe Point roll for {getattr(root, 'name', 'Unit')} destroying {getattr(unit, 'name', 'Unit')}",
+            roll_type="blood_tithe",
+        )
         if roll < 3:
             return
         total = we_mgr.add_blood_tithe_points(1)
@@ -12290,7 +12572,6 @@ class GameRuleEventService(GameServiceBase):
         if not leaders:
             return
 
-        from ..utility.dice import get_roll
         from ..utility.event_bus import append_action, append_dice
 
         leaders.sort(key=lambda unit: str(get_entity_id(unit) or ""))
@@ -12332,7 +12613,12 @@ class GameRuleEventService(GameServiceBase):
                     if threshold <= 0 or cp_gain <= 0:
                         continue
                     source = str(spec.get("source", "") or "Bodyguard destroyed CP gain").strip() or "Bodyguard destroyed CP gain"
-                    roll = get_roll("D6")
+                    roll = _event_get_roll(
+                        "D6",
+                        player=player,
+                        reason=f"{source} command point gain roll for {getattr(leader, 'name', 'Leader')}",
+                        roll_type="command_point_gain",
+                    )
                     append_dice(player, f"{source}: rolled D6={int(roll)} (need {int(threshold)}+).")
                     if int(roll) >= int(threshold):
                         gained = int(player.gain_command_points(cp_gain, reason=source, source="ability") or 0)

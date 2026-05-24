@@ -2,7 +2,8 @@ from typing import List, Dict, Optional, Tuple
 from .wargear import Wargear, WargearProfile
 from .ability import Ability
 from ..utility.count import Count, CountType
-from ..utility.dice import get_roll
+from ..utility import dice as dice_module
+from ..utility.dice import get_roll, get_roll_with_optional_context
 from ..utility.modifiers import compute_save_roll_modifier
 from ..utility.model_base import Base
 from .invulnerable_save_conditions import resolve_invulnerable_save
@@ -18,6 +19,26 @@ if TYPE_CHECKING:
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
+
+_ORIGINAL_GET_ROLL = get_roll
+
+
+def _model_roll_player(model: 'Model') -> object | None:
+    parent_unit = getattr(model, "parent_unit", None)
+    get_parent_army = getattr(parent_unit, "get_parent_army", None)
+    army = get_parent_army() if callable(get_parent_army) else None
+    return getattr(army, "player", None) if army is not None else None
+
+
+def _get_model_roll(model: 'Model', data: str, *, reason: str, roll_type: str) -> int:
+    roll_fn = get_roll if get_roll is not _ORIGINAL_GET_ROLL else dice_module.get_roll
+    return get_roll_with_optional_context(
+        roll_fn,
+        data,
+        player=_model_roll_player(model),
+        reason=reason,
+        roll_type=roll_type,
+    )
 
 
 def _damage_attack_type(weapon_profile: Optional['WargearProfile'], *, is_mortal: bool, damage_source: str) -> str:
@@ -790,7 +811,12 @@ class Model:
         move_bonus_dice = str(move_bonus_dice or "").strip().upper()
         if move_bonus_dice:
             try:
-                bonus += get_roll(move_bonus_dice)
+                bonus += _get_model_roll(
+                    self,
+                    move_bonus_dice,
+                    reason=f"{str(ability_name or 'Movement bonus').strip() or 'Movement bonus'} move bonus for {self.name}",
+                    roll_type="movement_bonus",
+                )
             except Exception:
                 pass
         try:
@@ -2218,7 +2244,12 @@ class Model:
                 fnp_saves = 0
                 condition_text = f" ({fnp_condition})" if fnp_condition else ""
                 for i in range(amount):
-                    fnp_roll = get_roll("D6")
+                    fnp_roll = _get_model_roll(
+                        self,
+                        "D6",
+                        reason=f"Feel No Pain roll for {self.name} ({i + 1}/{amount})",
+                        roll_type="feel_no_pain",
+                    )
                     if fnp_roll >= fnp_value:
                         fnp_saves += 1
                         logger.info(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - SAVED")
@@ -2776,7 +2807,12 @@ class Model:
                 save_value = min(save_value, effective_inv_save)
                 save_type = "invulnerable"
 
-        dice_roll = get_roll("D6")
+        dice_roll = _get_model_roll(
+            self,
+            "D6",
+            reason=f"Saving throw for {self.name}",
+            roll_type="save",
+        )
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             # Suppress print for comprehensive attack summary
             # print(f"Saving Throw: dice_roll == 1, returning False")

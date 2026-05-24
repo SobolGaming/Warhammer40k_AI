@@ -805,6 +805,13 @@ class GamePhaseHandlersMixin:
         move_kind = str(movement_type or "").strip().lower()
         if move_kind not in {"move", "advance", "fall_back"}:
             return None
+        round_state = getattr(unit, "round_state", None)
+        if (
+            bool(getattr(round_state, "moved_this_round", False))
+            or bool(getattr(round_state, "advanced_this_round", False))
+            or bool(getattr(round_state, "fell_back_this_round", False))
+        ):
+            return None
         from ..movement_distance import unit_normal_move_limit
 
         max_distance = float(unit_normal_move_limit(unit, game=self))
@@ -817,7 +824,6 @@ class GamePhaseHandlersMixin:
                 return None
             max_distance += advance_roll
         from ..decision_requests import queue_move_unit_request
-        round_state = getattr(unit, "round_state", None)
         planned_type = str(getattr(round_state, "planned_movement_type", "") or "").strip().lower()
         planned_positions = getattr(round_state, "planned_movement_model_positions", None)
         planned_distance = getattr(round_state, "planned_movement_distance_inches", None)

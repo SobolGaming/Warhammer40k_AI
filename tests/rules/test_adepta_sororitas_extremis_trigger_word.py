@@ -167,3 +167,42 @@ def test_extremis_trigger_word_hazardous_bonus_triggers_hazardous_roll(monkeypat
     assert int(result.hazardous_roll or 0) == 1
     assert int(result.hazardous_damage or 0) == 3
 
+
+def test_extremis_trigger_word_hazardous_roll_is_labelled(monkeypatch):
+    import warhammer40k_ai.units.wargear as wargear_module
+
+    seen: list[dict] = []
+
+    def _rigged_roll(_dice, **kwargs):
+        seen.append(dict(kwargs))
+        return 6
+
+    monkeypatch.setattr(wargear_module, "get_roll", _rigged_roll)
+    game, sororitas_player, arco, enemy = _setup_arco_fight_scene()
+
+    game._on_fight_unit_selected_extremis_trigger_word(unit=arco, selecting_player=sororitas_player)
+    _resolve_yes(game, sororitas_player.id)
+
+    parent = SimpleNamespace(name="arco-flails", is_melee=lambda: True, is_ranged=lambda: False)
+    profile = WargearProfile(
+        profile_name="Melee",
+        wargear_data={
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+    result = profile.attack(enemy, arco.models[0], game_map=getattr(game, "map", None))
+
+    assert result is not None
+    assert any(
+        str(entry.get("roll_type", "") or "") == "hazardous"
+        and str(entry.get("reason", "") or "").startswith("Hazardous test for")
+        for entry in seen
+    )

@@ -5,6 +5,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def get_roll_context(data: str, **kwargs):
+    return get_roll_with_optional_context(get_roll, data, **kwargs)
+
+
 class DamageDeathMixin:
     def _maybe_activate_watcher_in_the_dark(
         self,
@@ -471,13 +475,19 @@ class DamageDeathMixin:
         return False
 
     @staticmethod
-    def _resolve_roll_expression(expression: str) -> int:
+    def _resolve_roll_expression(
+        expression: str,
+        *,
+        player=None,
+        reason: str | None = None,
+        roll_type: str | None = None,
+    ) -> int:
         expr = str(expression or "").strip().upper().replace(" ", "")
         if not expr:
             return 0
         if expr.isdigit():
             return int(expr)
-        return get_roll(expr)
+        return get_roll_context(expr, player=player, reason=reason, roll_type=roll_type)
 
     def _prompt_use_death_vision_of_sanguinius(
         self,
@@ -683,7 +693,16 @@ class DamageDeathMixin:
             ).strip() or "Model"
             attacker_label = str(getattr(attacker_root, "name", "") or "Attacking Unit").strip() or "Attacking Unit"
             warlord_bonus = int(rule.get("warlord_bonus", 0) or 0) if attacker_contains_warlord else 0
-            roll = get_roll("D6")
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+            roll = get_roll_context(
+                "D6",
+                player=player,
+                reason=f"{ability_name} roll for {source_label} against {attacker_label}",
+                roll_type="death_vision",
+            )
             total = int(roll) + int(warlord_bonus)
 
             result_expr = ""
@@ -694,12 +713,12 @@ class DamageDeathMixin:
             elif total >= int(rule.get("high_threshold", 7) or 7):
                 result_expr = str(rule.get("high_expr", "") or "")
 
-            mortal_wounds = self._resolve_roll_expression(result_expr)
-
-            try:
-                player = source_unit.get_parent_army().player
-            except Exception:
-                player = None
+            mortal_wounds = self._resolve_roll_expression(
+                result_expr,
+                player=player,
+                reason=f"{ability_name} mortal wounds for {source_label} against {attacker_label}",
+                roll_type="mortal_wounds",
+            )
             if player is not None:
                 if warlord_bonus:
                     append_dice(
@@ -1390,10 +1409,15 @@ class DamageDeathMixin:
                     exp = str(sr.get("hysterical_frenzy_expires_phase", "") or "").strip().upper()
                     if not exp or exp == phase_name:
                         threshold = int(sr.get("hysterical_frenzy_threshold", 4) or 4)
-                        roll = get_roll("D6")
+                        label = str(sr.get("hysterical_frenzy_source", "") or "Hysterical Frenzy").strip()
+                        roll = get_roll_context(
+                            "D6",
+                            player=army.player if army is not None and getattr(army, "player", None) is not None else None,
+                            reason=f"{label} roll for {self.name}",
+                            roll_type="fight_on_death",
+                        )
                         from ...utility.event_bus import append_dice
                         if army is not None and getattr(army, "player", None) is not None:
-                            label = str(sr.get("hysterical_frenzy_source", "") or "Hysterical Frenzy").strip()
                             append_dice(army.player, f"{label} roll: {roll} for {self.name}")
                         if roll >= int(threshold):
                             pending = getattr(root, "_hysterical_frenzy_pending_models", None)
@@ -1451,7 +1475,13 @@ class DamageDeathMixin:
                         if not exp or exp == phase_name:
                             try:
                                 if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
-                                    roll = get_roll("D6")
+                                    label = str(sr.get("beautiful_death_source", "") or "Beautiful Death").strip()
+                                    roll = get_roll_context(
+                                        "D6",
+                                        player=army.player if army is not None and getattr(army, "player", None) is not None else None,
+                                        reason=f"{label} roll for {self.name}",
+                                        roll_type="fight_on_death",
+                                    )
                                     bonus = 0
                                     mgr = getattr(army, "emperors_children", None) if army is not None else None
                                     is_favoured = getattr(mgr, "is_favoured_champions", None) if mgr is not None else None
@@ -1460,7 +1490,6 @@ class DamageDeathMixin:
                                     total = int(roll + bonus)
                                     from ...utility.event_bus import append_dice
                                     if army is not None and getattr(army, "player", None) is not None:
-                                        label = str(sr.get("beautiful_death_source", "") or "Beautiful Death").strip()
                                         if bonus:
                                             append_dice(
                                                 army.player,
@@ -1622,11 +1651,16 @@ class DamageDeathMixin:
                                 is_melee = bool(is_melee_fn())
                             if is_melee:
                                 threshold = int(sr.get("blood_legion_wrath_undeniable_threshold", 4) or 4)
-                                roll = get_roll("D6")
+                                label = str(sr.get("blood_legion_wrath_undeniable_source", "") or "Wrath Undeniable").strip()
+                                roll = get_roll_context(
+                                    "D6",
+                                    player=army.player if army is not None and getattr(army, "player", None) is not None else None,
+                                    reason=f"{label} roll for {self.name}",
+                                    roll_type="fight_on_death",
+                                )
                                 if army is not None and getattr(army, "player", None) is not None:
                                     from ...utility.event_bus import append_dice
 
-                                    label = str(sr.get("blood_legion_wrath_undeniable_source", "") or "Wrath Undeniable").strip()
                                     append_dice(army.player, f"{label} roll: {roll} for {self.name}")
                                 if roll >= threshold:
                                     pending = getattr(root, "_blood_legion_wrath_undeniable_pending_models", None)
@@ -1685,8 +1719,13 @@ class DamageDeathMixin:
                             try:
                                 if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
                                     from ...utility.damage_allocation import _is_character_model
-                                    from ...utility import dice as dice_module
-                                    roll = dice_module.get_roll("D6")
+                                    player = army.player if army is not None and getattr(army, "player", None) is not None else None
+                                    roll = get_roll_context(
+                                        "D6",
+                                        player=player,
+                                        reason=f"Defiant to the Last roll for {self.name}",
+                                        roll_type="fight_on_death",
+                                    )
                                     is_char = bool(_is_character_model(model))
                                     total = roll + (2 if is_char else 0)
                                     try:
@@ -1766,7 +1805,15 @@ class DamageDeathMixin:
                                 except Exception:
                                     pass
                         return
-                    roll = get_roll("D6")
+                    army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                    player = getattr(army, "player", None) if army is not None else None
+                    source_label = str(rule.get("source", "Fight on death") or "Fight on death")
+                    roll = get_roll_context(
+                        "D6",
+                        player=player,
+                        reason=f"{source_label} roll for {self.name}",
+                        roll_type="fight_on_death",
+                    )
                     total = int(roll)
                     roll_modifier = int(rule.get("roll_modifier", 0) or 0)
                     fortify_bonus = int(rule.get("fortify_takeover_bonus", 0) or 0)
@@ -1790,10 +1837,10 @@ class DamageDeathMixin:
                         if total != int(roll):
                             append_dice(
                                 pn,
-                                f"{rule.get('source', 'Fight on death')} roll: {roll}+{int(total - int(roll))}={total} for {self.name}",
+                                f"{source_label} roll: {roll}+{int(total - int(roll))}={total} for {self.name}",
                             )
                         else:
-                            append_dice(pn, f"{rule.get('source', 'Fight on death')} roll: {roll} for {self.name}")
+                            append_dice(pn, f"{source_label} roll: {roll} for {self.name}")
                     except Exception:
                         pass
                     if total >= int(rule.get("threshold", 0) or 0):
@@ -1860,15 +1907,21 @@ class DamageDeathMixin:
                 elif trigger_attack_type == "ranged":
                     should_trigger = bool(is_ranged)
                 if should_trigger:
-                    roll = get_roll("D6")
-                    total = int(roll)
-                    from ...utility.event_bus import append_dice
                     army = self.get_parent_army()
                     player = getattr(army, "player", None) if army is not None else None
+                    source_label = str(shoot_rule.get("source", "Shoot on death") or "Shoot on death")
+                    roll = get_roll_context(
+                        "D6",
+                        player=player,
+                        reason=f"{source_label} roll for {self.name}",
+                        roll_type="shoot_on_death",
+                    )
+                    total = int(roll)
+                    from ...utility.event_bus import append_dice
                     if player is not None:
                         append_dice(
                             player,
-                            f"{shoot_rule.get('source', 'Shoot on death')} roll: {roll} for {self.name}",
+                            f"{source_label} roll: {roll} for {self.name}",
                         )
                     if total >= int(shoot_rule.get("threshold", 0) or 0):
                         try:
@@ -1905,10 +1958,17 @@ class DamageDeathMixin:
                         except Exception:
                             is_melee = False
                         if is_melee:
-                            roll = get_roll("D6")
+                            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                            player = getattr(army, "player", None) if army is not None else None
+                            roll = get_roll_context(
+                                "D6",
+                                player=player,
+                                reason=f"Mindless Killing Machines roll for {self.name}",
+                                roll_type="fight_on_death",
+                            )
                             try:
                                 from ...utility.event_bus import append_dice
-                                pn = self.get_parent_army().player
+                                pn = player
                                 append_dice(pn, f"Mindless Killing Machines roll: {roll} for {self.name}")
                             except Exception:
                                 pass
@@ -2485,7 +2545,14 @@ class DamageDeathMixin:
 
         # Roll D6 to see if Deadly Demise triggers unless auto-triggered by a stratagem.
         if not auto_trigger:
-            trigger_roll = get_roll("D6")
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            trigger_roll = get_roll_context(
+                "D6",
+                player=player,
+                reason=f"Deadly Demise trigger for {self.name}",
+                roll_type="deadly_demise",
+            )
             try:
                 from ...utility.event_bus import append_dice
                 pn = self.get_parent_army().player

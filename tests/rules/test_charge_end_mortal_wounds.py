@@ -107,6 +107,42 @@ def test_charge_end_mortal_wounds_per_model(monkeypatch):
     assert applied["target"] is enemy
 
 
+def test_charge_end_mortal_wounds_rolls_are_labelled(monkeypatch):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+
+    ability = (
+        "Each time this unit ends a Charge move, select one enemy unit within Engagement Range of this unit and roll "
+        "one D6 for each model in this unit: for each 4+, that enemy unit suffers D3 mortal wounds."
+    )
+    unit = _make_unit("Brass Stampede", ability_desc=ability, model_count=1)
+    enemy = _make_unit("Enemy")
+    unit.deployed = True
+    enemy.deployed = True
+
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    unit.set_parent_army(army)
+    enemy.set_parent_army(enemy_army)
+    unit._refresh_charge_end_mortal_wounds_flags()
+
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    game.map = _MapStub([enemy])
+    unit._apply_mortal_wounds_to_unit = types.MethodType(lambda *_args, **_kwargs: 0, unit)
+
+    seen: list[tuple[str, dict]] = []
+
+    def _fake_get_roll(die, **kwargs):
+        seen.append((die, dict(kwargs)))
+        return 4 if die == "D6" else 2
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fake_get_roll)
+
+    game._on_unit_move_ended_charge_mortal_wounds(unit=unit, action="charge")
+
+    assert any(die == "D6" and "Brass Stampede" in str(kwargs.get("reason", "")) for die, kwargs in seen)
+    assert any(die == "D3" and kwargs.get("roll_type") == "mortal_wounds" for die, kwargs in seen)
+
+
 def test_charge_end_mortal_wounds_supports_charge_move_wording_without_target_engagement_clause(monkeypatch):
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
