@@ -171,6 +171,14 @@ class DecisionControllerHub:
         return DecisionControllerHub._request_dispatch_mode(request) in {"sync_child", "interrupt"}
 
     @staticmethod
+    def _request_has_parent_reference(request: DecisionRequest) -> bool:
+        context = dict(getattr(request, "context", {}) or {})
+        return bool(
+            str(context.get("parent_decision_id", "") or "").strip()
+            or str(context.get("interrupts_decision_id", "") or "").strip()
+        )
+
+    @staticmethod
     def _active_decision_frame(game: object) -> dict:
         stack = getattr(game, "_decision_frame_stack", None)
         if not isinstance(stack, list) or not stack:
@@ -197,6 +205,11 @@ class DecisionControllerHub:
         if DecisionControllerHub._request_is_current(game, request):
             if DecisionControllerHub._request_resolution_in_progress(request):
                 return False
+            if (
+                DecisionControllerHub._request_is_stack_dispatchable(request)
+                and DecisionControllerHub._request_has_parent_reference(request)
+            ):
+                return DecisionControllerHub._request_matches_active_frame(game, request)
             return True
         if not DecisionControllerHub._request_is_pending(game, request):
             return False

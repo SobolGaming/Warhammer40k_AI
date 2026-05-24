@@ -220,6 +220,36 @@ def test_decision_controller_hub_rejects_interrupt_with_wrong_parent() -> None:
     assert game.decision_queue.peek() is current
 
 
+def test_decision_controller_hub_rejects_stale_stack_request_that_becomes_fifo_head() -> None:
+    game = _GameStub()
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    stale_child = _build_stack_request(mode="sync_child", parent_decision_id="resolved-parent")
+    game.decision_queue.add(stale_child)
+    hub.add_controller(_RecordingController(calls, "controller"))
+
+    hub._on_decision_requested(request=stale_child, game=game)
+
+    assert calls == []
+    assert game.decision_queue.peek() is stale_child
+
+
+def test_decision_controller_hub_dispatches_stack_request_as_fifo_head_only_during_parent_frame() -> None:
+    game = _GameStub()
+    game._decision_resolution_depth = 1
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    child = _build_stack_request(mode="sync_child", parent_decision_id="parent-1")
+    game._decision_frame_stack.append({"decision_id": "parent-1"})
+    game.decision_queue.add(child)
+    hub.add_controller(_RecordingController(calls, "controller"))
+
+    hub._on_decision_requested(request=child, game=game)
+
+    assert calls == [f"requested:controller:{child.decision_id}"]
+    assert game.decision_queue.peek() is child
+
+
 def test_decision_controller_hub_does_not_redispatch_resolving_parent_after_child_resolution() -> None:
     game = _GameStub()
     game._decision_resolution_depth = 1

@@ -114,14 +114,12 @@ class TestAdeptusCustodesLionsStratagems(unittest.TestCase):
         self.assertTrue(ok)
         self.assertTrue(unit.special_rules.get("defiant_to_last_active"))
 
-        original_roll = dice_module.get_roll
-        dice_module.get_roll = lambda _d: 2
-        try:
+        from warhammer40k_ai.units import unit as unit_module
+
+        with patch.object(unit_module, "get_roll", return_value=2):
             model = unit.models[0]
             model._wounds = 0
             unit._handle_model_destroyed(model, game.map)
-        finally:
-            dice_module.get_roll = original_roll
 
         pending = getattr(unit, "_defiant_to_last_pending_models", [])
         self.assertIn(unit.models[0], pending)
