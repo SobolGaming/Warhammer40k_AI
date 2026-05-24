@@ -37,6 +37,16 @@ Replay-store persistence note:
   `decision_resolved` before controller-hub follow-ups are drained. A keyframe
   for decision N therefore represents state after decision N only, not state
   from automatically resolved decision N+1.
+- Decision controllers receive only the current FIFO queue head. If a nested
+  request is published while an earlier request is still pending, controller
+  dispatch waits until the earlier request resolves and then surfaces the new
+  queue head. This prevents stale later candidates from being resolved against
+  board state produced by intervening dice, damage, or movement decisions.
+- Synchronous optional confirmation requests are the exception: when a rule
+  needs an immediate yes/no answer while applying a parent decision, the
+  controller hub may dispatch that confirmation before it becomes the FIFO head.
+  The confirmation still records as its own decision and resolves before the
+  parent decision completes.
 - During reconstruction, recorded `REQUEST_DICE_ROLL` outcomes are injected back
   into live `get_roll(...)` calls. Nested dice consumed while applying a parent
   decision therefore use the original recorded value and do not create generic

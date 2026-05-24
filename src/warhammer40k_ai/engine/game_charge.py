@@ -1004,13 +1004,17 @@ class ChargeService:
                 sr.pop("blood_surge_fixed_distance_phase_key", None)
                 unit.special_rules = sr
 
-        from ..utility.dice import get_roll
-
-        base_roll = get_roll("D6")
-        reroll_used = False
-
         parent_army = unit.get_parent_army()
         player = parent_army.player if parent_army is not None else None
+        from ..utility.dice import get_roll
+
+        base_roll = get_roll(
+            "D6",
+            player=player,
+            reason=f"Blood Surge roll for {unit.name}",
+            roll_type="blood_surge",
+        )
+        reroll_used = False
 
         can_reroll = bool(unit.can_reroll_blood_surge_roll())
         provider = get_decision_provider(self.game, "roll_reroll_provider")
@@ -1024,7 +1028,12 @@ class ChargeService:
                 allow_reroll=bool(can_reroll),
             ))
             if want and can_reroll:
-                base_roll = get_roll("D6")
+                base_roll = get_roll(
+                    "D6",
+                    player=player,
+                    reason=f"Blood Surge reroll for {unit.name}",
+                    roll_type="blood_surge",
+                )
                 reroll_used = True
         max_distance = int(base_roll or 0) + 2
 
@@ -1040,10 +1049,15 @@ class ChargeService:
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = get_roll("D6")
+        player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = get_roll(
+            "D6",
+            player=player,
+            reason=f"Unhinged Vengeance roll for {unit.name}",
+            roll_type="unhinged_vengeance",
+        )
         max_distance = int(base_roll + 2)
         from ..utility.event_bus import append_dice
-        player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
             append_dice(player, f"Unhinged Vengeance roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
@@ -1053,10 +1067,15 @@ class ChargeService:
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = get_roll("D6")
+        player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = get_roll(
+            "D6",
+            player=player,
+            reason=f"Blistering Assault roll for {unit.name}",
+            roll_type="blistering_assault",
+        )
         max_distance = int(base_roll + 2)
         from ..utility.event_bus import append_dice
-        player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
             append_dice(player, f"Blistering Assault roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
@@ -1066,10 +1085,15 @@ class ChargeService:
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = get_roll("D6")
+        player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = get_roll(
+            "D6",
+            player=player,
+            reason=f"Bestial Rage roll for {unit.name}",
+            roll_type="bestial_rage",
+        )
         max_distance = int(base_roll + 2)
         from ..utility.event_bus import append_dice
-        player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
             append_dice(player, f"Bestial Rage roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
@@ -1079,9 +1103,14 @@ class ChargeService:
         if unit is None:
             return 0
         from ..utility.dice import get_roll
-        base_roll = get_roll("D6")
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = get_roll(
+            "D6",
+            player=player,
+            reason=f"Aggressive Leader-beast roll for {unit.name}",
+            roll_type="aggressive_leader_beast",
+        )
         if player is not None:
             append_dice(
                 player,
@@ -1111,9 +1140,18 @@ class ChargeService:
             fixed_distance = int(sr.get("enhancement_malicious_vigour_brazen_fury_distance", 6) or 6)
             break
         from ..utility.dice import get_roll
-        base_roll = int(fixed_distance if fixed_distance is not None else (get_roll("D6")))
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = int(
+            fixed_distance
+            if fixed_distance is not None
+            else get_roll(
+                "D6",
+                player=player,
+                reason=f"Brazen Fury roll for {unit.name}",
+                roll_type="brazen_fury",
+            )
+        )
         if player is not None:
             if fixed_distance is not None:
                 append_dice(player, f"Brazen Fury fixed distance: {int(base_roll or 0)}\" for {unit.name}")
@@ -1134,13 +1172,22 @@ class ChargeService:
         except Exception:
             fixed_distance = 0
         from ..utility.dice import get_roll
-        base_roll = int(fixed_distance if fixed_distance > 0 else (get_roll("D6")))
         distance_bonus = int(rule.get("distance_bonus", 0) or 0)
         can_reroll = bool(rule.get("distance_reroll"))
         source = str(rule.get("source", "") or "Horde Move").strip() or "Horde Move"
         reroll_used = False
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
+        base_roll = int(
+            fixed_distance
+            if fixed_distance > 0
+            else get_roll(
+                "D6",
+                player=player,
+                reason=f"{source} roll for {unit.name}",
+                roll_type="horde_move",
+            )
+        )
         provider = get_decision_provider(self.game, "roll_reroll_provider")
         if fixed_distance <= 0 and can_reroll and callable(provider):
             want = bool(
@@ -1155,7 +1202,12 @@ class ChargeService:
                 )
             )
             if want:
-                base_roll = get_roll("D6")
+                base_roll = get_roll(
+                    "D6",
+                    player=player,
+                    reason=f"{source} reroll for {unit.name}",
+                    roll_type="horde_move",
+                )
                 reroll_used = True
         max_distance = int(base_roll + distance_bonus)
         if player is not None:

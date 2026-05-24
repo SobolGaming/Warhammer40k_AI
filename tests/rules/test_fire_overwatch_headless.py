@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.decision_handlers.shooting import (
 )
 from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
+from warhammer40k_ai.engine.headless_policy_controller import HeadlessPolicyDecisionController
 from warhammer40k_ai.rules.stratagems import StratagemManager
 
 
@@ -224,6 +225,51 @@ def test_validate_select_overwatch_rejects_stale_once_used_choice() -> None:
 
     assert _validate_select_overwatch(game, request, result) == (
         "Fire Overwatch is no longer legal for the selected unit.",
+    )
+
+
+def test_headless_precheck_rejects_stale_fire_overwatch_choice_before_apply() -> None:
+    manager = SimpleNamespace(
+        can_use=lambda *_args, **_kwargs: False,
+        _dequeue_reaction_by_name_and_context=lambda *_args, **_kwargs: None,
+    )
+    shooter = SimpleNamespace(id="unit:shooter", name="Shooter")
+    enemy = SimpleNamespace(id="unit:enemy", name="Enemy")
+    player = SimpleNamespace(id="player:overwatch", stratagems=manager)
+    game = SimpleNamespace(players=[player], entity_registry=None)
+    request = _fire_overwatch_request(player_id=player.id, enemy_unit_id=enemy.id, shooter_unit_id=shooter.id)
+    shooter_choice = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("unit_id", "") or "") == shooter.id
+    )
+    skip_choice = next(
+        option
+        for option in list(request.options or [])
+        if str((option.payload or {}).get("action", "") or "") == "skip"
+    )
+
+    player_lookup = {player.id: player}
+    unit_lookup = {shooter.id: shooter, enemy.id: enemy}
+    game.entity_registry = SimpleNamespace(
+        get=lambda entity_id, kind=None: player_lookup.get(entity_id) if kind == "player" else unit_lookup.get(entity_id)
+    )
+
+    assert (
+        HeadlessPolicyDecisionController._candidate_passes_current_game_precheck(
+            game,
+            request,
+            shooter_choice.option_id,
+        )
+        is False
+    )
+    assert (
+        HeadlessPolicyDecisionController._candidate_passes_current_game_precheck(
+            game,
+            request,
+            skip_choice.option_id,
+        )
+        is True
     )
 
 

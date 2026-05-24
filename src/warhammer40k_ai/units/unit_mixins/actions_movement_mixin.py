@@ -16874,6 +16874,22 @@ class ActionsMovementMixin:
             if not bool(getattr(game, "is_authoritative", True)):
                 return None
 
+            if fixed_source in {"no_roll", "rule"} and fixed_roll is not None:
+                try:
+                    advance_roll = self._apply_advance_roll_modifiers(int(fixed_roll))
+                except (AttributeError, TypeError, ValueError):
+                    advance_roll = int(fixed_roll)
+                self.round_state.advance_roll = int(advance_roll)
+                self.round_state.advance_roll_unmodified = int(fixed_roll)
+                self.round_state.advance_roll_id = None
+                try:
+                    from ...utility.event_bus import append_dice
+
+                    append_dice(player, f"Advance roll fixed: {int(advance_roll)} for {self.name}")
+                except (AttributeError, TypeError, ValueError):
+                    pass
+                return int(advance_roll)
+
             if fixed_source == "no_roll_move_characteristic":
                 self.round_state.advance_roll = 0
                 try:

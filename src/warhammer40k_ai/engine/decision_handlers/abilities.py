@@ -27138,7 +27138,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
             player = getattr(source_army, "player", None) if source_army is not None else None
         ability_name = str(ctx.get("ability_name", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
-        from ...utility.dice import get_roll
+        from ...utility.dice import get_roll, get_roll_with_optional_context
         from ...utility.event_bus import append_dice
         heal_roll = str(ctx.get("heal_roll", "") or "").strip().upper()
         try:
@@ -27146,7 +27146,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             heal_flat = 0
         if heal_roll:
-            heal = get_roll(heal_roll)
+            target_name = str(getattr(target_model, "name", "") or getattr(target_unit, "name", "") or "Unit")
+            heal = get_roll_with_optional_context(
+                get_roll,
+                heal_roll,
+                player=player,
+                reason=f"{ability_name} healing roll for {target_name}",
+                roll_type="master_of_mechanisms",
+            )
         else:
             heal = int(heal_flat or 0)
         if player is not None:

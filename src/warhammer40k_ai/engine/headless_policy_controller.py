@@ -34,12 +34,14 @@ from .decision_kinds import (
     DECISION_SELECT_DICE_REROLL,
     DECISION_SELECT_MOVEMENT_ACTION,
     DECISION_SELECT_NEXT_DEPLOY_UNIT,
+    DECISION_SELECT_OVERWATCH_SHOOTER,
     DECISION_SELECT_TOOL_ACTION,
     DECISION_SELECT_UNIT,
     DECISION_SHADOW_ASSIGNMENT,
 )
 from .decision_handlers.movement import validate_move_unit_payload
-from .decisions import CandidateAction, DecisionRequest
+from .decision_handlers.shooting import _validate_select_overwatch
+from .decisions import CandidateAction, DecisionRequest, DecisionResult
 from .placement_zone_heuristics import (
     exhaustive_lattice_candidate_positions as _exhaustive_lattice_candidate_positions_shared,
     gap_anchor_candidates as _gap_anchor_candidates_shared,
@@ -2567,9 +2569,33 @@ class HeadlessPolicyDecisionController(DecisionController):
             )
         if decision_type == DECISION_SCOUT_MOVE:
             return cls._scout_move_option_is_currently_valid(game, request, option_id)
+        if decision_type == DECISION_SELECT_OVERWATCH_SHOOTER:
+            return cls._select_overwatch_option_is_currently_valid(
+                game,
+                request,
+                option_id,
+                result_payload=result_payload,
+            )
         if decision_type == DECISION_SELECT_UNIT:
             return cls._select_unit_option_is_currently_valid(game, request, option_id)
         return True
+
+    @classmethod
+    def _select_overwatch_option_is_currently_valid(
+        cls,
+        game: object | None,
+        request: DecisionRequest,
+        option_id: str,
+        *,
+        result_payload: dict[str, Any] | None = None,
+    ) -> bool:
+        result = DecisionResult(
+            decision_id=str(getattr(request, "decision_id", "") or ""),
+            player_id=getattr(request, "player_id", None),
+            option_id=option_id,
+            payload=dict(result_payload or {}),
+        )
+        return not bool(_validate_select_overwatch(game, request, result))
 
     @classmethod
     def _move_unit_option_is_currently_valid(

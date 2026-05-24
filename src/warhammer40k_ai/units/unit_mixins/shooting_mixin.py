@@ -3635,6 +3635,13 @@ class ShootingMixin:
         except Exception:
             members = [root]
 
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+
         roll_expr_norm = str(roll_expr or "").strip().upper()
 
         # Their Number is Legion: auto-apply re-roll when the re-roll is strictly better.
@@ -3647,7 +3654,12 @@ class ShootingMixin:
                 max_roll = 3 if roll_expr_norm == "D3" else 6
                 if int(resolved_wounds or 0) < int(max_roll):
                     try:
-                        rerolled = get_roll(roll_expr_norm)
+                        rerolled = get_roll_context(
+                            roll_expr_norm,
+                            player=player,
+                            reason=f"Reanimation Protocols reroll for {root.name}",
+                            roll_type="reanimation_protocols",
+                        )
                     except Exception:
                         rerolled = int(resolved_wounds or 0)
                     if int(rerolled or 0) > int(resolved_wounds or 0):
@@ -3656,11 +3668,6 @@ class ShootingMixin:
         # Necrons Reanimation interactions:
         # - Nanoscarab Reanimation Beam (Aura): add one additional D3 while in range.
         # - Nanoscarab Projector: auto-use one eligible unused bearer (+1, once per battle round).
-        try:
-            army = root.get_parent_army()
-        except Exception:
-            army = None
-        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
         if game_map is None and game is not None:
             game_map = getattr(game, "map", None)
 
@@ -3748,8 +3755,16 @@ class ShootingMixin:
                         if stype == "nanoscarab_reanimation_beam":
                             if beam_applied:
                                 continue
+                            source_name = str(spec.get("source", "") or "Nanoscarab Reanimation Beam").strip()
+                            if not source_name:
+                                source_name = "Nanoscarab Reanimation Beam"
                             try:
-                                bonus_roll = get_roll("D3")
+                                bonus_roll = get_roll_context(
+                                    "D3",
+                                    player=player,
+                                    reason=f"{source_name} bonus Reanimation Protocols roll for {root.name}",
+                                    roll_type="reanimation_protocols_bonus",
+                                )
                             except Exception:
                                 bonus_roll = 0
                             if bonus_roll > 0:

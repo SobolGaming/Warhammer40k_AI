@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.decision_controller import DecisionController, DecisionControllerHub
-from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 
 
 class _GameStub:
@@ -39,6 +39,28 @@ def _build_request() -> DecisionRequest:
     )
 
 
+def _build_optional_confirmation() -> DecisionRequest:
+    return DecisionRequest.create(
+        "CONFIRM_YES_NO",
+        "Use optional ability?",
+        player_id="player-1",
+        options=[
+            DecisionOption.create("Use", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ],
+        context={"optional": True, "ability_key": "TEST_OPTIONAL"},
+    )
+
+
+def _build_result(request: DecisionRequest) -> DecisionResult:
+    return DecisionResult(
+        decision_id=request.decision_id,
+        player_id=request.player_id,
+        option_id=request.options[0].option_id,
+        payload={},
+    )
+
+
 def test_decision_controller_hub_stops_dispatch_after_request_is_resolved() -> None:
     game = _GameStub()
     hub = DecisionControllerHub(game)
@@ -70,3 +92,53 @@ def test_decision_controller_hub_continues_when_request_stays_pending() -> None:
         f"requested:second:{request.decision_id}",
     ]
     assert game.decision_queue.get(request.decision_id) is request
+
+
+def test_decision_controller_hub_does_not_dispatch_non_current_request() -> None:
+    game = _GameStub()
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    current = _build_request()
+    later = _build_request()
+    game.decision_queue.add(current)
+    game.decision_queue.add(later)
+    hub.add_controller(_RecordingController(calls, "controller"))
+
+    hub._on_decision_requested(request=later, game=game)
+
+    assert calls == []
+    assert game.decision_queue.peek() is current
+
+
+def test_decision_controller_hub_dispatches_synchronous_optional_non_current_request() -> None:
+    game = _GameStub()
+    game._decision_resolution_depth = 1
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    current = _build_request()
+    optional = _build_optional_confirmation()
+    game.decision_queue.add(current)
+    game.decision_queue.add(optional)
+    hub.add_controller(_RecordingController(calls, "controller"))
+
+    hub._on_decision_requested(request=optional, game=game)
+
+    assert calls == [f"requested:controller:{optional.decision_id}"]
+    assert game.decision_queue.peek() is current
+
+
+def test_decision_controller_hub_dispatches_waiting_head_after_resolution() -> None:
+    game = _GameStub()
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    current = _build_request()
+    later = _build_request()
+    game.decision_queue.add(current)
+    game.decision_queue.add(later)
+    hub.add_controller(_RecordingController(calls, "controller"))
+    game.decision_queue.pop(current.decision_id)
+
+    hub._on_decision_resolved(request=current, result=_build_result(current), game=game)
+
+    assert calls == [f"requested:controller:{later.decision_id}"]
+    assert game.decision_queue.peek() is later
