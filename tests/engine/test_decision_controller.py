@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.decision_controller import DecisionController, DecisionControllerHub
+from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_HEROIC_INTERVENTION_MODE
 from warhammer40k_ai.engine.game_decision_runtime import _decorate_dispatch_context
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 
@@ -67,6 +68,22 @@ def _build_stack_request(*, mode: str, parent_decision_id: str, interrupt_window
         player_id="player-1",
         options=[DecisionOption.create("Resolve", payload={"value": 1})],
         context=context,
+    )
+
+
+def _build_heroic_intervention_interrupt(*, parent_decision_id: str) -> DecisionRequest:
+    return DecisionRequest.create(
+        DECISION_SELECT_HEROIC_INTERVENTION_MODE,
+        "Select Heroic Intervention mode",
+        player_id="player-1",
+        options=[DecisionOption.create("Heroic Intervention", payload={"mode_id": "default"})],
+        context={
+            "dispatch_mode": "interrupt",
+            "interrupt_window": "after_enemy_charge_move",
+            "interrupt_source": "heroic_intervention",
+            "parent_decision_id": parent_decision_id,
+            "out_of_phase": True,
+        },
     )
 
 
@@ -209,6 +226,42 @@ def test_decision_controller_hub_rejects_interrupt_with_wrong_parent() -> None:
         parent_decision_id="other-decision",
         interrupt_window="start_move",
     )
+    game._decision_frame_stack.append({"decision_id": current.decision_id})
+    game.decision_queue.add(current)
+    game.decision_queue.add(interrupt)
+    hub.add_controller(_RecordingController(calls, "controller"))
+
+    hub._on_decision_requested(request=interrupt, game=game)
+
+    assert calls == []
+    assert game.decision_queue.peek() is current
+
+
+def test_decision_controller_hub_dispatches_heroic_intervention_interrupt_of_active_charge_frame() -> None:
+    game = _GameStub()
+    game._decision_resolution_depth = 1
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    current = _build_request()
+    interrupt = _build_heroic_intervention_interrupt(parent_decision_id=current.decision_id)
+    game._decision_frame_stack.append({"decision_id": current.decision_id})
+    game.decision_queue.add(current)
+    game.decision_queue.add(interrupt)
+    hub.add_controller(_RecordingController(calls, "controller"))
+
+    hub._on_decision_requested(request=interrupt, game=game)
+
+    assert calls == [f"requested:controller:{interrupt.decision_id}"]
+    assert game.decision_queue.peek() is current
+
+
+def test_decision_controller_hub_rejects_heroic_intervention_interrupt_with_wrong_parent() -> None:
+    game = _GameStub()
+    game._decision_resolution_depth = 1
+    hub = DecisionControllerHub(game)
+    calls: list[str] = []
+    current = _build_request()
+    interrupt = _build_heroic_intervention_interrupt(parent_decision_id="other-parent")
     game._decision_frame_stack.append({"decision_id": current.decision_id})
     game.decision_queue.add(current)
     game.decision_queue.add(interrupt)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
+from .decision_dispatch_modes import dispatch_mode_from_context, is_stack_dispatch_mode
 from .decisions import DecisionRequest, DecisionResult
 
 
@@ -156,19 +157,11 @@ class DecisionControllerHub:
 
     @staticmethod
     def _request_dispatch_mode(request: DecisionRequest) -> str:
-        context = dict(getattr(request, "context", {}) or {})
-        mode = str(context.get("dispatch_mode", "") or "").strip().lower()
-        if mode:
-            return mode
-        if bool(context.get("interrupt_window", False)):
-            return "interrupt"
-        if bool(context.get("synchronous", False)):
-            return "sync_child"
-        return ""
+        return dispatch_mode_from_context(dict(getattr(request, "context", {}) or {}))
 
     @staticmethod
     def _request_is_stack_dispatchable(request: DecisionRequest) -> bool:
-        return DecisionControllerHub._request_dispatch_mode(request) in {"sync_child", "interrupt"}
+        return is_stack_dispatch_mode(DecisionControllerHub._request_dispatch_mode(request))
 
     @staticmethod
     def _request_has_parent_reference(request: DecisionRequest) -> bool:

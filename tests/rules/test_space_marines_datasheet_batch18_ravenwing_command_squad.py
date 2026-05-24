@@ -186,6 +186,9 @@ def test_ravenwing_command_squad_honour_or_death_queues_heroic_intervention_with
     assert len(manager._pending_reactions) == 1
     reaction = manager._pending_reactions[0]
     assert str(reaction.get("stratagem", "") or "").upper() == "HEROIC INTERVENTION"
+    assert reaction["dispatch_mode"] == "interrupt"
+    assert reaction["interrupt_window"] == "after_enemy_charge_move"
+    assert reaction["interrupt_source"] == "heroic_intervention"
     candidate_ids = {
         str(get_entity_id(unit) or "")
         for unit in list(reaction.get("candidates", []) or [])

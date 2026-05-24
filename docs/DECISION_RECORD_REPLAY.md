@@ -43,6 +43,12 @@ Replay-store persistence note:
   FIFO head only when their `parent_decision_id` matches the active decision
   frame. This preserves Warhammer's nested rule-interruption shape without
   allowing arbitrary later requests to resolve against stale board state.
+- Interrupt metadata is stamped through the engine dispatch helper, not by
+  per-rule ad hoc context assembly. Fire Overwatch, Heroic Intervention mode
+  selection, generic Heroic Intervention tool-action prompts, and preview
+  reactive move/surge/reserve-exit requests all use `dispatch_mode="interrupt"`
+  with a concrete `interrupt_window`; runtime request decoration attaches the
+  active parent frame before dispatch.
 - Synchronous child and interrupt requests still record as their own decisions
   and resolve before the parent decision resumes. The hub does not redispatch a
   parent request while that parent is already marked as resolving.

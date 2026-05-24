@@ -39,6 +39,8 @@ def test_reactive_movement_fixture_is_preview_gated_and_sourced() -> None:
 
     assert request.decision_type == DECISION_REACTIVE_MOVE
     assert request.context["preview_gated"] is True
+    assert request.context["dispatch_mode"] == "interrupt"
+    assert request.context["interrupt_window"] == "opponent_movement_phase:after_enemy_unit_ends_normal_move"
     assert request.context["reactive_move_spec"]["source_provenance"] == [SPACE_MARINES_SOURCE]
     assert request.context["opponent_turn"] is True
     assert {candidate.params["action"] for candidate in request.candidates} == {"move", "skip"}

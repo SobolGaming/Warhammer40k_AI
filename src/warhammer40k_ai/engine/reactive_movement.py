@@ -12,6 +12,7 @@ from .decision_kinds import (
     DECISION_SELECT_STRATAGEM_MODE,
     DECISION_SURGE_MOVE,
 )
+from .decision_dispatch_modes import mark_interrupt_request
 from .decisions import CandidateAction, DecisionRequest
 from ..utility.entity_ids import maybe_entity_id
 
@@ -303,13 +304,18 @@ def build_reactive_move_request(
                 metadata={"candidate_kind": "noop"},
             )
         )
-    return DecisionRequest.create(
+    request = DecisionRequest.create(
         spec.decision_kind,
         prompt or f"Resolve reactive move for {spec.source_unit_id}",
         player_id=player_id,
         candidates=tuple(candidates),
         mask=[True] * len(candidates),
         context=context,
+    )
+    return mark_interrupt_request(
+        request,
+        interrupt_window=spec.trigger_window,
+        source=spec.spec_id,
     )
 
 
@@ -392,7 +398,11 @@ def build_heroic_intervention_mode_request(
         prompt=prompt or f"Select Heroic Intervention mode for {stratagem_name}",
     )
     request.context["selection_kind"] = "heroic_intervention_mode"
-    return request
+    return mark_interrupt_request(
+        request,
+        interrupt_window="after_enemy_charge_move",
+        source="heroic_intervention",
+    )
 
 
 def build_reactive_reserve_exit_transition(

@@ -1007,7 +1007,15 @@ def test_headless_core_reaction_stratagems_emit_tool_actions_with_cp_and_trigger
     assert [payload["tool_name"] for payload in payloads] == [name]
     assert payloads[0]["resolved_kwargs"]["target_unit"]["__entity_ref__"]["id"] == target_unit.id
     if name == "HEROIC INTERVENTION":
+        assert request.context["dispatch_mode"] == "interrupt"
+        assert request.context["interrupt_window"] == "after_enemy_charge_move"
+        assert request.context["interrupt_source"] == "heroic_intervention"
+        assert request.context["out_of_phase"] is True
+        assert request.context["blocking_parent"] is True
+        assert request.context["resume_parent_after_resolution"] is True
         assert payloads[0]["resolved_kwargs"]["charge_path_direct_only"] is True
+        assert "dispatch_mode" not in payloads[0]["resolved_kwargs"]
+        assert "interrupt_window" not in payloads[0]["resolved_kwargs"]
 
 
 def test_tool_action_sort_key_accepts_string_helper_map_keys() -> None:

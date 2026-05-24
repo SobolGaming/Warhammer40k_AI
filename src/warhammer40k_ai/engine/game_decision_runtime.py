@@ -3,6 +3,7 @@ from __future__ import annotations
 from .ai_orchestration_context import attach_ai_orchestration_context
 from .ai_policy_orchestrator import policy_component_for_request
 from .candidate_semantics import ensure_candidate_semantic_metadata
+from .decision_dispatch_modes import dispatch_mode_from_context
 from .decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CONFIRM_YES_NO,
@@ -59,14 +60,7 @@ def _active_decision_frame(game) -> dict:
 
 
 def _dispatch_mode_from_context(ctx: dict) -> str:
-    mode = str(ctx.get("dispatch_mode", "") or "").strip().lower()
-    if mode:
-        return mode
-    if bool(ctx.get("interrupt_window", False)):
-        return "interrupt"
-    if bool(ctx.get("synchronous", False)):
-        return "sync_child"
-    return ""
+    return dispatch_mode_from_context(ctx)
 
 
 def _decorate_dispatch_context(game, request, ctx: dict) -> dict:

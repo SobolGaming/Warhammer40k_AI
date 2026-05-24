@@ -11,6 +11,12 @@ from typing import Callable, Optional, Dict, Any, Iterable, List
 from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..engine.decision_port import get_decision_provider
+from ..engine.decision_dispatch_modes import (
+    DISPATCH_CONTEXT_KEYS,
+    apply_interrupt_context,
+    dispatch_context_from_context,
+    mark_interrupt_request,
+)
 from ..engine.stratagem_ledger import StratagemApplicationLedger
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
@@ -3775,7 +3781,7 @@ class StratagemManager(
         base: Dict[str, Any] = {}
         for key, value in dict(context or {}).items():
             key_text = str(key or "")
-            if key_text in helper_keys:
+            if key_text in helper_keys or key_text in DISPATCH_CONTEXT_KEYS:
                 continue
             if key_text.endswith("_candidates") or key_text.endswith("_candidates_by_unit"):
                 continue
@@ -5470,6 +5476,7 @@ class StratagemManager(
                 "label": label,
                 "payload": payload,
                 "_prevalidated": True,
+                "_dispatch_context": dispatch_context_from_context(item.get("context", {}) or {}),
             }
         )
 
@@ -6325,6 +6332,16 @@ class StratagemManager(
             specs = self._deduplicate_tool_action_specs(specs)
         if not specs:
             return None
+        dispatch_contexts = [
+            dict(spec.get("_dispatch_context", {}) or {})
+            for spec in specs
+            if dict(spec.get("_dispatch_context", {}) or {})
+        ]
+        shared_dispatch_context: Dict[str, Any] = {}
+        if dispatch_contexts and len(dispatch_contexts) == len(specs):
+            first_context = dispatch_contexts[0]
+            if all(context == first_context for context in dispatch_contexts):
+                shared_dispatch_context = dict(first_context)
 
         payload_signature = [
             {
@@ -6384,7 +6401,7 @@ class StratagemManager(
                 payload=skip_payload,
             )
         )
-        return DecisionRequest.create(
+        request = DecisionRequest.create(
             DECISION_SELECT_TOOL_ACTION,
             "Select an available stratagem tool action or skip.",
             player_id=getattr(self.player, "id", None),
@@ -6400,6 +6417,11 @@ class StratagemManager(
                 "reactions_only": bool(reactions_only),
             },
         )
+        if shared_dispatch_context:
+            merged_context = dict(request.context)
+            merged_context.update(shared_dispatch_context)
+            request.context = merged_context
+        return request
 
     def queue_headless_tool_action_decision(self, *, reactions_only: bool = False) -> bool:
         request = self._build_tool_action_request(reactions_only=bool(reactions_only))
@@ -6596,15 +6618,10 @@ class StratagemManager(
                 "enemy_unit_id": enemy_unit_id,
                 "action": action_key,
                 "when": when_key,
-                "dispatch_mode": "interrupt",
-                "interrupt_window": interrupt_window,
-                "out_of_phase": True,
                 "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
                 "stratagem_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
                 "tool_id": "stratagem:fire_overwatch",
                 "tool_type": "stratagem",
-                "blocking_parent": True,
-                "resume_parent_after_resolution": True,
                 "limited_use": True,
                 "limited_use_scope": "turn",
                 "limited_use_key": "fire_overwatch",
@@ -6614,6 +6631,11 @@ class StratagemManager(
                 "optional": True,
                 "skip_label": "Do not use",
             },
+        )
+        mark_interrupt_request(
+            request,
+            interrupt_window=interrupt_window,
+            source="fire_overwatch",
         )
         return self._submit_decision_request(request)
 
@@ -19735,14 +19757,20 @@ class StratagemManager(
         if already:
             return
 
-        self._queue_reaction({
-            "event": "heroic_intervention",
-            "phase_name": "Charge phase",
-            "stratagem": s.name,
-            "cp_cost": s.cp_cost,
-            "enemy_unit": charging_unit,
-            "candidates": candidates,
-        })
+        self._queue_reaction(
+            apply_interrupt_context(
+                {
+                    "event": "heroic_intervention",
+                    "phase_name": "Charge phase",
+                    "stratagem": s.name,
+                    "cp_cost": s.cp_cost,
+                    "enemy_unit": charging_unit,
+                    "candidates": candidates,
+                },
+                interrupt_window="after_enemy_charge_move",
+                source="heroic_intervention",
+            )
+        )
 
     def _on_shooting_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
         """
@@ -33913,6 +33941,15 @@ class StratagemManager(
 
     def _normalize_phase_item_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(context or {})
+        if (
+            str(normalized.get("event", "") or "").strip().lower() == "heroic_intervention"
+            and not str(normalized.get("dispatch_mode", "") or "").strip()
+        ):
+            normalized = apply_interrupt_context(
+                normalized,
+                interrupt_window="after_enemy_charge_move",
+                source="heroic_intervention",
+            )
         destroyed_unit = normalized.get("destroyed_unit")
         if destroyed_unit is not None:
             normalized.setdefault("unit", destroyed_unit)

@@ -38,6 +38,9 @@ def test_heroic_intervention_modes_fixture_is_preview_gated_and_sourced() -> Non
 
     assert request.decision_type == DECISION_SELECT_HEROIC_INTERVENTION_MODE
     assert request.context["preview_gated"] is True
+    assert request.context["dispatch_mode"] == "interrupt"
+    assert request.context["interrupt_window"] == "after_enemy_charge_move"
+    assert request.context["out_of_phase"] is True
     assert {
         tuple(mode["source_provenance"])
         for mode in request.context["stratagem_modes"]

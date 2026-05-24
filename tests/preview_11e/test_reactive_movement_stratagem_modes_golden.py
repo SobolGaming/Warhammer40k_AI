@@ -86,6 +86,12 @@ def test_heroic_intervention_mode_fixture_records_mode_cp_and_charge_policy() ->
 
     assert request.decision_type == DECISION_SELECT_HEROIC_INTERVENTION_MODE
     assert request.context["selection_kind"] == "heroic_intervention_mode"
+    assert request.context["dispatch_mode"] == "interrupt"
+    assert request.context["interrupt_window"] == "after_enemy_charge_move"
+    assert request.context["interrupt_source"] == "heroic_intervention"
+    assert request.context["out_of_phase"] is True
+    assert request.context["blocking_parent"] is True
+    assert request.context["resume_parent_after_resolution"] is True
     by_mode = {candidate.params["mode_id"]: candidate for candidate in request.candidates}
     assert by_mode["leap_to_defend"].params["cp_delta"] == -1
     assert by_mode["leap_to_defend"].params["charge_target_policy"] == "closest_visible_enemy"
@@ -115,6 +121,12 @@ def test_reactive_normal_move_can_be_requested_during_opponent_movement_phase() 
     assert request.decision_type == DECISION_REACTIVE_MOVE
     assert request.context["opponent_turn"] is True
     assert request.context["trigger_window"] == "opponent_movement_phase:after_enemy_unit_ends_normal_move"
+    assert request.context["dispatch_mode"] == "interrupt"
+    assert request.context["interrupt_window"] == "opponent_movement_phase:after_enemy_unit_ends_normal_move"
+    assert request.context["interrupt_source"] == "reactive_evasion_preview"
+    assert request.context["out_of_phase"] is True
+    assert request.context["blocking_parent"] is True
+    assert request.context["resume_parent_after_resolution"] is True
     assert request.context["reactive_move_spec"]["spec_id"] == "reactive_evasion_preview"
     assert {candidate.params["action"] for candidate in request.candidates} == {"move", "skip"}
 
