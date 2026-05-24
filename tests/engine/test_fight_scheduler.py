@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from warhammer40k_ai.engine.combat_timing import CombatEngagementState, unit_engagement_state
+from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_UNIT
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 from warhammer40k_ai.engine.fight_scheduler import FightSchedulerStage
 from warhammer40k_ai.engine.ruleset import RulesetBundle
@@ -124,6 +125,7 @@ class _Game:
         self.decision_queue = SimpleNamespace(list=lambda: [])
         self.event_system = None
         self._units_by_id = {}
+        self.cleared_fight_requests = []
 
     def register_units(self, *units) -> None:
         self.map.units = list(units)
@@ -143,6 +145,14 @@ class _Game:
             for unit in list(getattr(army, "units", []) or [])
             if not unit.should_fight_first() and unit.is_eligible_to_fight(self.map)
         ]
+
+    def _clear_pending_fight_phase_requests(self, *, phase_steps=None, decision_types=None) -> None:
+        self.cleared_fight_requests.append(
+            {
+                "phase_steps": list(phase_steps or []),
+                "decision_types": list(decision_types or []),
+            }
+        )
 
 
 def _build_preview_game():
@@ -191,6 +201,29 @@ def test_preview_fights_first_starts_with_active_player() -> None:
     args = manager.on_unit_selection_required.call_args.args
     assert args[0] is current_player
     assert args[1] == [current_unit]
+
+
+def test_stage_completion_clears_stale_stage_select_requests() -> None:
+    game, current_player, opponent_player, _army_one, _army_two = _build_preview_game()
+    manager = FightPhaseManager(game)
+    manager.current_stage = FightStage.FIGHT_FIRST
+    manager.scheduler = None
+
+    manager._complete_current_stage(current_player, opponent_player)
+
+    assert {
+        "phase_steps": ["FIGHT_FIRST"],
+        "decision_types": [DECISION_SELECT_UNIT],
+    } in game.cleared_fight_requests
+
+
+def test_fight_phase_completion_clears_all_pending_fight_requests() -> None:
+    game, _current_player, _opponent_player, _army_one, _army_two = _build_preview_game()
+    manager = FightPhaseManager(game)
+
+    manager._complete_fight_phase()
+
+    assert {"phase_steps": [], "decision_types": []} in game.cleared_fight_requests
 
 
 def test_preview_pile_in_stage_pauses_for_move_decision() -> None:

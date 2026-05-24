@@ -83,6 +83,10 @@ Replay-store persistence note:
 - Shooting- and fight-phase replay uses the same parent-before-child contract:
   selected unit decisions are recorded before declaration decisions, and
   declaration decisions are recorded before their attack-roll child decisions.
+- Fight-stage transitions clear unresolved `SELECT_UNIT` prompts from the stage
+  being left, and fight-phase completion clears remaining fight-phase prompts.
+  This prevents stale Fight First or Remaining Combatants requests from carrying
+  into later fight activations or the next battle phase during replay.
 - A selected fight unit can legally have no remaining melee targets after prior
   attacks or fight-move effects remove engagement. In that case the activation
   still publishes `unit_fight_started`, `unit_fight_ended`, and

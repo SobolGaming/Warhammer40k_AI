@@ -1301,6 +1301,34 @@ class GamePhaseHandlersMixin:
             return request
         return None
 
+    def _clear_pending_fight_phase_requests(self, *, phase_steps=None, decision_types=None) -> None:
+        queue = getattr(self, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list") or not hasattr(queue, "pop"):
+            return
+        phase_step_filter = {
+            str(step or "").strip().upper()
+            for step in list(phase_steps or [])
+            if str(step or "").strip()
+        }
+        type_filter = {
+            str(decision_type or "").strip()
+            for decision_type in list(decision_types or [])
+            if str(decision_type or "").strip()
+        }
+        for request in list(queue.list() or []):
+            if bool(getattr(request, "_resolution_in_progress", False)):
+                continue
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("phase_name", "") or "").strip().upper() != "FIGHT_PHASE":
+                continue
+            phase_step = str(ctx.get("phase_step", "") or "").strip().upper()
+            if phase_step_filter and phase_step not in phase_step_filter:
+                continue
+            decision_type = str(getattr(request, "decision_type", "") or "").strip()
+            if type_filter and decision_type not in type_filter:
+                continue
+            queue.pop(getattr(request, "decision_id", None))
+
     def _queue_fight_target_selection_request(self, *, fighting_unit, eligible_targets, active_player):
         if fighting_unit is None or active_player is None:
             return None

@@ -22,7 +22,7 @@ from . import fight_resolution as _fight_resolution
 from .decision_port import get_decision_provider
 from .fight_scheduler import FightScheduler, FightSchedulerStage
 from .unit_turn_provenance import set_status_tokens_on_unit, status_tokens_on_unit
-from .decision_kinds import DECISION_CONFIRM_YES_NO
+from .decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_SELECT_UNIT
 from ..utility.event_bus import append_action
 import logging
 logger = logging.getLogger(__name__)
@@ -1382,9 +1382,24 @@ class FightPhaseManager:
 
     def _switch_active_player(self, current_player: Player, opponent_player: Player) -> None:
         _fight_order._switch_active_player(self, current_player, opponent_player)
-    
+
+    def _clear_pending_stage_selection_requests(self) -> None:
+        clear_pending = getattr(self.game, "_clear_pending_fight_phase_requests", None)
+        if not callable(clear_pending):
+            return
+        phase_step = self._fight_phase_step_name()
+        if not phase_step:
+            return
+        clear_pending(phase_steps=[phase_step], decision_types=[DECISION_SELECT_UNIT])
+
+    def _clear_pending_fight_phase_requests(self) -> None:
+        clear_pending = getattr(self.game, "_clear_pending_fight_phase_requests", None)
+        if callable(clear_pending):
+            clear_pending()
+
     def _complete_current_stage(self, current_player: Player, opponent_player: Player) -> None:
         """Complete the current stage and move to next or finish."""
+        self._clear_pending_stage_selection_requests()
         if self.current_stage == FightStage.COMPLETE:
             self._complete_fight_phase()
             return
@@ -1412,6 +1427,7 @@ class FightPhaseManager:
     def _complete_fight_phase(self) -> None:
         """Complete the entire fight phase."""
         logger.info("Fight Phase complete")
+        self._clear_pending_fight_phase_requests()
         self.current_stage = FightStage.COMPLETE
         self.stage_complete = True
         if self.scheduler is not None:
