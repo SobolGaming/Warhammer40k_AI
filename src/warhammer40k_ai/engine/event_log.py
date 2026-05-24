@@ -37,7 +37,7 @@ _HISTORY_PRESERVE_ID_KEYS = {
 }
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=4096)
 def _is_id_key(key: str | None) -> bool:
     if key is None:
         return False
