@@ -60,9 +60,11 @@ Replay-store persistence note:
   normalized once as it is appended or loaded, using a persistent normalized-id
   map; replay cursor advancement reads the already-built prefix digest instead
   of rebuilding normalized JSON for every consumed event. `trim_through(...)`
-  resets and rebuilds the prefix table for the remaining event tail. The former
-  full JSON implementation remains available as `compute_history_hash_legacy`
-  for debugging comparisons.
+  resets and rebuilds the prefix table for the remaining event tail. Automatic
+  `WH40K_EVENT_LOG_MAX` retention pruning does not reset the append-only prefix
+  digest, so branch-scoped RNG and decision seeds are independent of the in-memory
+  event retention limit. The former retained-tail JSON implementation remains
+  available as `compute_history_hash_legacy` for debugging comparisons.
 - Before returning a reconstructed game, replay syncs the visible battle phase
   from the selected decision step metadata. This keeps replay-viewer HUD phase
   labels aligned with Replay Controls without changing intermediate

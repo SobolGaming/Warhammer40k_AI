@@ -136,9 +136,9 @@ class DeterministicEventLog:
             self.next_id = max(e.event_id for e in self.events) + 1
         else:
             self.next_id = 1
+        self._ensure_history_prefix_complete()
         if self.mode != "replay":
             self._prune_overflow()
-        self._ensure_history_prefix_complete()
 
     def _ruleset_context(self) -> dict:
         game = self._attached_game
@@ -238,8 +238,8 @@ class DeterministicEventLog:
         )
         self.events.append(event)
         self.next_id += 1
+        self._append_history_prefix_event(event)
         self._prune_overflow()
-        self._ensure_history_prefix_complete()
         self._history_hash_cache.clear()
         return event
 
@@ -251,9 +251,9 @@ class DeterministicEventLog:
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def compute_history_hash(self, *, normalize_ids: bool = True) -> str:
-        end_index = int(self._cursor) if self.mode == "replay" else len(self.events)
         self._ensure_history_prefix_complete()
         table = self._history_prefix_normalized if normalize_ids else self._history_prefix_raw
+        end_index = int(self._cursor) if self.mode == "replay" else int(self._history_prefix_event_count)
         return table[end_index]
 
     def compute_history_hash_legacy(self, *, normalize_ids: bool = True) -> str:
@@ -288,7 +288,6 @@ class DeterministicEventLog:
     def _reset_history_prefix_state(self) -> None:
         self._history_normalized_id_map: dict[str, str] = {}
         self._history_prefix_event_count = 0
-        self._history_prefix_dropped_event_id = int(getattr(self, "dropped_through_event_id", 0) or 0)
         self._history_prefix_normalized = [self._history_prefix_seed(normalize_ids=True)]
         self._history_prefix_raw = [self._history_prefix_seed(normalize_ids=False)]
 
@@ -296,7 +295,7 @@ class DeterministicEventLog:
         payload = {
             "version": HISTORY_HASH_VERSION,
             "normalize_ids": bool(normalize_ids),
-            "dropped_through_event_id": int(getattr(self, "dropped_through_event_id", 0) or 0),
+            "dropped_through_event_id": 0,
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -326,8 +325,7 @@ class DeterministicEventLog:
         self._history_prefix_event_count += 1
 
     def _ensure_history_prefix_complete(self) -> None:
-        dropped_id = int(getattr(self, "dropped_through_event_id", 0) or 0)
-        if self._history_prefix_dropped_event_id != dropped_id or self._history_prefix_event_count > len(self.events):
+        if self.mode == "replay" and self._history_prefix_event_count > len(self.events):
             self._reset_history_prefix_state()
         while self._history_prefix_event_count < len(self.events):
             self._append_history_prefix_event(self.events[self._history_prefix_event_count])
@@ -381,7 +379,6 @@ class DeterministicEventLog:
         self.events = self.events[overflow:]
         if dropped:
             self.dropped_through_event_id = int(dropped[-1].event_id)
-            self._reset_history_prefix_state()
 
     def _next_event(self) -> GameEvent:
         if self._cursor >= len(self.events):

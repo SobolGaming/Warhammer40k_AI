@@ -856,17 +856,30 @@ def test_history_fast_hash_preserves_action_ids_as_hash_inputs():
     assert baseline.compute_history_hash() != different_chosen.compute_history_hash()
 
 
-def test_history_fast_hash_preserves_event_id_and_dropped_id_as_hash_inputs():
+def test_history_fast_hash_preserves_event_id_as_hash_input():
     event_payload = {"decision_id": "decision:a", "player_id": "player:a"}
     event_one = GameEvent(event_id=1, event_type="decision_resolved", actor_id="player:a", payload=event_payload)
     event_two = GameEvent(event_id=2, event_type="decision_resolved", actor_id="player:a", payload=event_payload)
     first = DeterministicEventLog(events=[event_one])
     second = DeterministicEventLog(events=[event_two])
-    dropped = DeterministicEventLog(events=[event_one])
-    dropped.dropped_through_event_id = 7
 
     assert first.compute_history_hash() != second.compute_history_hash()
-    assert first.compute_history_hash() != dropped.compute_history_hash()
+
+
+def test_history_fast_hash_is_neutral_to_automatic_pruning():
+    pruned = DeterministicEventLog(max_events=3)
+    retained = DeterministicEventLog(max_events=0)
+    for idx in range(8):
+        payload = {"idx": idx, "decision_id": f"decision:{idx}", "unit_id": f"unit:{idx % 2}"}
+        pruned.record("decision_resolved", payload=payload, validate_payload=False)
+        retained.record("decision_resolved", payload=payload, validate_payload=False)
+
+    assert len(pruned.events) == 3
+    assert pruned.dropped_through_event_id == 5
+    assert len(retained.events) == 8
+    assert retained.dropped_through_event_id == 0
+    assert pruned.compute_history_hash() == retained.compute_history_hash()
+    assert pruned.compute_history_hash_legacy() != retained.compute_history_hash_legacy()
 
 
 def test_replay_history_fast_hash_uses_prefix_table_without_rebuild_on_consume():
