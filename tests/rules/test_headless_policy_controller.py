@@ -62,6 +62,29 @@ class _QueuePoppingFakeGame:
         return _ApplyResult(ok=False)
 
 
+class _FallbackOptionCandidateGame:
+    def __init__(self, request: DecisionRequest, rejecting_option_id: str) -> None:
+        self.is_authoritative = True
+        self.commands = []
+        self.decision_queue = DecisionQueue()
+        self.decision_queue.add(request)
+        self.request = request
+        self.rejecting_option_id = rejecting_option_id
+
+    def apply_command(self, command):
+        self.commands.append(command)
+        payload = dict(getattr(command, "payload", {}) or {})
+        option_id = str(payload.get("option_id", "") or "")
+        action_id = self.request.action_id_for_option_id(option_id)
+        candidate_ids = {str(getattr(candidate, "action_id", "") or "") for candidate in list(self.request.candidates or [])}
+        if action_id not in candidate_ids:
+            return _ApplyResult(ok=False)
+        if option_id == self.rejecting_option_id:
+            return _ApplyResult(ok=False)
+        self.decision_queue.pop(str(payload.get("decision_id", "") or ""))
+        return _ApplyResult(ok=True)
+
+
 def test_headless_policy_stops_retrying_when_apply_side_effect_removes_request() -> None:
     request = DecisionRequest.create(
         DECISION_CONFIRM_YES_NO,
@@ -83,6 +106,28 @@ def test_headless_policy_stops_retrying_when_apply_side_effect_removes_request()
     controller.on_decision_requested(game, request)
 
     assert len(game.commands) == 1
+    assert game.decision_queue.get(request.decision_id) is None
+
+
+def test_headless_policy_adds_option_payload_candidate_before_fallback_resolution() -> None:
+    confirm = DecisionOption.create("Confirm", payload={"action_id": "TEST:confirm", "choice": True})
+    skip = DecisionOption.create("Skip", payload={"action_id": "TEST:skip", "choice": False, "action": "skip"})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Choose once",
+        player_id="p1",
+        options=[confirm, skip],
+        candidates=[CandidateAction("TEST:confirm", {"choice": True}, metadata={"projected_score_delta_round": 1.0})],
+        mask=[True],
+    )
+    game = _FallbackOptionCandidateGame(request, rejecting_option_id=confirm.option_id)
+    controller = HeadlessPolicyDecisionController(auto_attach=False)
+
+    controller.on_decision_requested(game, request)
+
+    candidate_ids = {str(getattr(candidate, "action_id", "") or "") for candidate in list(request.candidates or [])}
+    assert "TEST:skip" in candidate_ids
+    assert len(game.commands) == 3
     assert game.decision_queue.get(request.decision_id) is None
 
 

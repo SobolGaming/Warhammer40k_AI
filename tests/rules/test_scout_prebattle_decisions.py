@@ -1,4 +1,5 @@
 from warhammer40k_ai.engine.decision_kinds import DECISION_SCOUT_MOVE
+from warhammer40k_ai.engine import decision_requests
 from warhammer40k_ai.engine.decision_requests import build_scout_move_request
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -11,13 +12,15 @@ from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class _MockDatasheet:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, model_count: int = 1, base_size: str = "32mm") -> None:
+        model_count = max(1, int(model_count))
         self.name = name
         self.faction_data = {"name": "Test Faction"}
         self.keywords = []
         self.faction_keywords = []
-        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
-        self.datasheets_models_cost = [{"description": "1 models", "cost": 100}]
+        model_word = "Model" if model_count == 1 else "Models"
+        self.datasheets_unit_composition = [{"description": f"{model_count} Test {model_word}"}]
+        self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
         self.datasheets_models = [
             {
                 "M": "6",
@@ -26,7 +29,7 @@ class _MockDatasheet:
                 "W": "1",
                 "Ld": "7",
                 "OC": "1",
-                "base_size": "32mm",
+                "base_size": base_size,
                 "inv_sv": "7",
                 "inv_sv_descr": "none",
             }
@@ -37,8 +40,8 @@ class _MockDatasheet:
         self.loadout = "This model is equipped with: nothing"
 
 
-def _make_unit(name: str, scout_distance: float) -> Unit:
-    unit = Unit(_MockDatasheet(name))
+def _make_unit(name: str, scout_distance: float, *, model_count: int = 1, base_size: str = "32mm") -> Unit:
+    unit = Unit(_MockDatasheet(name, model_count=model_count, base_size=base_size))
     unit.deployed = True
     unit.reserve_status = "deployed"
     unit.scout_move_made = False
@@ -136,8 +139,8 @@ def test_scout_move_rejects_final_friendly_model_overlap():
     game, p1, _p2, unit1, _unit2 = _build_remote_only_game()
     blocker = _make_unit("Friendly Blocker", scout_distance=0.0)
     p1.get_army().add_unit(blocker)
-    unit1.models[0].set_location(0.0, 0.0, 0.0, 0.0)
-    blocker.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+    unit1.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    blocker.models[0].set_location(16.0, 10.0, 0.0, 0.0)
     game.map.units = [unit1, blocker]
     game.rebuild_entity_registry()
     option = DecisionOption.create(
@@ -145,11 +148,11 @@ def test_scout_move_rejects_final_friendly_model_overlap():
         payload={
             "unit_id": get_entity_id(unit1),
             "action": "scout",
-            "destination": [6.0, 0.0, 0.0],
+            "destination": [16.0, 10.0, 0.0],
             "model_positions": [
                 {
                     "model_id": get_entity_id(unit1.models[0]),
-                    "position": [6.0, 0.0, 0.0],
+                    "position": [16.0, 10.0, 0.0],
                     "facing": 0.0,
                 }
             ],
@@ -170,12 +173,75 @@ def test_scout_move_rejects_final_friendly_model_overlap():
     assert "friendly model" in " ".join(result.errors)
 
 
+def test_scout_move_rejects_model_base_outside_battlefield():
+    game, p1, _p2, unit1, _unit2 = _build_remote_only_game()
+    unit1.models[0].set_location(10.0, 42.0, 0.0, 0.0)
+    game.map.units = [unit1]
+    game.rebuild_entity_registry()
+    option = DecisionOption.create(
+        "Scout off board",
+        payload={
+            "unit_id": get_entity_id(unit1),
+            "action": "scout",
+            "destination": [10.0, 44.0, 0.0],
+            "model_positions": [
+                {
+                    "model_id": get_entity_id(unit1.models[0]),
+                    "position": [10.0, 44.0, 0.0],
+                    "facing": 0.0,
+                }
+            ],
+        },
+    )
+    request = DecisionRequest.create(
+        DECISION_SCOUT_MOVE,
+        "Scout move for Scout Unit A",
+        player_id=p1.id,
+        options=[option],
+        context={"unit_id": get_entity_id(unit1), "selection_kind": "scout_move"},
+    )
+    game.request_decision(request)
+
+    result = resolve_decision_command(game, request, option.option_id, player_id=p1.id)
+
+    assert result.ok is False
+    assert "battlefield" in " ".join(result.errors)
+
+
+def test_scout_request_filters_candidates_with_trailing_model_outside_battlefield(monkeypatch):
+    game, p1, _p2, _unit1, _unit2 = _build_remote_only_game()
+    unit = _make_unit("Scout Unit C", scout_distance=12.0, model_count=3, base_size="32mm")
+    p1.get_army().add_unit(unit)
+    for model, y in zip(unit.models, [35.0, 38.0, 41.0], strict=True):
+        model.set_location(10.0, y, 0.0, 0.0)
+    game.map.units = [unit]
+    game.rebuild_entity_registry()
+
+    monkeypatch.setattr(
+        decision_requests,
+        "_scout_candidate_destinations",
+        lambda *_args, **_kwargs: [(10.0, 38.0, 0.0), (10.0, 34.0, 0.0)],
+    )
+
+    request = build_scout_move_request(game, unit)
+    scout_options = [
+        option
+        for option in list(request.options or [])
+        if str(dict(option.payload or {}).get("action", "") or "") == "scout"
+    ]
+
+    assert len(scout_options) == 1
+    payload = dict(scout_options[0].payload or {})
+    assert payload["destination"] == [10.0, 34.0, 0.0]
+    assert len(payload["model_positions"]) == 3
+
+
 def test_headless_scout_precheck_skips_final_friendly_model_overlap():
     game, p1, _p2, unit1, _unit2 = _build_remote_only_game()
     blocker = _make_unit("Friendly Blocker", scout_distance=0.0)
     p1.get_army().add_unit(blocker)
-    unit1.models[0].set_location(0.0, 0.0, 0.0, 0.0)
-    blocker.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+    unit1.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    blocker.models[0].set_location(16.0, 10.0, 0.0, 0.0)
     game.map.units = [unit1, blocker]
     game.rebuild_entity_registry()
     invalid_option = DecisionOption.create(
@@ -183,11 +249,11 @@ def test_headless_scout_precheck_skips_final_friendly_model_overlap():
         payload={
             "unit_id": get_entity_id(unit1),
             "action": "scout",
-            "destination": [6.0, 0.0, 0.0],
+            "destination": [16.0, 10.0, 0.0],
             "model_positions": [
                 {
                     "model_id": get_entity_id(unit1.models[0]),
-                    "position": [6.0, 0.0, 0.0],
+                    "position": [16.0, 10.0, 0.0],
                     "facing": 0.0,
                 }
             ],

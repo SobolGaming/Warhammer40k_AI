@@ -2059,6 +2059,33 @@ class GamePhaseHandlersMixin:
             if roll_state is None or not bool(getattr(roll_state, "final", False)):
                 return
             unit_id = str(roll_spec.get("unit_id", "") or ctx.get("unit_id", "") or "").strip()
+            roll_total_value = getattr(roll_state, "total", None)
+            if roll_total_value is not None:
+                resolver = getattr(self, "_resolve_unit_by_id", None)
+                rolled_unit = resolver(unit_id) if callable(resolver) and unit_id else None
+                if rolled_unit is None:
+                    registry = getattr(self, "entity_registry", None)
+                    if registry is not None and unit_id:
+                        rolled_unit = registry.get(unit_id, kind="unit")
+                round_state = getattr(rolled_unit, "round_state", None) if rolled_unit is not None else None
+                if round_state is not None:
+                    state_spec = dict(getattr(roll_state, "spec", {}) or roll_spec or {})
+                    try:
+                        raw_total = int(roll_total_value or 0)
+                    except (TypeError, ValueError):
+                        raw_total = 0
+                    try:
+                        sum_modifier = int(state_spec.get("sum_modifier", 0) or 0)
+                    except (TypeError, ValueError):
+                        sum_modifier = 0
+                    try:
+                        roll_id_int = int(roll_id)
+                    except (TypeError, ValueError):
+                        roll_id_int = 0
+                    round_state.advance_roll_unmodified = int(raw_total)
+                    round_state.advance_roll = max(0, int(raw_total + sum_modifier))
+                    if roll_id_int > 0:
+                        round_state.advance_roll_id = roll_id_int
             movement_type = "advance"
         elif decision_type == DECISION_CONFIRM_YES_NO:
             ctx = dict(getattr(request, "context", {}) or {})

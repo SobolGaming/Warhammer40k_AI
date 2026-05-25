@@ -158,6 +158,41 @@ def test_queue_fire_overwatch_decision_publishes_select_shooter_request() -> Non
     assert len(list(decision_queue.list() or [])) == 1
 
 
+def test_queue_fire_overwatch_decision_uses_unique_shooter_labels_for_duplicate_unit_names() -> None:
+    manager = StratagemManager.__new__(StratagemManager)
+    decision_queue = DecisionQueue()
+    game = SimpleNamespace(
+        is_authoritative=True,
+        decision_queue=decision_queue,
+        request_decision=decision_queue.add,
+    )
+    player = SimpleNamespace(id="player:overwatch")
+    moving_unit = SimpleNamespace(id="unit:enemy", name="Enemy Movers")
+    candidates = [
+        SimpleNamespace(id="unit:rangers-2", name="Rangers"),
+        SimpleNamespace(id="unit:rangers-1", name="Rangers"),
+    ]
+    stratagem = SimpleNamespace(name="FIRE OVERWATCH", cp_cost=1)
+    manager.game = game
+    manager.player = player
+
+    assert manager._queue_overwatch_decision(
+        moving_unit=moving_unit,
+        action="normal_move",
+        when="start",
+        phase_name="Movement phase",
+        candidates=candidates,
+        stratagem=stratagem,
+    ) is True
+
+    request = list(decision_queue.list() or [])[0]
+    assert [option.label for option in list(request.options or [])[:-1]] == ["Rangers #1", "Rangers #2"]
+    assert [option.payload.get("unit_label") for option in list(request.options or [])[:-1]] == [
+        "Rangers #1",
+        "Rangers #2",
+    ]
+
+
 def test_apply_select_overwatch_uses_fire_overwatch_stratagem() -> None:
     calls: list[tuple[str, dict]] = []
     manager = SimpleNamespace(

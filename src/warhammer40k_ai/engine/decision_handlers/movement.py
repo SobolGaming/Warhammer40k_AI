@@ -4,6 +4,8 @@ import math
 from types import SimpleNamespace
 from typing import Iterable, Sequence
 
+from shapely.errors import GEOSException
+
 from ..decision_dispatcher import register_decision_handler
 from ..charge_diagnostics import charge_failure_diagnostics
 from ..decision_kinds import (
@@ -1536,6 +1538,85 @@ def _charge_target_ids_for_move(ctx: dict | None, result_payload: dict | None = 
     return ordered
 
 
+def _is_ruins_feature(terrain: object) -> bool:
+    terrain_type = getattr(terrain, "terrain_type", None)
+    type_name = str(getattr(terrain_type, "name", terrain_type) or "").strip().upper()
+    return type_name == "RUINS"
+
+
+def _wall_value(wall: object, key: str, default: object = None) -> object:
+    if isinstance(wall, dict):
+        return wall.get(key, default)
+    return getattr(wall, key, default)
+
+
+def _validate_final_ruins_wall_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+) -> Sequence[str]:
+    game_map = getattr(game, "map", None)
+    terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+    if not terrain_features:
+        return ()
+    for entry in list(model_positions or []):
+        if not isinstance(entry, dict):
+            continue
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            continue
+        model = get_model(game, model_id)
+        if model is None:
+            continue
+        base = getattr(model, "model_base", None)
+        get_shape_at = getattr(base, "get_base_shape_at", None)
+        if not callable(get_shape_at):
+            continue
+        pos = list(entry.get("position", []) or [])
+        if len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+            facing = float(entry.get("facing", getattr(base, "facing", 0.0)) or 0.0)
+            base_shape = get_shape_at(x, y, facing)
+        except (AttributeError, TypeError, ValueError, GEOSException):
+            continue
+        if base_shape is None:
+            continue
+        for terrain in terrain_features:
+            if not _is_ruins_feature(terrain):
+                continue
+            footprint = getattr(terrain, "footprint", None)
+            if footprint is not None:
+                try:
+                    if not base_shape.intersects(footprint):
+                        continue
+                except (TypeError, ValueError, GEOSException):
+                    continue
+            for wall in list(getattr(terrain, "walls", []) or []):
+                polygon = _wall_value(wall, "polygon")
+                if polygon is None:
+                    continue
+                try:
+                    z_bottom = float(_wall_value(wall, "z_bottom", 0.0) or 0.0)
+                    z_top = float(_wall_value(wall, "z_top", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    z_bottom = 0.0
+                    z_top = 0.0
+                if z < min(z_bottom, z_top) - 1e-6 or z > max(z_bottom, z_top) + 1e-6:
+                    continue
+                try:
+                    overlap = base_shape.intersection(polygon)
+                    overlap_area = float(getattr(overlap, "area", 0.0) or 0.0)
+                except (TypeError, ValueError, GEOSException):
+                    continue
+                if overlap_area > 1e-6:
+                    return (f"Move unit: final position for model {model_id} overlaps a RUINS wall.",)
+    return ()
+
+
 @profiled_section("movement.payload_validation")
 def validate_move_unit_payload(
     game: object,
@@ -1624,6 +1705,10 @@ def validate_move_unit_payload(
         or ctx.get("movement_type", "")
         or "move"
     ).strip().lower()
+    if not placement_kind and allowed_ids is None:
+        final_wall_errors = _validate_final_ruins_wall_positions(game, unit, model_positions)
+        if final_wall_errors:
+            return final_wall_errors
     action_distance_errors = _validate_movement_action_distance_match(
         game,
         unit,

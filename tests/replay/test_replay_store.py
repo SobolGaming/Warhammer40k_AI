@@ -16,10 +16,11 @@ from warhammer40k_ai.engine.decision_dispatcher import register_decision_handler
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_DEPLOYMENT_ZONE,
     DECISION_CONFIRM_YES_NO,
+    DECISION_DECLARE_SHOTS,
     DECISION_REQUEST_DICE_ROLL,
     DECISION_SELECT_DICE_REROLL,
 )
-from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.dice_rolls import DiceRollState
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.missions import DeploymentZone, DeploymentZoneType
@@ -1433,6 +1434,37 @@ def test_result_for_record_reuses_resolved_payload_from_candidate_metadata() -> 
 
     assert result.option_id == option_id
     assert result.payload["declarations"] == resolved_payload["declarations"]
+
+
+def test_find_matching_pending_request_uses_payload_identity_for_duplicate_labels() -> None:
+    queue = DecisionQueue()
+    stale_request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots for Rangers",
+        player_id="player-2",
+        context={"unit_id": "rangers-1"},
+        options=[
+            DecisionOption.create("Confirm", payload={"unit_id": "rangers-1"}),
+            DecisionOption.create("Skip", payload={"unit_id": "rangers-1", "skip": True}),
+        ],
+    )
+    target_request = DecisionRequest.create(
+        DECISION_DECLARE_SHOTS,
+        "Declare shots for Rangers",
+        player_id="player-2",
+        context={"unit_id": "rangers-2"},
+        options=[
+            DecisionOption.create("Confirm", payload={"unit_id": "rangers-2"}),
+            DecisionOption.create("Skip", payload={"unit_id": "rangers-2", "skip": True}),
+        ],
+    )
+    queue.add(stale_request)
+    queue.add(target_request)
+    game = SimpleNamespace(decision_queue=queue)
+
+    matched = ReplayStoreReader._find_matching_pending_request(game, target_request.to_dict())
+
+    assert matched is target_request
 
 
 def test_advance_until_request_pending_does_not_consume_future_events() -> None:

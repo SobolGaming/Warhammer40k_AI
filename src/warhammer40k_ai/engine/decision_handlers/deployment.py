@@ -116,6 +116,10 @@ def _validate_scout_model_positions(game: object, unit: object, model_positions:
         if callable(create_base):
             facing = entry.get("facing", getattr(getattr(model, "model_base", None), "facing", 0.0))
             potential_base = create_base(x, y, z, float(facing), model=model)
+            boundary = getattr(game_map, "boundary", None)
+            get_shape = getattr(potential_base, "get_base_shape", None)
+            if boundary is not None and callable(get_shape) and not bool(boundary.covers(get_shape())):
+                return ("Scout model position is outside battlefield boundaries.",)
             proposed_bases.append((model_id, model, potential_base))
             for enemy_model in enemy_models:
                 if float(distance_between_bases_3d(potential_base, enemy_model.model_base)) < 9.0:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from shapely.geometry import box
+
 from warhammer40k_ai.engine.decision_handlers.movement import (
     _apply_select_movement_action,
     _apply_move_unit,
@@ -23,6 +25,10 @@ class _ModelStub:
 
     def set_location(self, x: float, y: float, z: float, facing: float) -> None:
         self._location = (float(x), float(y), float(z), float(facing))
+        if hasattr(self.model_base, "x"):
+            self.model_base.x = float(x)
+        if hasattr(self.model_base, "y"):
+            self.model_base.y = float(y)
         self.model_base.z = float(z)
         self.model_base.facing = float(facing)
 
@@ -73,6 +79,22 @@ class _UnitStub:
         return True, ""
 
 
+class _SquareBase:
+    def __init__(self, radius: float = 0.5) -> None:
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
+        self.facing = 0.0
+        self.radius = [float(radius), float(radius)]
+        self.base_type = SimpleNamespace(name="RECTANGULAR")
+
+    def get_base_shape_at(self, x: float, y: float, _facing: float):
+        return box(float(x) - self.radius[0], float(y) - self.radius[1], float(x) + self.radius[0], float(y) + self.radius[1])
+
+    def get_radius(self) -> float:
+        return float(max(self.radius))
+
+
 class _ArmyStub:
     def __init__(self, unit: _UnitStub) -> None:
         self.units = [unit]
@@ -93,6 +115,7 @@ class _GameStub:
         self.players = [_PlayerStub(friendly_army), _PlayerStub(enemy_army)]
         self.map = SimpleNamespace(
             units=[member for member in [unit, enemy_unit] if member is not None],
+            terrain_features=[],
             is_within_engagement_range=lambda lhs, rhs: abs(lhs.models[0].get_location()[0] - rhs.models[0].get_location()[0]) <= 1.0,
             get_enemy_units=lambda moving_unit: [candidate for candidate in [enemy_unit] if candidate is not None and candidate is not moving_unit],
         )
@@ -258,6 +281,33 @@ def test_validate_move_unit_allows_advance_only_when_endpoint_exceeds_normal_dis
     errors = _validate_move_unit(game, request, result)
 
     assert errors == ()
+
+
+def test_validate_move_unit_rejects_final_ruins_wall_overlap() -> None:
+    model = _ModelStub("model-wall-overlap")
+    model.model_base = _SquareBase(radius=0.5)
+    model.set_location(0.0, 1.0, 0.0, 0.0)
+    unit = _UnitStub("unit-wall-overlap", model)
+    game = _GameStub(unit)
+    game.map.terrain_features = [
+        SimpleNamespace(
+            terrain_type=SimpleNamespace(name="RUINS"),
+            footprint=box(2.0, 0.0, 4.0, 3.0),
+            walls=[{"polygon": box(2.75, 0.0, 3.25, 3.0), "z_bottom": 0.0, "z_top": 5.0}],
+        )
+    ]
+    request, result = _movement_phase_move_validation(
+        unit,
+        movement_type="move",
+        destination_x=3.0,
+        max_distance=12.0,
+    )
+    result.payload["model_positions"][0]["position"] = [3.0, 1.0, 0.0]
+
+    errors = _validate_move_unit(game, request, result)
+
+    assert errors
+    assert "ruins wall" in str(errors[0]).lower()
 
 
 def test_apply_move_unit_skip_after_advance_consumes_movement_activation() -> None:

@@ -315,6 +315,121 @@ def test_overlay_lines_expand_movement_move_into_per_model_positions() -> None:
     assert ("chosen option: Confirm", replay_viewer.OVERLAY_TEXT) not in lines
 
 
+def test_overlay_lines_include_model_distance_and_pivot_for_move() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    previous_model = SimpleNamespace(id="m1", get_location=lambda: (0.0, 0.0, 0.0, 0.0))
+    previous_unit = SimpleNamespace(models=[previous_model], has_circular_base=False, is_vehicle=False, is_monster=False)
+    previous_game = SimpleNamespace(
+        players=[SimpleNamespace(get_army=lambda: SimpleNamespace(units=[previous_unit]))],
+        entity_registry=SimpleNamespace(get=lambda model_id, kind=None: previous_model if model_id == "m1" and kind == "model" else None)
+    )
+    fake_reader = SimpleNamespace(
+        get_step=lambda _idx: SimpleNamespace(
+            chosen_option_id="confirm",
+            phase="MOVEMENT_PHASE",
+            turn_id=1,
+            decision_type="MOVE_UNIT",
+            actor_player_id="player-1",
+            controller_kind="ai",
+            chosen_action_id="move-action",
+            wall_clock_ms=12,
+            time_budget_ms=None,
+        ),
+        get_request_payload=lambda _idx: {
+            "prompt": "Move Unit",
+            "context": {"movement_type": "move"},
+            "options": [
+                {
+                    "option_id": "confirm",
+                    "label": "Confirm",
+                    "payload": {"action": "confirm", "movement_type": "move", "unit_id": "unit-1"},
+                }
+            ],
+        },
+        get_decision_record=lambda _idx: {
+            "outcome": {"immediate_deltas": {}},
+            "candidates": [
+                {
+                    "action_id": "move-action",
+                    "params": {
+                        "movement_type": "move",
+                        "model_positions": [
+                            {"model_id": "m1", "position": [3.0, 4.0, 0.0], "facing": 90.0}
+                        ],
+                    },
+                    "metadata": {},
+                }
+            ],
+        },
+        get_events_for_decision=lambda _idx: [{"type": "decision_requested"}],
+        reconstruct_game_at_decision=lambda _idx, strict=True: previous_game,
+    )
+
+    lines = replay_viewer._overlay_lines(
+        fake_reader,
+        {"session_id": "selfplay:000000"},
+        "/tmp/replay.sqlite3",
+        10,
+        220,
+        SimpleNamespace(setup_complete=True),
+    )
+
+    assert ('1. (3.0, 4.0, 0.0, 90.0) :: Dist 6.00" :: Pivoted', replay_viewer.OVERLAY_TEXT) in lines
+
+
+def test_overlay_lines_expand_scout_move_into_per_model_positions() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    fake_reader = SimpleNamespace(
+        get_step=lambda _idx: SimpleNamespace(
+            chosen_option_id="scout-1",
+            phase="PRE_BATTLE",
+            turn_id=0,
+            decision_type="SCOUT_MOVE",
+            actor_player_id="player-2",
+            controller_kind="ai",
+            chosen_action_id="scout-action",
+            wall_clock_ms=9,
+            time_budget_ms=None,
+        ),
+        get_request_payload=lambda _idx: {
+            "prompt": "Scout move for Shroud Runners",
+            "options": [
+                {
+                    "option_id": "scout-1",
+                    "label": "Scout to (10.5, 35.9)",
+                    "payload": {
+                        "action_id": "scout-action",
+                        "unit_id": "unit-1",
+                        "action": "scout",
+                        "model_positions": [
+                            {"model_id": "m1", "position": [10.5, 35.9, 0.0], "facing": 0.0},
+                            {"model_id": "m2", "position": [10.5, 39.4, 0.0], "facing": 0.0},
+                            {"model_id": "m3", "position": [10.5, 43.0, 0.0], "facing": 0.0},
+                        ],
+                    },
+                }
+            ],
+        },
+        get_decision_record=lambda _idx: {"outcome": {"immediate_deltas": {}}, "candidates": []},
+        get_events_for_decision=lambda _idx: [{"type": "decision_requested"}],
+    )
+
+    lines = replay_viewer._overlay_lines(
+        fake_reader,
+        {"session_id": "selfplay:000000"},
+        "/tmp/replay.sqlite3",
+        79,
+        220,
+        SimpleNamespace(setup_complete=True),
+    )
+
+    assert ("chosen scout move: 3 models", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("1. (10.5, 35.9, 0.0, 0.0)", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("2. (10.5, 39.4, 0.0, 0.0)", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("3. (10.5, 43.0, 0.0, 0.0)", replay_viewer.OVERLAY_TEXT) in lines
+    assert ("chosen option: Scout to (10.5, 35.9)", replay_viewer.OVERLAY_TEXT) not in lines
+
+
 def test_chosen_option_label_falls_back_to_chosen_action_id_for_select_unit() -> None:
     replay_viewer = _load_replay_viewer_module()
 
@@ -353,6 +468,27 @@ def test_format_roll_line_uses_roll_type_when_reason_is_missing() -> None:
     line = replay_viewer._format_roll_line({"roll_type": "wound", "value": 3})
 
     assert line == "Wound roll: 3"
+
+
+def test_format_roll_line_uses_unique_unit_label_for_duplicate_unit_rolls() -> None:
+    replay_viewer = _load_replay_viewer_module()
+    rangers_1 = SimpleNamespace(id="rangers-1", name="Rangers")
+    rangers_2 = SimpleNamespace(id="rangers-2", name="Rangers")
+    game = SimpleNamespace(
+        players=[
+            SimpleNamespace(get_army=lambda: SimpleNamespace(units=[rangers_1, rangers_2])),
+        ],
+        entity_registry=SimpleNamespace(
+            get=lambda entity_id, kind=None: rangers_2 if entity_id == "rangers-2" and kind == "unit" else None
+        ),
+    )
+
+    line = replay_viewer._format_roll_line(
+        {"roll_type": "attacks", "value": 1, "unit_id": "rangers-2"},
+        game=game,
+    )
+
+    assert line == "Attacks roll for Rangers #2: 1"
 
 
 def test_replay_viewer_uses_game_view_post_draw_callback_without_extra_flip(monkeypatch) -> None:

@@ -6550,6 +6550,7 @@ class StratagemManager(
             interrupt_window = f"{when_key}_{action_key}".strip("_")
 
         from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+        from ..engine.decision_requests import _select_unit_option_labels
         from ..engine.decisions import DecisionOption, DecisionRequest
 
         if self._has_pending_decision_request(
@@ -6569,16 +6570,19 @@ class StratagemManager(
         if not sorted_candidates:
             return False
 
+        unit_labels = _select_unit_option_labels(sorted_candidates)
         options: list[DecisionOption] = []
         for unit in sorted_candidates:
             unit_id = str(get_entity_id(unit) or "")
             if not unit_id:
                 continue
+            unit_label = str(unit_labels.get(unit_id) or getattr(unit, "name", "Unit") or "Unit")
             options.append(
                 DecisionOption.create(
-                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    unit_label,
                     payload={
                         "unit_id": unit_id,
+                        "unit_label": unit_label,
                         "ability_key": "fire_overwatch",
                         "ability_name": str(getattr(stratagem, "name", "") or "FIRE OVERWATCH"),
                         "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),

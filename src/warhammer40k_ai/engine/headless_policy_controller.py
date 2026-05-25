@@ -374,6 +374,7 @@ class HeadlessPolicyDecisionController(DecisionController):
                 result_payload=result_payload,
             ):
                 continue
+            self._ensure_candidate_present(request, candidate)
             apply_result = self._safe_resolve_decision_command(
                 game,
                 request,
@@ -2511,6 +2512,22 @@ class HeadlessPolicyDecisionController(DecisionController):
         params = dict(option_payload or {})
         params.pop("action_id", None)
         return CandidateAction(action_id=str(action_id or ""), params=params, metadata={})
+
+    @staticmethod
+    def _ensure_candidate_present(request: DecisionRequest, candidate: CandidateAction | None) -> None:
+        if request is None or candidate is None:
+            return
+        action_id = str(getattr(candidate, "action_id", "") or "")
+        if not action_id:
+            return
+        for existing in list(getattr(request, "candidates", []) or []):
+            if str(getattr(existing, "action_id", "") or "") == action_id:
+                return
+        request.candidates.append(candidate)
+        request.mask.append(True)
+        mask_reasons = getattr(request, "mask_reasons", None)
+        if isinstance(mask_reasons, list):
+            mask_reasons.append(None)
 
     def _result_payload_is_structurally_resolvable(self, request: DecisionRequest, payload: dict[str, Any]) -> bool:
         if str(getattr(request, "decision_type", "") or "") == DECISION_MOVE_UNIT:

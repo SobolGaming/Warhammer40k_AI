@@ -6,11 +6,12 @@ import re
 from typing import Any
 
 from .path_witness import current_model_positions
+from ..pathing.validation import get_pivot_cost
 from ..utility.entity_ids import get_entity_id
 from ..utility.unit_models import unit_group_models
 
 _FIRST_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
-MOVEMENT_DISTANCE_EPSILON = 1e-3
+MOVEMENT_DISTANCE_EPSILON = 5e-3
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,9 @@ class ModelMovementDistance:
     model_id: str
     distance: float
     normal_limit: float
+    displacement: float = 0.0
+    pivot_cost: float = 0.0
+    pivoted: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,23 @@ def movement_value_to_inches(value: object, default: float = 0.0) -> float:
     if match is None:
         return float(default)
     return float(match.group(0))
+
+
+def _movement_facing_value(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _facing_changed(start_facing: object, end_facing: object) -> bool:
+    start = _movement_facing_value(start_facing)
+    end = _movement_facing_value(end_facing)
+    if max(abs(start), abs(end)) <= (2.0 * math.pi + 1e-6):
+        delta = abs((end - start + math.pi) % (2.0 * math.pi) - math.pi)
+    else:
+        delta = abs((end - start + 180.0) % 360.0 - 180.0)
+    return delta > 1e-6
 
 
 def model_normal_move_limit(unit: object, model: object | None, game: object | None = None) -> float:
@@ -121,14 +142,22 @@ def movement_distance_profile(
             continue
         sx = movement_value_to_inches(start_pos[0], 0.0)
         sy = movement_value_to_inches(start_pos[1], 0.0)
+        sz = movement_value_to_inches(start_pos[2] if len(start_pos) > 2 else 0.0, 0.0)
         ex = movement_value_to_inches(end_pos[0], 0.0)
         ey = movement_value_to_inches(end_pos[1], 0.0)
+        ez = movement_value_to_inches(end_pos[2] if len(end_pos) > 2 else 0.0, 0.0)
         model = models_by_id.get(model_id)
+        displacement = float(math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2 + (ez - sz) ** 2))
+        pivoted = _facing_changed(start.get("facing", 0.0), entry.get("facing", 0.0))
+        pivot_cost = float(get_pivot_cost(unit)) if pivoted else 0.0
         entries.append(
             ModelMovementDistance(
                 model_id=model_id,
-                distance=float(math.hypot(ex - sx, ey - sy)),
+                distance=float(displacement + pivot_cost),
                 normal_limit=model_normal_move_limit(unit, model, game=game),
+                displacement=displacement,
+                pivot_cost=pivot_cost,
+                pivoted=pivoted,
             )
         )
     return MovementDistanceProfile(entries=tuple(entries))

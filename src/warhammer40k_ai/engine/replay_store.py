@@ -1663,6 +1663,79 @@ class ReplayStoreReader:
         return "", None
 
     @staticmethod
+    def _pending_request_match_identity_from_payload(payload: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+        context = dict(dict(payload or {}).get("context", {}) or {})
+        options = list(dict(payload or {}).get("options", []) or [])
+        option_payloads = [
+            dict(dict(option or {}).get("payload", {}) or {})
+            for option in options
+        ]
+        return ReplayStoreReader._pending_request_match_identity(context, option_payloads)
+
+    @staticmethod
+    def _pending_request_match_identity_from_request(request: DecisionRequest) -> dict[str, tuple[str, ...]]:
+        context = dict(getattr(request, "context", {}) or {})
+        option_payloads = [
+            dict(getattr(option, "payload", {}) or {})
+            for option in list(getattr(request, "options", []) or [])
+        ]
+        return ReplayStoreReader._pending_request_match_identity(context, option_payloads)
+
+    @staticmethod
+    def _pending_request_match_identity(
+        context: dict[str, Any],
+        option_payloads: list[dict[str, Any]],
+    ) -> dict[str, tuple[str, ...]]:
+        context_keys = (
+            "unit_id",
+            "transport_id",
+            "target_unit_id",
+            "enemy_unit_id",
+            "phase_name",
+            "phase_step",
+            "selection_purpose",
+            "ability",
+            "movement_type",
+            "placement_kind",
+            "roll_id",
+            "roll_type",
+        )
+        identity: dict[str, tuple[str, ...]] = {}
+        for key in context_keys:
+            value = str(dict(context or {}).get(key, "") or "")
+            if value:
+                identity[f"context:{key}"] = (value,)
+
+        option_keys = (
+            "unit_id",
+            "target_unit_id",
+            "enemy_unit_id",
+            "transport_id",
+            "roll_id",
+        )
+        for key in option_keys:
+            values = tuple(
+                str(payload.get(key, "") or "")
+                for payload in option_payloads
+                if str(payload.get(key, "") or "")
+            )
+            if values:
+                identity[f"option:{key}"] = values
+        return identity
+
+    @staticmethod
+    def _pending_request_match_identity_matches(
+        expected: dict[str, tuple[str, ...]],
+        actual: dict[str, tuple[str, ...]],
+    ) -> bool:
+        for key, expected_value in expected.items():
+            if not expected_value:
+                continue
+            if actual.get(key, ()) != expected_value:
+                return False
+        return True
+
+    @staticmethod
     def _find_matching_pending_request(game: Game, request_payload: dict[str, Any]) -> DecisionRequest | None:
         queue = getattr(game, "decision_queue", None)
         if queue is None:
@@ -1674,6 +1747,7 @@ class ReplayStoreReader:
             str(dict(option or {}).get("label", "") or "")
             for option in list(request_payload.get("options", []) or [])
         )
+        expected_identity = ReplayStoreReader._pending_request_match_identity_from_payload(request_payload)
         for request in list(queue.list() or []):
             if decision_type and str(getattr(request, "decision_type", "") or "") != decision_type:
                 continue
@@ -1687,6 +1761,9 @@ class ReplayStoreReader:
                 for option in list(getattr(request, "options", []) or [])
             )
             if expected_labels and request_labels != expected_labels:
+                continue
+            request_identity = ReplayStoreReader._pending_request_match_identity_from_request(request)
+            if not ReplayStoreReader._pending_request_match_identity_matches(expected_identity, request_identity):
                 continue
             return request
         return None

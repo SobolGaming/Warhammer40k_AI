@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from warhammer40k_ai.UI.human_interface import HumanUIInterface
 from warhammer40k_ai.UI.window import create_pygame_screen
 from warhammer40k_ai.engine.replay_store import ReplayStoreReader
 from warhammer40k_ai.engine.session_store import load_session_replay_reader, resolve_session_replay_path
+from warhammer40k_ai.pathing.validation import get_pivot_cost
 from warhammer40k_ai.utility.event_bus import clear_recent_logs, get_recent_actions, get_recent_dice
+from warhammer40k_ai.utility.unit_models import unit_group_models
 
 OVERLAY_BG = (16, 18, 24, 216)
 OVERLAY_TEXT = (236, 236, 236)
@@ -242,12 +245,142 @@ def _selected_action_payload(
     return payload
 
 
-def _selected_move_unit_lines(
+def _model_from_game(game: object, model_id: str):
+    if game is None or not model_id:
+        return None
+    registry = getattr(game, "entity_registry", None)
+    if registry is not None:
+        getter = getattr(registry, "get", None)
+        if callable(getter):
+            try:
+                model = getter(model_id, kind="model")
+            except TypeError:
+                model = getter(model_id)
+            if model is not None:
+                return model
+    for player in list(getattr(game, "players", []) or []):
+        army_getter = getattr(player, "get_army", None)
+        army = army_getter() if callable(army_getter) else getattr(player, "army", None)
+        for unit in list(getattr(army, "units", []) or []):
+            for model in unit_group_models(unit, include_pending=True):
+                if str(getattr(model, "id", getattr(model, "_id", "")) or "") == str(model_id):
+                    return model
+    return None
+
+
+def _units_for_game(game: object) -> list[object]:
+    units: list[object] = []
+    for player in list(getattr(game, "players", []) or []):
+        army_getter = getattr(player, "get_army", None)
+        army = army_getter() if callable(army_getter) else getattr(player, "army", None)
+        units.extend(list(getattr(army, "units", []) or []))
+    return units
+
+
+def _unit_for_model(game: object, model_id: str) -> object | None:
+    target_id = str(model_id or "").strip()
+    if game is None or not target_id:
+        return None
+    for unit in _units_for_game(game):
+        for model in unit_group_models(unit, include_pending=True):
+            if str(getattr(model, "id", getattr(model, "_id", "")) or "") == target_id:
+                return unit
+    return None
+
+
+def _unit_display_label(game: object, unit_id: str) -> str:
+    target_id = str(unit_id or "").strip()
+    if game is None or not target_id:
+        return ""
+    registry = getattr(game, "entity_registry", None)
+    unit = None
+    if registry is not None:
+        getter = getattr(registry, "get", None)
+        if callable(getter):
+            try:
+                unit = getter(target_id, kind="unit")
+            except TypeError:
+                unit = getter(target_id)
+    units = _units_for_game(game)
+    if unit is None:
+        unit = next((entry for entry in units if str(getattr(entry, "id", "") or "") == target_id), None)
+    if unit is None:
+        return target_id[:8]
+    name = str(getattr(unit, "name", "") or getattr(unit, "datasheet_name", "") or "").strip()
+    if not name:
+        return target_id[:8]
+    matching_units = [entry for entry in units if str(getattr(entry, "name", "") or "").strip() == name]
+    if len(matching_units) <= 1:
+        return name
+    for idx, entry in enumerate(matching_units, start=1):
+        if str(getattr(entry, "id", "") or "") == target_id:
+            return f"{name} #{idx}"
+    return name
+
+
+def _model_location_tuple(model: object) -> tuple[float, float, float, float] | None:
+    getter = getattr(model, "get_location", None)
+    if callable(getter):
+        loc = getter()
+        if loc is None:
+            return None
+        try:
+            x = float(loc[0]) if len(loc) > 0 else 0.0
+            y = float(loc[1]) if len(loc) > 1 else 0.0
+            z = float(loc[2]) if len(loc) > 2 else 0.0
+            facing = float(loc[3]) if len(loc) > 3 else 0.0
+        except (TypeError, ValueError, IndexError):
+            return None
+        return (x, y, z, facing)
+    base = getattr(model, "model_base", None)
+    if base is None:
+        return None
+    try:
+        return (
+            float(getattr(base, "x", 0.0) or 0.0),
+            float(getattr(base, "y", 0.0) or 0.0),
+            float(getattr(base, "z", 0.0) or 0.0),
+            float(getattr(base, "facing", 0.0) or 0.0),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _facing_pivoted(start_facing: float, end_facing: float) -> bool:
+    if max(abs(float(start_facing)), abs(float(end_facing))) <= (2.0 * math.pi + 1e-6):
+        delta = abs((float(end_facing) - float(start_facing) + math.pi) % (2.0 * math.pi) - math.pi)
+    else:
+        delta = abs((float(end_facing) - float(start_facing) + 180.0) % 360.0 - 180.0)
+    return delta > 1e-6
+
+
+def _movement_suffix(previous_game: object, model_id: str, x: float, y: float, z: float, facing: float) -> str:
+    model = _model_from_game(previous_game, model_id)
+    start = _model_location_tuple(model)
+    if start is None:
+        return ""
+    sx, sy, sz, sf = start
+    distance = math.sqrt((float(x) - sx) ** 2 + (float(y) - sy) ** 2 + (float(z) - sz) ** 2)
+    pivoted = _facing_pivoted(sf, facing)
+    if pivoted:
+        unit = _unit_for_model(previous_game, model_id)
+        if unit is not None:
+            distance += float(get_pivot_cost(unit))
+    suffix = f' :: Dist {distance:.2f}"'
+    if pivoted:
+        suffix += " :: Pivoted"
+    return suffix
+
+
+def _selected_model_position_lines(
     request_payload: dict[str, object],
     record: dict[str, object],
     step: object,
+    *,
+    previous_game: object = None,
 ) -> list[str]:
-    if str(getattr(step, "decision_type", "") or "") != "MOVE_UNIT":
+    decision_type = str(getattr(step, "decision_type", "") or "")
+    if decision_type not in {"MOVE_UNIT", "SCOUT_MOVE"}:
         return []
     context = dict(request_payload.get("context", {}) or {})
     payload = _selected_action_payload(
@@ -270,7 +403,9 @@ def _selected_move_unit_lines(
     ]
     if not positions:
         return []
-    if placement_kind == "deployment" or movement_type == "deploy":
+    if decision_type == "SCOUT_MOVE":
+        summary = "chosen scout move"
+    elif placement_kind == "deployment" or movement_type == "deploy":
         summary = "chosen placement"
     else:
         movement_label = movement_type.replace("_", " ").strip()
@@ -291,7 +426,9 @@ def _selected_move_unit_lines(
             facing = float(entry.get("facing", 0.0) or 0.0)
         except (TypeError, ValueError):
             continue
-        lines.append(f"{idx}. ({x:.1f}, {y:.1f}, {z:.1f}, {facing:.1f})")
+        model_id = str(entry.get("model_id", "") or "")
+        suffix = _movement_suffix(previous_game, model_id, x, y, z, facing) if previous_game is not None else ""
+        lines.append(f"{idx}. ({x:.1f}, {y:.1f}, {z:.1f}, {facing:.1f}){suffix}")
     return lines
 
 
@@ -339,7 +476,20 @@ def _overlay_lines(
             str(step.chosen_option_id),
             str(step.chosen_action_id),
         )
-        chosen_move_lines = _selected_move_unit_lines(request_payload, record, step)
+        previous_game = None
+        if str(step.decision_type) in {"MOVE_UNIT", "SCOUT_MOVE"} and int(decision_idx) > 0:
+            reconstruct = getattr(reader, "reconstruct_game_at_decision", None)
+            if callable(reconstruct):
+                try:
+                    previous_game = reconstruct(int(decision_idx) - 1, strict=True)
+                except (RuntimeError, ValueError):
+                    previous_game = None
+        chosen_move_lines = _selected_model_position_lines(
+            request_payload,
+            record,
+            step,
+            previous_game=previous_game,
+        )
         if not bool(getattr(game, "setup_complete", True)):
             setup_phase = str(getattr(getattr(game, "setup_phase", None), "name", "") or "SETUP")
             lines.append((f"setup phase: {setup_phase}", OVERLAY_TEXT))
@@ -410,7 +560,7 @@ def _coerce_roll_values(payload: dict[str, object]) -> list[int]:
     return values
 
 
-def _format_roll_line(payload: dict[str, object]) -> str:
+def _format_roll_line(payload: dict[str, object], game: object = None) -> str:
     dice_values = _coerce_roll_values(payload)
     if not dice_values:
         return ""
@@ -423,6 +573,9 @@ def _format_roll_line(payload: dict[str, object]) -> str:
     if not reason:
         roll_type = str(payload.get("roll_type", "") or "").strip().replace("_", " ")
         reason = f"{roll_type.title()} roll" if roll_type else "Replay roll"
+    unit_label = _unit_display_label(game, str(payload.get("unit_id", "") or "")) if game is not None else ""
+    if unit_label and unit_label not in reason:
+        reason = f"{reason} for {unit_label}"
     dice_text = ", ".join(str(value) for value in dice_values)
     total = payload.get("value")
     if len(dice_values) > 1 and isinstance(total, int):
@@ -451,6 +604,7 @@ def _replay_dice_log_overrides(
     reader: ReplayStoreReader,
     decision_idx: int,
     player_to_key: dict[str, str],
+    game: object = None,
 ) -> dict[str, list[str]]:
     event_end_id = _selected_decision_event_end(reader, decision_idx)
     if event_end_id is None:
@@ -472,7 +626,7 @@ def _replay_dice_log_overrides(
         player_key = player_to_key.get(str(payload.get("player_id", "") or ""))
         if not player_key:
             continue
-        line = _format_roll_line(payload)
+        line = _format_roll_line(payload, game=game)
         if not line:
             continue
         merged = list(lines_by_key.get(player_key, []))
@@ -489,7 +643,7 @@ def _build_hud_log_overrides(reader: ReplayStoreReader, decision_idx: int, game)
         str(getattr(player2, "id", "") or ""): "p2_dice",
     }
     dice_overrides = (
-        _replay_dice_log_overrides(reader, decision_idx, player_to_key)
+        _replay_dice_log_overrides(reader, decision_idx, player_to_key, game=game)
         if int(decision_idx) > 0
         else {"p1_dice": list(get_recent_dice(player1, limit=50)), "p2_dice": list(get_recent_dice(player2, limit=50))}
     )

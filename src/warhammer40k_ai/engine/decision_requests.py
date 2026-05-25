@@ -4378,6 +4378,41 @@ def _scout_model_positions_for_destination(
     return positions
 
 
+def _scout_model_positions_fit_battlefield(game: object, unit: object, model_positions: list[dict[str, object]]) -> bool:
+    game_map = getattr(game, "map", None)
+    boundary = getattr(game_map, "boundary", None)
+    if boundary is None:
+        return True
+    from ..utility.unit_models import unit_group_models
+
+    models_by_id = {
+        str(get_entity_id(model) or ""): model
+        for model in unit_group_models(unit)
+        if str(get_entity_id(model) or "")
+    }
+    for entry in list(model_positions or []):
+        if not isinstance(entry, dict):
+            return False
+        model_id = str(entry.get("model_id", "") or "")
+        model = models_by_id.get(model_id)
+        if model is None:
+            return False
+        pos = entry.get("position")
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            return False
+        model_base = getattr(model, "model_base", None)
+        get_shape_at = getattr(model_base, "get_base_shape_at", None)
+        if not callable(get_shape_at):
+            continue
+        x = _safe_float(pos[0])
+        y = _safe_float(pos[1])
+        facing = _safe_float(entry.get("facing", getattr(model_base, "facing", 0.0)))
+        shape = get_shape_at(float(x), float(y), float(facing))
+        if not bool(boundary.covers(shape)):
+            return False
+    return True
+
+
 def build_scout_move_request(game: object, unit: object) -> Optional[DecisionRequest]:
     if unit is None:
         return None
@@ -4395,6 +4430,8 @@ def build_scout_move_request(game: object, unit: object) -> Optional[DecisionReq
     for idx, destination in enumerate(list(destinations or [])):
         x, y, z = destination
         model_positions = _scout_model_positions_for_destination(unit, destination)
+        if model_positions and not _scout_model_positions_fit_battlefield(game, unit, model_positions):
+            continue
         options.append(
             DecisionOption.create(
                 f"Scout to ({float(x):.1f}, {float(y):.1f})",
